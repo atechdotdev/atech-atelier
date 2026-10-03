@@ -1,0 +1,136 @@
+diff --git a/addon/FreeCADMCP/rpc_server/rpc_server.py b/addon/FreeCADMCP/rpc_server/rpc_server.py
+index b4a145f..5ec7cec 100644
+--- a/addon/FreeCADMCP/rpc_server/rpc_server.py
++++ b/addon/FreeCADMCP/rpc_server/rpc_server.py
+@@ -28,9 +28,26 @@ from rpc_server.object_factory import create_object_gui, edit_object_gui
+ from rpc_server.parts_library import get_parts_list, insert_part_from_library
+ from rpc_server.property_mapper import Object
+ from rpc_server.serialize import serialize_object
+-from rpc_server.settings import load_settings, save_settings
++from rpc_server.settings import (
++    DEFAULT_RPC_PORT,
++    _get_settings_path,
++    load_settings,
++    save_settings,
++)
+ from rpc_server.view_manager import save_active_screenshot
+ 
++
++def _settings_path_for_message():
++    """The settings file path, for an error message the user can act on.
++
++    Never let a failure in the *reporting* path mask the failure being
++    reported, so fall back to the bare filename.
++    """
++    try:
++        return _get_settings_path()
++    except Exception:                                        # noqa: BLE001
++        return "freecad_mcp_settings.json"
++
+ rpc_server_thread = None
+ rpc_server_instance = None
+ _stop_thread = None  # drains shutdown off the GUI thread; see stop_rpc_server
+@@ -463,7 +480,25 @@ class FreeCADRPC:
+         return save_active_screenshot(save_path, view_name, width, height, focus_object)
+ 
+ 
+-def start_rpc_server(port=9875):
++def _port_in_use(host, port, timeout=1.0):
++    """True if something is already LISTENing on host:port.
++
++    Asked by connecting, which is the question the kernel can actually
++    answer. Never shell out to `ss | grep <port>`: the port number also
++    appears in the Recv-Q/Send-Q columns, so a grep matches unrelated rows.
++    """
++    import socket as _socket
++
++    probe_host = "127.0.0.1" if host == "0.0.0.0" else host
++    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
++    sock.settimeout(timeout)
++    try:
++        return sock.connect_ex((probe_host, port)) == 0
++    finally:
++        sock.close()
++
++
++def start_rpc_server(port=None):
+     global rpc_server_thread, rpc_server_instance
+ 
+     if rpc_server_instance:
+@@ -481,14 +516,49 @@ def start_rpc_server(port=9875):
+     remote_enabled = settings.get("remote_enabled", False)
+     allowed_ips = settings.get("allowed_ips", "127.0.0.1")
+ 
++    # An explicit argument wins; otherwise the setting; otherwise the default.
++    # The caller in InitGui passes nothing, so the setting is what a second
++    # FreeCAD instance actually needs in order to coexist with the first.
++    if port is None:
++        try:
++            port = int(settings.get("rpc_port", DEFAULT_RPC_PORT))
++        except (TypeError, ValueError):
++            port = DEFAULT_RPC_PORT
++
+     if remote_enabled:
+         host = "0.0.0.0"
+     else:
+         host = "127.0.0.1"
+ 
+-    rpc_server_instance = FilteredXMLRPCServer(
+-        (host, port), allowed_ips_str=allowed_ips, allow_none=True, logRequests=False
+-    )
++    # Check BEFORE binding. Without this the bind raises OSError EADDRINUSE
++    # (errno 98) which the auto-start path reduces to one PrintWarning visible
++    # only in the Report View -- a bridge that is dead while looking fine.
++    # Report it as a first-class, actionable failure instead.
++    if _port_in_use(host, port):
++        msg = (
++            f"RPC port {port} is already in use -- another FreeCAD instance "
++            f"(or other process) is serving on it. This instance started NO "
++            f"RPC server. Fix: set \"rpc_port\" to a free port in "
++            f"{_settings_path_for_message()} and restart, then point the MCP "
++            f"client at it with: freecad-mcp --port <that port>"
++        )
++        FreeCAD.Console.PrintError(msg + "\n")
++        return msg
++
++    try:
++        rpc_server_instance = FilteredXMLRPCServer(
++            (host, port), allowed_ips_str=allowed_ips, allow_none=True, logRequests=False
++        )
++    except OSError as exc:
++        # Lost a race between the probe and the bind, or denied for another
++        # reason. Never leave a half-initialised global behind.
++        rpc_server_instance = None
++        msg = (
++            f"RPC Server could not bind {host}:{port}: {exc}. "
++            f"No RPC server is running in this instance."
++        )
++        FreeCAD.Console.PrintError(msg + "\n")
++        return msg
+     rpc_server_instance.register_instance(FreeCADRPC())
+ 
+     def server_loop():
+diff --git a/addon/FreeCADMCP/rpc_server/settings.py b/addon/FreeCADMCP/rpc_server/settings.py
+index 8339172..4dfbe3d 100644
+--- a/addon/FreeCADMCP/rpc_server/settings.py
++++ b/addon/FreeCADMCP/rpc_server/settings.py
+@@ -8,10 +8,19 @@ import FreeCAD
+ 
+ _SETTINGS_FILENAME = "freecad_mcp_settings.json"
+ 
++DEFAULT_RPC_PORT = 9875
++
+ _DEFAULT_SETTINGS = {
+     "remote_enabled": False,
+     "allowed_ips": "127.0.0.1",
+     "auto_start_rpc": False,
++    # The port was hardcoded at three separate call sites, which made two
++    # FreeCAD instances mutually exclusive: the second bind raises
++    # EADDRINUSE (errno 98, measured) and SO_REUSEADDR does not help --
++    # it permits rebinding a socket in TIME_WAIT, not stealing a live
++    # LISTEN. Making it a setting lets a branded build coexist with the
++    # user's own FreeCAD instead of silently losing the race.
++    "rpc_port": DEFAULT_RPC_PORT,
+ }
+ 
+ 

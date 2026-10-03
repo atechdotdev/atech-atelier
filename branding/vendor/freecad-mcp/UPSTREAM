@@ -1,0 +1,8 @@
+# Pinned copy of the FreeCADMCP addon. The build applies patches/ in order and
+# FAILS if any hunk does not apply; optional/ is applied only on request.
+name=FreeCADMCP (addon half of freecad-mcp)
+url=https://github.com/neka-nat/freecad-mcp
+commit=adc8e52dd940e5ed602d0f5b850705e5cf38d780
+path=addon/FreeCADMCP
+license=MIT (LICENSE, "Copyright (c) 2025 Shirokuma (k tanaka)")
+modified_by=Atech (see patches/ and optional/)

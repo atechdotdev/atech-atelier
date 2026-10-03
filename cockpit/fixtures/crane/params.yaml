@@ -1,0 +1,162 @@
+# =============================================================================
+# params.yaml -- SINGLE SOURCE OF TRUTH for ATL-CRANE-003
+# Bench-mounted lattice gantry crane, PLA printed.
+#
+# REQUIREMENT (user-set):  lift 2.0 kg through 400 mm of vertical travel.
+# ARCHITECTURE (derived):  NEMA17 -> spur reduction -> T8x2 leadscrew ->
+#                          travelling nut -> hook.  Self-locking: the load
+#                          holds with the motor UNPOWERED (lead angle 4.5 deg
+#                          < friction angle 11.3 deg).
+# MOUNTING (user-set):     base bolted to bench. Tipping is carried by the
+#                          bolts, not by ballast.
+# Every dimension used by build_crane.py originates here. No magic numbers.
+# =============================================================================
+run:
+  id: ATL-CRANE-003
+  seed: 20260822
+  fidelity: FIXTURE
+
+meta:
+  title: "Bench Lattice Gantry Crane"
+  note: >
+    Synthetic reference fixture authored to exercise Atelier's seven modes and
+    to be genuinely buildable in PLA. NOT output of VEHICLE-FULLSTACK. No
+    physical unit exists; every load figure is an ESTIMATED hand calculation.
+
+# --- THE REQUIREMENT --------------------------------------------------------
+duty:
+  payload_kg: 2.0
+  lift_height_mm: 400.0
+  reach_mm: 250.0
+  design_fos: 2.5
+  mounting: BOLTED_TO_BENCH
+
+# --- Base -------------------------------------------------------------------
+base:
+  plate_l_mm: 240.0   # <= 250 print bed with margin
+  plate_w_mm: 190.0   # <= 250 print bed with margin
+  plate_t_mm: 12.0
+  rib_h_mm: 22.0
+  rib_t_mm: 6.0
+  bolt_dia_mm: 6.6            # M6 clearance, bench bolts
+  bolt_span_x_mm: 200.0
+  bolt_span_y_mm: 150.0
+
+# --- Mast (lattice, carries the leadscrew) ----------------------------------
+mast:
+  n_sections: 3               # 575 mm total / 3 = 192 mm each, fits a 256 bed
+  section_overlap_mm: 24.0    # spigot depth for the keyed joint
+  spigot_clear_mm: 0.25       # printed sliding fit
+  height_mm: 520.0            # >= lift 400 + hook/nut stack + clearance
+  width_mm: 90.0              # square section, chord centres
+  chord_dia_mm: 10.0
+  brace_dia_mm: 5.0
+  n_bays: 8
+  cap_t_mm: 12.0
+
+# --- Leadscrew hoist --------------------------------------------------------
+screw:
+  nominal_dia_mm: 8.0         # T8
+  lead_mm: 4.0                # 2-start T8x4. Lead angle 9.63 deg < friction 11.31 deg
+                              # -> STILL SELF-LOCKING, but 2x the speed of T8x2.
+                              # 5.0 mm would cross the line and need a brake.
+  length_mm: 470.0
+  travel_mm: 400.0
+  nut_flange_dia_mm: 22.0
+  nut_body_dia_mm: 10.2
+  nut_len_mm: 15.0
+  end_bearing: 608ZZ
+
+# --- Travelling carriage (rides the screw + mast rails) ---------------------
+carriage:
+  body_w_mm: 74.0
+  body_h_mm: 40.0
+  body_t_mm: 30.0
+  wall_mm: 4.0
+  roller_dia_mm: 12.0
+  hook_eye_dia_mm: 9.0
+
+# --- Boom (fixed angle, lattice) --------------------------------------------
+boom:
+  length_mm: 250.0            # = reach
+  root_h_mm: 70.0
+  tip_h_mm: 44.0
+  width_mm: 56.0
+  chord_dia_mm: 8.0
+  brace_dia_mm: 4.5
+  n_bays: 5
+  angle_deg: 0.0              # horizontal jib; height comes from the mast
+  head_sheave_dia_mm: 30.0
+
+# --- Hoist motor + gear train -----------------------------------------------
+drive_hoist:
+  motor: NEMA17
+  motor_body_mm: 42.3
+  motor_len_mm: 40.0
+  motor_shaft_dia_mm: 5.0
+  motor_holding_nm: 0.40
+  gear_module_mm: 1.5
+  pinion_teeth: 20
+  wheel_teeth: 40             # 2:1 -> 0.011 N.m at the motor, 36x margin
+  face_width_mm: 10.0
+
+# --- Slew motor + gear train ------------------------------------------------
+
+drive_slew:
+  motor: NEMA17
+  # SIZED, not chosen. A printed tooth is loaded across layer boundaries and
+  # realises only ~25-35% of bulk PLA strength, so the gate is ~11 MPa, not 45.
+  # The original m=2.0 18:90 gave pinion FoS 1.38 -- below the required 2.5.
+  # m=3.0 60:16 restores FoS 2.68 (pinion) / 3.23 (ring) AND keeps the ring at
+  # 186 mm OD so it still fits the base plate and the print bed.
+  # Governing criterion per VDI 2736 is tooth DEFLECTION, checked separately.
+  gear_module_mm: 3.0
+  pinion_teeth: 16
+  ring_teeth: 60              # 3.75:1
+  face_width_mm: 16.0
+
+slew:
+  motor: NEMA17
+  # m=3.0, NOT 2.0. A printed tooth is loaded across layer boundaries and
+  # realises only ~25-35% of bulk PLA strength, so the gate is ~11-16 MPa,
+  # not 45. At m=2.0 the pinion came out at FoS 1.38 -- below the required
+  # 2.5. m=3.0 restores FoS 3.10 (pinion) / 3.72 (ring) with no other change,
+  # and coarser teeth print more reliably on a 0.4 mm nozzle.
+  gear_module_mm: 3.0
+  pinion_teeth: 18
+  ring_teeth: 90              # 5:1
+  face_width_mm: 12.0
+
+slew:
+  outer_dia_mm: 150.0
+  inner_dia_mm: 96.0
+  height_mm: 20.0
+  n_bolts: 8
+  bolt_dia_mm: 5.5
+  bolt_circle_dia_mm: 126.0
+  limit_deg: [-175.0, 175.0]
+
+# --- Hook block -------------------------------------------------------------
+hook:
+  cheek_w_mm: 34.0
+  cheek_h_mm: 44.0
+  cheek_t_mm: 6.0
+  gap_mm: 18.0
+  sheave_dia_mm: 26.0
+  throat_mm: 26.0
+  stock_dia_mm: 9.0
+  shank_len_mm: 30.0
+
+# --- Counterweight (balances the boom only; bolts carry tipping) ------------
+counterweight:
+  width_mm: 90.0
+  height_mm: 54.0
+  thick_mm: 36.0
+  x_mm: -120.0
+
+materials:
+  structure: PLA
+  printed: PLA
+  fasteners: STEEL_A2
+  screw: STEEL_A2
+  rope: STEEL_WIRE

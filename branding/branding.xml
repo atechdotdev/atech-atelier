@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Atech Atelier — FreeCAD branding descriptor.
+
+  Read at startup by App::Application (src/App/Application.cpp), applied by
+  Gui::StartupPostProcess::setBranding() (src/Gui/StartupProcess.cpp).
+  Installed to <AppHomePath>/bin/branding.xml by branding/build_appimage.sh.
+
+  Keys are whitelisted upstream in src/App/Branding.cpp — an unknown key is
+  dropped silently, so do not invent keys here. The root tag MUST be <Branding>.
+
+  We modify no FreeCAD source (ADR-003): this is a supported upstream hook.
+  Verified live on FreeCAD 1.1.3, 2026-09-24 —
+  docs/verification/2026-09-24_atech_studio_branding.md (under the previous
+  name, Atech Studio). Product name Atech Atelier: ADR-005, owner 2026-10-03.
+-->
+<Branding version="1.0">
+  <Application>Atech Atelier</Application>
+  <WindowTitle>Atech Atelier</WindowTitle>
+
+  <!-- LGPL-2.1-or-later requires we preserve upstream copyright and never
+       imply endorsement. Both obligations are discharged in this string.
+       It is shown in the About box and printed in the version banner, so it
+       also carries the product line "Atech Atelier, powered by FreeCAD". The
+       whitelist (measured with `strings libFreeCADApp.so`, FreeCAD 1.1.3) has
+       no free about-text key: CopyrightInfo is the About box's text line. -->
+  <CopyrightInfo>© 2026 Atech. Atech Atelier, powered by FreeCAD. Atech's code: LGPL-2.1-or-later; Atech module models: CC BY-NC 4.0. FreeCAD © 2001-2026 the FreeCAD contributors, LGPL-2.1-or-later. Not endorsed by or affiliated with the FreeCAD project. Credits: Help → Credits &amp; Open-Source Licences.</CopyrightInfo>
+  <MaintainerUrl>https://atech.dev</MaintainerUrl>
+
+  <WindowIcon>bin/atech_icon.svg</WindowIcon>
+  <ProgramLogo>bin/atech_logo.svg</ProgramLogo>
+
+  <!-- MEASURED: this is a stylesheet NAME resolved against FreeCAD's "qss:"
+       search path, not a path to an arbitrary file, and it is only a FALLBACK —
+       StartupProcess.cpp:533 reads the user's MainWindow/StyleSheet preference
+       first. That is precisely why light/dark cannot be carried here: one key,
+       one value. Both sheets are installed to share/Gui/Stylesheets/ and the
+       mode is chosen by the seeded MainWindow/StyleSheet preference in
+       <UserParameterTemplate> below. This value is the fallback for a profile
+       where that preference is empty, so it names the light sheet — the same
+       default the website uses. -->
+  <StyleSheet>AtechLight.qss</StyleSheet>
+
+  <!-- Seeds the profile on first run only (Application.cpp:3314): our theme,
+       our accent colours, our workbench, and no first-run theme wizard. -->
+  <UserParameterTemplate>bin/atech_user_template.cfg</UserParameterTemplate>
+
+  <!-- The LIGHT splash, matching the seeded default. The dark variant ships
+       as bin/atech_splash-dark.svg; branding.xml can name only one. -->
+  <SplashScreen>bin/atech_splash.svg</SplashScreen>
+
+  <!-- Text drawn OVER the splash by Qt, so these must match the light
+       splash's own background (#f5f5f5), not a dark one. The previous
+       values (#E9EBF3 / #9BA4BE) were light-on-light here and belonged to
+       a palette that is not the Atech brand. From brand/tokens.py: light
+       `text` and `muted`. -->
+  <SplashTextColor>#111827</SplashTextColor>
+  <SplashInfoColor>#6B7280</SplashInfoColor>
+
+  <!-- ExeName is BOTH the user-data directory name and a display string:
+       getExecutableName() fills the Start page's "Welcome to %1"
+       (Mod/Start/Gui/FirstStartWidget.cpp:92), so a slug here ships a
+       "Welcome to atech-studio" greeting. MEASURED 2026-09-24.
+       Second consequence: user data lives in ~/.local/share/Atech Atelier/v1-1/
+       (config: ~/.config/Atech Atelier/v1-1/), so the addon must ship bundled
+       in usr/Mod/ or it is silently orphaned. Changing this value MOVES every
+       user's profile: the previous name's trees are copied across by AppRun
+       (branding/apprun_migrate_block.sh, ADR-005). -->
+  <ExeName>Atech Atelier</ExeName>
+  <ExeVendor>Atech</ExeVendor>
+
+  <!-- Keeps "Atech" out of the user-data path so an existing FreeCAD profile
+       is not nested one level deeper than users expect. -->
+  <AppDataSkipVendor>true</AppDataSkipVendor>
+
+  <StartWorkbench>AcadAgentWorkbench</StartWorkbench>
+
+  <!-- Whitelisted (strings libFreeCADApp.so, FreeCAD 1.1.3) and passed to
+       QGuiApplication::setDesktopFileName; upstream's default is
+       "org.freecad.FreeCAD". It must name OUR desktop entry, or a Wayland
+       compositor matches the window to no launcher (or to FreeCAD's). The
+       config value is gated by verify_tree.py; the compositor-side effect is
+       a GUI observation not yet made. -->
+  <DesktopFileName>dev.atech.Atelier</DesktopFileName>
+</Branding>

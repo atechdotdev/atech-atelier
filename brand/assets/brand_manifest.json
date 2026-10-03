@@ -1,0 +1,64 @@
+{
+  "assets": [
+    "brand/assets/atech_icon-dark.svg",
+    "brand/assets/atech_logo-dark.svg",
+    "brand/assets/atech_splash-dark.svg",
+    "brand/assets/atech_icon-light.svg",
+    "brand/assets/atech_logo-light.svg",
+    "brand/assets/atech_splash-light.svg"
+  ],
+  "colour_source": "brand/tokens.py",
+  "generated_by": "brand/tools/build_brand.py",
+  "geometry_source": [
+    "brand/assets/source/atech_mark_black.png",
+    "brand/assets/source/atech_lockup_black.png"
+  ],
+  "palette": {
+    "dark": {
+      "accent": "#0ff2b2",
+      "accent_pure": "#0ff2b2",
+      "base": "#111111",
+      "btn_bg": "#f5f5f5",
+      "btn_bg_hover": "#ffffff",
+      "btn_text": "#111111",
+      "dim": "#666666",
+      "fail": "#e0705f",
+      "hover": "#222222",
+      "input_bg": "#1a1a1a",
+      "input_border": "#2a2a2a",
+      "line": "#2a2a2a",
+      "line_strong": "#333333",
+      "muted": "#a0a0a0",
+      "ok": "#6bbd85",
+      "panel": "#1a1a1a",
+      "sunken": "#0d0d0d",
+      "text": "#f5f5f5",
+      "warn": "#e0b052"
+    },
+    "light": {
+      "accent": "#07805e",
+      "accent_pure": "#0ff2b2",
+      "base": "#f5f5f5",
+      "btn_bg": "#000000",
+      "btn_bg_hover": "#1a1a1a",
+      "btn_text": "#ffffff",
+      "dim": "#9ca3af",
+      "fail": "#cc3d28",
+      "hover": "#f3f4f6",
+      "input_bg": "#ffffff",
+      "input_border": "#e5e7eb",
+      "line": "#e5e7eb",
+      "line_strong": "#d1d5db",
+      "muted": "#6b7280",
+      "ok": "#387e4f",
+      "panel": "#ffffff",
+      "sunken": "#f9fafb",
+      "text": "#111827",
+      "warn": "#92691a"
+    }
+  },
+  "trace": {
+    "eps": 0.2,
+    "level": 0.5
+  }
+}

@@ -1,0 +1,168 @@
+# Release workflow for Atech Atelier (public repository).
+#
+# On a tag v*, build the Linux x86_64 AppImage from:
+#   - the official FreeCAD 1.1.3 AppImage, downloaded by URL and checked
+#     against a pinned sha256 (the same pin as branding/upstream.env and
+#     CREDITS.md; the job fails if the three disagree),
+#   - appimagetool, downloaded by URL and checked against a pinned sha256,
+#   - this repository (addon, branding, brand generators, module models).
+# Then upload the AppImage, its .zsync (only when update information is set,
+# see ATECH_UPDATE_INFO below) and SHA256SUMS to a DRAFT GitHub release. A
+# person reviews and publishes the draft; this workflow never publishes.
+#
+# Values marked TODO-VERIFY were not measurable when this file was written
+# (no network access). The "Refuse unverified pins" step fails the job while
+# any remain, so a release cannot be built on a guessed checksum.
+#
+# Copied from tools/release/public/release.yml in the private source
+# repository by tools/release/export_public.sh. Edit it there, not here.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the draft release and upload its assets
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # FreeCAD 1.1.3, from CREDITS.md ("Upstream image") and branding/upstream.env.
+  FREECAD_URL: https://github.com/FreeCAD/FreeCAD/releases/download/1.1.3/FreeCAD_1.1.3-Linux-x86_64-py311.AppImage
+  FREECAD_SHA256: 3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef
+  FREECAD_COMMIT: 145529fe741292ff0b3977a01195bf0247425794
+  # appimagetool (https://github.com/AppImage/appimagetool). Pin a tagged
+  # release, not "continuous": the continuous asset changes under the same URL.
+  # Measured 2026-10-04: release 1.9.1 asset, 15092216 bytes; the binary
+  # reports "continuous build 296, git 8c8c91f".
+  APPIMAGETOOL_VERSION: "1.9.1"
+  APPIMAGETOOL_URL: https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+  APPIMAGETOOL_SHA256: ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0
+  # AppImage update information. Empty means no update channel and no .zsync
+  # (owner decision). To turn it on, set the repository variable
+  # ATECH_UPDATE_INFO, for example
+  #   gh-releases-zsync|<owner>|<repo>|latest|<AppImage name glob>.zsync
+  ATECH_UPDATE_INFO: ${{ vars.ATECH_UPDATE_INFO }}
+  # Licence of Atech's own code, stamped into the AppStream metainfo.
+  ATECH_PROJECT_LICENSE: LGPL-2.1-or-later
+  # Contact for written source requests in SOURCE_OFFER.txt (owner decision).
+  ATECH_SOURCE_CONTACT: ${{ vars.ATECH_SOURCE_CONTACT }}
+  # The module models live in this repository under models/.
+  ATECH_ARTIFACTS: ${{ github.workspace }}
+
+jobs:
+  appimage:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the build stamps the release date from the tagged commit
+
+      - name: Refuse unverified pins
+        run: |
+          bad="$(env | grep -E '^(FREECAD|APPIMAGETOOL)_' | grep 'TODO-VERIFY' || true)"
+          if [ -n "$bad" ]; then
+            echo "::error::release pins still say TODO-VERIFY:"; echo "$bad"; exit 1
+          fi
+
+      - name: Tag matches VERSION
+        run: |
+          # The build reads the version through release_meta.py; so does this.
+          want="v$(python3 branding/release_meta.py version)"
+          [ "$GITHUB_REF_NAME" = "$want" ] || {
+            echo "::error::tag $GITHUB_REF_NAME does not match VERSION ($want)"; exit 1; }
+
+      - name: Pins agree with branding/upstream.env and CREDITS.md
+        run: |
+          . branding/upstream.env
+          [ "$UPSTREAM_URL" = "$FREECAD_URL" ] || { echo "::error::URL differs from upstream.env"; exit 1; }
+          [ "$UPSTREAM_SHA256" = "$FREECAD_SHA256" ] || { echo "::error::sha256 differs from upstream.env"; exit 1; }
+          [ "$FREECAD_COMMIT" = "${{ env.FREECAD_COMMIT }}" ] || { echo "::error::commit differs from upstream.env"; exit 1; }
+          grep -q "$FREECAD_SHA256" CREDITS.md || { echo "::error::CREDITS.md does not name the pinned sha256"; exit 1; }
+          grep -q "$FREECAD_COMMIT" CREDITS.md || { echo "::error::CREDITS.md does not name the pinned commit"; exit 1; }
+
+      - name: Install build tools
+        # zsync provides zsyncmake, which appimagetool may call to write the
+        # .zsync when update information is set (harmless otherwise).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            inkscape patch desktop-file-utils appstream zsync \
+            python3-numpy python3-pil python3-scipy python3-yaml
+          python3 -c "import numpy, PIL, scipy, yaml; print('python deps OK')"
+
+      - name: Download FreeCAD 1.1.3 (pinned)
+        run: |
+          mkdir -p "$RUNNER_TEMP/in"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/in/freecad.AppImage" "$FREECAD_URL"
+          echo "$FREECAD_SHA256  $RUNNER_TEMP/in/freecad.AppImage" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/in/freecad.AppImage"
+
+      - name: Download appimagetool (pinned)
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fL --retry 3 -o "$RUNNER_TEMP/appimagetool.AppImage" "$APPIMAGETOOL_URL"
+          echo "$APPIMAGETOOL_SHA256  $RUNNER_TEMP/appimagetool.AppImage" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/appimagetool.AppImage"
+          # No FUSE on hosted runners: run the tool from its extracted self.
+          printf '#!/bin/sh\nAPPIMAGE_EXTRACT_AND_RUN=1 exec "%s" "$@"\n' \
+            "$RUNNER_TEMP/appimagetool.AppImage" > "$RUNNER_TEMP/bin/appimagetool"
+          chmod +x "$RUNNER_TEMP/bin/appimagetool"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Build the AppImage
+        run: |
+          # build_appimage.sh only runs the upstream image with
+          # --appimage-extract, which needs no FUSE.
+          mkdir -p out
+          name="$(python3 branding/release_meta.py outname x86_64)"
+          bash branding/build_appimage.sh \
+            -i "$RUNNER_TEMP/in/freecad.AppImage" \
+            --build-dir "$RUNNER_TEMP/build" \
+            --artifacts "$ATECH_ARTIFACTS" \
+            -o "out/$name"
+          echo "APPIMAGE_NAME=$name" >> "$GITHUB_ENV"
+
+      - name: SHA256SUMS
+        working-directory: out
+        run: |
+          ls -la
+          files="$APPIMAGE_NAME"
+          if [ -f "$APPIMAGE_NAME.zsync" ]; then
+            files="$files $APPIMAGE_NAME.zsync"
+          else
+            echo "::warning::no .zsync: ATECH_UPDATE_INFO is not set, so the image has no update channel"
+          fi
+          sha256sum $files > SHA256SUMS
+          cat SHA256SUMS
+          echo "RELEASE_FILES=$files SHA256SUMS" >> "$GITHUB_ENV"
+
+      - name: Draft release
+        working-directory: out
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Atech Atelier $GITHUB_REF_NAME (preview)."
+            echo
+            echo "Built from the official FreeCAD 1.1.3 AppImage (unmodified),"
+            echo "sha256 $FREECAD_SHA256, FreeCAD commit $FREECAD_COMMIT."
+            echo
+            echo "Code: LGPL-2.1-or-later (LICENSE). Module models: CC BY-NC 4.0 (LICENSE-models.md)."
+            echo "Verify the download with: sha256sum -c SHA256SUMS --ignore-missing"
+            echo
+            echo "See CHANGELOG.md for what changed."
+          } > notes.md
+          # A release published by hand (from a tested local build) is never
+          # touched: the CI build would replace tested assets with untested ones.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it unchanged."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "Atech Atelier $GITHUB_REF_NAME" --notes-file notes.md \
+            $RELEASE_FILES

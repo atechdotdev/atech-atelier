@@ -1,0 +1,115 @@
+# CI for Atech Atelier (public repository).
+#
+# Runs the addon and branding tests that need neither FreeCAD nor the
+# `claude` CLI, under plain setup-python on ubuntu-latest:
+#   1. Pure tests. They stub PySide6, so they run before PySide6 is installed.
+#   2. test_agent_kit. Its FreeCAD classes skip without freecadcmd; the rest
+#      runs.
+#   3. Qt tests against the real chat panel and shell, with
+#      PySide6-Essentials 6.8.3 (the version inside FreeCAD 1.1.3) on the
+#      offscreen platform. Each suite runs in its own process.
+# Tests that need FreeCAD's own freecadcmd skip here. Run them locally against
+# an extracted FreeCAD 1.1.3 image (see CONTRIBUTING.md); set
+# ATECH_REQUIRE_FREECADCMD=1 so they fail instead of skipping.
+#
+# Copied from tools/release/public/ci.yml in the private source repository by
+# tools/release/export_public.sh. Edit it there, not here.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  addon-pure-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 = the interpreter inside the bundled FreeCAD 1.1.3.
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Addon compiles under this interpreter
+        run: python -m compileall -q addon/AcadAgent/acadagent addon/AcadAgent/tests
+      - name: Pure tests (claude CLI parser, engine/settings, build helpers, eval harness)
+        working-directory: addon/AcadAgent/tests
+        run: >
+          python -m unittest -v
+          test_claude_cli test_engine test_build_apply test_client_parse
+          test_eval_harness test_ws_chat_cli test_build_ws
+      - name: Style tokens match brand/tokens.py
+        # brand/ is the tokens' source; skip (loudly) where it is not checked in.
+        run: |
+          if [ -f brand/tokens.py ]; then
+            python -m unittest -v addon/AcadAgent/tests/test_style_tokens.py
+          else
+            echo "::warning::brand/tokens.py not in this checkout; test_style_tokens skipped"
+          fi
+      - name: Overlay sheet (R88, R119)
+        # Reads the written sheets, YAMLs and template as text, plus
+        # brand/tools/build_qss + brand/tokens.py; stdlib only, no Qt.
+        # MEASURED 2026-09-25 on a `git archive HEAD brand branding` tree
+        # (uv, Python 3.11 and 3.12, nothing installed): 12 tests OK.
+        run: python branding/tests/test_overlay_sheet.py
+      - name: Agent kit (FreeCAD parts skip without freecadcmd)
+        working-directory: addon/AcadAgent/tests
+        run: python -m unittest -v test_agent_kit
+      - name: Install PySide6 for the Qt tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+          python -m pip install "PySide6-Essentials==6.8.3"
+      - name: Chat robustness (real panel, fake claude, offscreen Qt)
+        working-directory: addon/AcadAgent/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest -v test_chat_robustness
+      - name: WS-CHAT panel (real panel, fake claude, offscreen Qt)
+        working-directory: addon/AcadAgent/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest -v test_ws_chat_panel
+      - name: WS-CHAT round 6 (real panel, fake claude, offscreen Qt)
+        working-directory: addon/AcadAgent/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest -v test_ws_chat_round6
+      - name: WS-CHAT round 8 (real panel, fake claude, offscreen Qt)
+        working-directory: addon/AcadAgent/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest -v test_ws_chat_round8
+      - name: WS-CHAT round 9 (real panel, fake claude, offscreen Qt)
+        working-directory: addon/AcadAgent/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest -v test_ws_chat_round9
+      - name: WS-CHAT round 10 (real panel, fake claude, offscreen Qt)
+        working-directory: addon/AcadAgent/tests
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest -v test_ws_chat_round10
+      - name: Shell lifecycle, terminal, round-1..10 GUI regressions (offscreen Qt)
+        # test_shell_round1 (S33), test_shell_round6, test_shell_round8 and
+        # test_shell_round10 are matched by this pattern (every
+        # test_shell_*.py in tests/).
+        # R163: pip PySide6 has no pivy, so the Coin-projection tests
+        # (round3 TestFitCameraWithCoin + one TestModuleFace test, round4
+        # TestFitMargin: 6 tests) SKIP here; the bundled python runs them.
+        # MEASURED 2026-09-25 on the round-9 working tree, clean uv venv
+        # (Python 3.11.14, PySide6-Essentials 6.8.3, env -i, empty HOME, no
+        # DISPLAY): 158 run, OK (skipped=6). The count grows with each round's
+        # file (the previous measurement here said 132). Round 10, same venv
+        # recipe, fresh: 169 run, OK (skipped=13: the 6 pivy tests and 7
+        # freecadcmd / crane-fixture skips, one of them in round 10).
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m unittest discover -v -s addon/AcadAgent/tests -p 'test_shell_*.py'

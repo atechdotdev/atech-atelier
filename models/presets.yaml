@@ -1,0 +1,328 @@
+motherboard_14_port:
+  display_name: 14-port Motherboard
+  category: board
+  description: Atech 14-port motherboard. Twelve general-purpose module slots plus
+    a Restart button and USB-C. Modules plug into the top (+Y) face.
+  file: motherboard_14_port.stl
+  image: motherboard_14_port.jpeg
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 60.0, y: 7.0, z: 120.0}
+  keep_clear:
+  - face: +Y
+    distance_mm: 30
+    reason: Modules plug into the top face — leave clearance for the module stack.
+  agent_notes: |
+    ONE HARD RULE, EVERYTHING ELSE IS UP TO THE THEME:
+
+      THE BOARD MUST FIT inside the case AND be insertable. The
+      board's bbox is auto-carved as a Tinkercad hole at bake time —
+      so the pocket is guaranteed wherever your geometry overlaps it.
+      What you need to do is:
+        - Make your outer geometry CONTAIN the pocket (extend in all
+          four horizontal directions past the board edges and
+          downwards under the board).
+        - Leave the +Y face accessible enough that the board can be
+          slid in (the 30 mm zone above the board is auto-carved, so
+          you don't need to plan for it — but don't fight it either).
+
+    Everything else is yours: shape, theme, decoration, ports, vents.
+    If the theme prompt says "elephant", build a 3D ELEPHANT figurine
+    around the board (body, legs, trunk, ears — all composed from
+    spheres / cylinders / cones / wedges / boxes) with the board pocket
+    hollowed out of its torso. If the theme is "strawberry", build a
+    strawberry. If "ship", build a hull and rigging. The case is the
+    sculpture; the board lives inside the sculpture's torso.
+
+    Examples of valid shapes:
+      - A 3D animal figurine (elephant, dog, dragon) — head, body,
+        limbs, tail. Board pocket sits in the body. +Y access face
+        is the top of the body (e.g. saddle area on a horse).
+      - A vehicle (car, plane, boat) — board pocket in the chassis or
+        fuselage. +Y face opens out the cockpit / hood.
+      - A simple rectangular phone-case shell (when theme is
+        "minimalist" / "industrial").
+      - A sphere or dome whose top has been sliced off at the board
+        level, exposing the +Y face through the slice.
+      - A themed sculpture (cathedral, ship hull, mushroom cap,
+        strawberry shell).
+      - A wide flared base with the board pocket centred at the top.
+      - Anything else the theme prompt suggests.
+
+    For themed sculptures: USE AS MANY PRIMITIVES AS THE SHAPE NEEDS.
+    The "one Box is default" hint in the common footer is for cases
+    where the theme is just a colour / texture, not when the theme
+    asks for a recognisable figure. An elephant takes ~10-15 primitives
+    (body=ellipsoid via stretched sphere, head=sphere, ears=flattened
+    spheres, legs=cylinders, trunk=stacked cones, tail=cylinder).
+    Compose freely.
+
+    KEEP IT COMPACT. The whole sculpture should be only slightly bigger
+    than the board itself — target outer dimensions roughly 80–100 mm
+    in X, 25–60 mm tall in Y, and 130–150 mm in Z. Snug, hand-sized,
+    printable on a small 3D-printer bed. The board (60 × 120 mm) is the
+    "skeleton" of the figure and decorative elements should hug it,
+    not balloon out into giant statues. If the theme suggests something
+    naturally large (a whale, a building), STILL keep the outer envelope
+    in that 80–100 × 25–60 × 130–150 mm range — produce a STYLISED
+    miniature of the theme, not a life-size replica.
+
+    PACK IT WITH DETAIL. Compact does NOT mean low-poly. Aim for
+    25–50 primitives total — a dense, intricate miniature. For each
+    major feature, layer multiple small primitives:
+      - Animal eyes: 2× small sphere (white) + 2× tiny sphere (black
+        pupils) recessed slightly into the head.
+      - Mouth / muzzle: a small wedge or stretched cone for the snout,
+        a thin box or cylinder for the mouth slot.
+      - Ears / horns / antennae: pair of cones, wedges, or curved
+        sphere stacks.
+      - Toes / claws / scales: rows of small cones or hemispheres
+        along legs / spine / back.
+      - Surface texture: 5–15 small (1–3 mm) cylinders or spheres
+        scattered as rivets, scales, freckles, hair tufts.
+      - Theme accents: 3–6 small theme-coloured primitives in
+        contrasting colour (a saddle, a collar, a crown, a flame).
+      - Panel lines / grooves: thin is_hole=true boxes (0.5–1 mm wide,
+        5–20 mm long) carved into the body to suggest segmentation.
+
+    Vary the colour palette across primitives — base colour for the
+    body, accent colour for details, near-black for eyes / nostrils /
+    panel lines. The result should feel like a tiny detailed designer
+    toy, not a blocky placeholder. Trade size for density.
+
+    Be EXTRAVAGANT on the sides and bottom. Spheres for porthole
+    rivets, cones for spikes, torus rings for ribs, wedges for
+    buttresses, themed silhouettes. The board sits in the middle —
+    everything around it is your sculpture.
+
+    Useful numbers if you want them:
+      - Board footprint: 60 × 120 mm (X × Z).
+      - Board thickness: 7 mm (Y).
+      - The board is placed slightly elevated (its bottom face is ~5
+        mm above the workplane), so you have room for a floor of ~5
+        mm under it before hitting the workplane.
+      - On each short edge of the board (+Z and -Z), add a box-shaped
+        is_hole=true cutout (~12 × 8 × 6 mm) lined up with USB-C /
+        Restart so cables can reach the connectors.
+button:
+  display_name: Button
+  category: module
+  description: Push-button module that plugs into a motherboard port. The pressable
+    top must remain reachable from above.
+  file: button.stl
+  image: button.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 10.0, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this button — never over its +Y cap. The pressable surface
+    is the +Y face; the user's finger must reach it from outside. A flush
+    flat hole in the enclosure above the +Y face works; a raised finger-cone
+    (cylinder, ~5 mm tall, slightly wider than the cap) works better. Avoid
+    decorating directly on the side faces — primitives placed there will be
+    hidden by the auto-carve and look like wasted intent.
+light:
+  display_name: Light
+  category: module
+  description: LED light module. The LED faces outward on +Y and must not be occluded.
+  file: light.stl
+  image: light.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 9.5, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this LED module — the +Y face is the emitting surface.
+    Light must reach the user, so above the +Y face place either nothing,
+    a thin translucent diffuser primitive (small box, 1–2 mm thick), or a
+    light pipe (small cylinder rising from +Y). A small lens-cone tinted
+    in the theme colour is a nice flourish. Never solid-cap +Y.
+usbc:
+  display_name: USB-C
+  category: module
+  description: USB-C connector module — typically lives on the board edge. The port
+    opening on +Y must remain accessible for cable insertion.
+  file: usbc.stl
+  image: usbc.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 10.2, z: 19.8}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this USB-C connector — the +Y face is the cable port. The
+    user inserts a cable orthogonal to +Y, so the enclosure needs at least
+    8 mm of straight clearance off the +Y face (the auto-carve only handles
+    the immediate 2 mm). Add a chamfered or rectangular cable runway — a
+    box-shaped is_hole=true primitive 8–12 mm tall, sized ~10 × h × 5 mm,
+    aligned with the port — to guide the cable through any wall.
+screen:
+  display_name: Screen
+  category: module
+  description: Display / screen module. The viewable surface is on +Y and must remain
+    unobstructed.
+  file: screen.stl
+  image: screen.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 39.5, y: 9.6, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this display — the +Y face is the viewable surface and is
+    SACRED. The whole 39.5 × 19.5 mm area must remain clear in the final
+    print: no walls, no tints, no decorative elements. If your enclosure
+    extends over the screen, leave a window cutout sized at least the bbox
+    of +Y (or rely on the auto-carve to do it). A thin bezel frame around
+    the screen (small box primitives on +X/-X/+Z/-Z edges) is encouraged
+    aesthetically, but nothing may overlap +Y.
+speaker:
+  display_name: Speaker
+  category: module
+  description: Speaker module. The driver fires from +Y; the front grille must remain
+    open to air.
+  file: speaker.stl
+  image: speaker.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 40.0, y: 20.2, z: 40.0}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this speaker — the +Y face is the cone, and it needs to
+    move air to make sound. A solid wall flush against +Y will muffle the
+    speaker badly. Either leave +Y fully open, or model a grille: 5–9 small
+    cylinder is_hole=true primitives in a pattern over +Y (perforated
+    cover). The 40 × 40 mm footprint is much bigger than other modules,
+    so neighbours need at least 3 mm spacing to avoid resonance coupling.
+dc_motor:
+  display_name: DC Motor (N20 driver)
+  category: motor
+  description: GA12-N20 micro gearmotor driver module. Drives an external N20 motor
+    + wheel/gear.
+  file: dc_motor.stl
+  image: dc_motor.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 19.1, z: 48.3}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this motor driver. This module is taller than most
+    (48 mm Z) — your enclosure must accommodate the elongated body. The
+    +Y face has the cable port that runs to the EXTERNAL motor + wheel
+    (not part of this module). Provide a cable exit: a small is_hole=true
+    box (~3 × 6 × 2 mm) on +Y or +X. Do not seal this module inside an
+    airtight pocket — the driver dissipates heat when running.
+orientation:
+  display_name: Orientation Sensor
+  category: module
+  description: IMU / orientation sensor module. The chip top on +Y should not be
+    covered (avoids stress on the package).
+  file: orientation.stl
+  image: orientation.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 9.5, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this IMU. Don't transmit mechanical stress through the
+    enclosure into the chip on +Y — that biases the accelerometer. Leave a
+    small (2 mm) air gap above +Y and avoid clamping the module from above.
+    The IMU is orientation-sensitive — the enclosure should keep its local
+    +Y aligned with world +Y (no surprise rotations through the case).
+temp_humidity:
+  display_name: Temp / Humidity
+  category: module
+  description: Combined temperature + humidity sensor module. Sensor needs open
+    airflow on +Y.
+  file: temp_humidity.stl
+  image: temp_humidity.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 9.5, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this temp / humidity sensor — it needs OUTSIDE air to read
+    correctly. A sealed enclosure traps a microclimate and the readings
+    will be wrong. The +Y face must have an open path to ambient air:
+    either leave +Y open, or add a vent grille (3–5 small cylinder
+    is_hole=true primitives) directly over +Y. Avoid placing this sensor
+    next to heat sources like dc_motor in the same enclosure.
+distance_sensor:
+  display_name: Distance Sensor
+  category: module
+  description: Distance / ToF sensor module. The sensor aperture on +Y needs an
+    unobstructed line of sight.
+  file: distance_sensor.stl
+  image: distance_sensor.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 9.5, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this ToF sensor — the +Y face has the IR aperture and
+    needs a CLEAR line of sight to whatever it's measuring. No glass, no
+    tinting, no plastic in front. The enclosure must have a hole over +Y
+    (auto-carve does the immediate 2 mm; for greater wall thickness, add
+    your own cylinder is_hole=true with ~6 mm diameter). Do not place this
+    sensor pointing inward — make sure its +Y direction faces outward in
+    the enclosure.
+knob:
+  display_name: Knob
+  category: module
+  description: Rotary knob input module. The knob shaft sits on +Y and must remain
+    fully exposed for the user to turn.
+  file: knob.stl
+  image: knob.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 39.5, y: 29.6, z: 39.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this rotary knob. The shaft rises ~10 mm above +Y; the
+    user grips the knob with thumb+forefinger and rotates. Allow at least
+    8 mm of finger clearance on every horizontal direction around the +Y
+    face — no walls within ~24 mm of the knob centre in X or Z. The knob
+    itself is taller (29.6 mm Y) than most modules — the enclosure must
+    rise accordingly. Avoid placing decorative primitives in the
+    finger-clearance ring.
+microphone:
+  display_name: Microphone
+  category: module
+  description: Microphone input module. The mic port on +Y needs an open path to
+    pick up sound.
+  file: microphone.stl
+  image: microphone.png
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 39.5, y: 10.8, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this microphone — sound must reach the mic port on +Y. A
+    small grille over the port works (single cylinder is_hole=true, ~3 mm
+    diameter, or a 3×3 grid of 1.5 mm holes), or leave +Y open. A sealed
+    case will muffle the mic to near-uselessness. Keep this module away
+    from speaker / dc_motor sources of mechanical vibration in the same
+    enclosure to reduce pickup.
+n20_wheel:
+  display_name: N20 wheel/gear (Sizzling Krunk)
+  category: wheel
+  description: Small wheel/gear part that couples to a GA12-N20 motor shaft.
+  file: n20_wheel.stl
+  recommended_templates:
+  - motor_mount_n20
+  - enclosure_around
+  default_params:
+    motor_mount_n20:
+      shaft_clearance: 1.0
+      wheel_clearance: 2.0
+    enclosure_around:
+      clearance: 2.0
+      wall_thickness: 1.5
+  dimensions_mm: {x: 5.4, y: 3.7, z: 6.0}
+  agent_notes: |
+    This is the OUTPUT of the dc_motor — a wheel/gear that couples to the
+    motor shaft externally. It does NOT plug into the motherboard. The
+    enclosure typically does NOT contain this part; rather, this part
+    sticks out of the enclosure and rotates freely. If the scene contains
+    an n20_wheel, ensure the wheel sits outside any solid you generate
+    (the auto-carve protects it, but ideally the shell wraps the motor
+    body and stops before the wheel).

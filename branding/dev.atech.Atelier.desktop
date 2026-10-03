@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Atech Atelier
+GenericName=CAD Application
+Comment=Parametric CAD with a built-in design agent
+Exec=AppRun - --single-instance %F
+Terminal=false
+Icon=dev.atech.Atelier
+Categories=Graphics;2DGraphics;3DGraphics;Engineering;
+Keywords=CAD;3D;parametric;FreeCAD;design;agent;
+StartupNotify=true
+StartupWMClass=Atech Atelier
+MimeType=application/x-extension-fcstd;model/step;model/iges;model/stl;

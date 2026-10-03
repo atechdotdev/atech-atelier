@@ -1,0 +1,15 @@
+# Logo artwork: the geometry source for brand/tools/build_brand.py.
+# Vendored so the brand builds without a sibling checkout of the website.
+# Refresh by copying the same two files again, under the LOCAL names below,
+# and re-running brand/build.sh;
+# the trace gate in build_brand.py fails if the artwork no longer traces.
+repo=https://github.com/atechdotdev/frontend
+commit=c68b72a1d68d7ef5f7c8dd16886e7b052427c52e
+atech_mark_black.png    public/atech_black_logo.png  sha256=e5e57de38ef5e22b90c2150247cae2817d12627585b28df84758d89aa2c68d59
+atech_lockup_black.png  public/Atech_Black_Logo.png  sha256=a71dcc04730af3ac7723784f7b6ba505238b404fbabb70cf5255645991d91fa8
+#
+# LOCAL names differ from upstream on purpose (release PRD R64): upstream's
+# two names differ only in letter case, so on a case-insensitive filesystem
+# (default macOS APFS, Windows NTFS) only one of them can exist in a clone,
+# and build_brand.py reads both. Content is byte-identical to upstream; the
+# sha256 above is of the local file.

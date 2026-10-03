@@ -1,0 +1,28 @@
+Atech Atelier
+Copyright (c) 2026 Atech
+
+Atech Atelier is the FreeCAD 1.1.3 application, unmodified, distributed with
+the Atech agent workbench (AcadAgent), Atech branding and the Atech module
+library.
+
+Licences
+  Atech's code (the AcadAgent workbench, the branding and the build scripts)
+    GNU Lesser General Public License v2.1 or later. Full text: LICENSE.
+  Atech board and module 3D models, and presets.yaml
+    Creative Commons Attribution-NonCommercial 4.0 International
+    (CC BY-NC 4.0). Notice: LICENSE-models.md.
+  FreeCAD and the libraries bundled with it
+    Their own licences, listed in usr/share/doc/FreeCAD/LICENSE.html and
+    usr/share/doc/FreeCAD/ThirdPartyLibraries.html inside the AppImage.
+    FreeCAD is Copyright (C) 2001-2026 Juergen Riegel and the FreeCAD
+    contributors, LGPL-2.1-or-later.
+  Third-party components Atech added (FreeCADMCP, Lucide, Feather)
+    Their own licences: usr/share/doc/atech-atelier/third_party/.
+
+Atech Atelier is not endorsed by, affiliated with, or a product of the FreeCAD
+project.
+
+What Atech changed relative to the upstream FreeCAD AppImage is listed,
+measured, in usr/share/doc/atech-atelier/ATECH_CHANGES.txt. Where to get the
+corresponding source: usr/share/doc/atech-atelier/SOURCE_OFFER.txt.
+Credits: CREDITS.md.

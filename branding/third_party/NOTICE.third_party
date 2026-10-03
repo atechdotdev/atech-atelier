@@ -1,0 +1,71 @@
+Atech Atelier — third-party components added by Atech
+=====================================================
+
+This file covers what Atech adds on top of the upstream FreeCAD AppImage.
+FreeCAD itself and the libraries it bundles are covered by
+  usr/share/doc/FreeCAD/LICENSE.html
+  usr/share/doc/FreeCAD/ThirdPartyLibraries.html
+and by the source offer in usr/share/doc/@DOC_NAME@/SOURCE_OFFER.txt.
+
+FreeCADMCP (the FreeCAD addon half of freecad-mcp)
+  upstream  https://github.com/neka-nat/freecad-mcp
+  commit    @FREECADMCP_COMMIT@
+  licence   MIT — Copyright (c) 2025 Shirokuma (k tanaka)
+  installed usr/Mod/FreeCADMCP/
+  licence text usr/Mod/FreeCADMCP/LICENSE and
+               usr/share/doc/@DOC_NAME@/third_party/LICENSE.FreeCADMCP
+  MODIFIED BY ATECH. The patches applied to this copy are installed, as
+  applied, in usr/share/doc/@DOC_NAME@/third_party/FreeCADMCP-patches/.
+
+Lucide icons
+  upstream  https://github.com/lucide-icons/lucide
+  licence   ISC — Copyright (c) Lucide Icons and Contributors
+  used in   a small set of icon path strings inlined in
+            usr/Mod/AcadAgent/acadagent/style.py (PATHS)
+  licence text usr/share/doc/@DOC_NAME@/third_party/LICENSE.Lucide
+               (fetched at lucide commit 66d8f9fc394b8530377e5f6112f0b8908ba01280)
+
+Feather icons
+  upstream  https://github.com/feathericons/feather
+  licence   MIT — Copyright (c) 2013-present Cole Bemis
+  used in   Lucide icons derived from Feather (the Lucide licence lists
+            them), inlined the same way
+  licence text usr/share/doc/@DOC_NAME@/third_party/LICENSE.Feather
+               (fetched at feather commit 3dc050d97405062eba78aa57115c0a15c63abdaa)
+
+Upstream components Atech's code relies on directly
+  (shipped by FreeCAD, not added by Atech; listed so the dependency is
+  visible. Full list with versions: CREDITS.md, installed as
+  usr/share/doc/@DOC_NAME@/CREDITS.md.)
+
+fcgear (FreeCAD PartDesign involute gear generator)
+  upstream  https://github.com/FreeCAD/FreeCAD (src/Mod/PartDesign/fcgear)
+  licence   LGPL-2.0-or-later — (c) 2014 David Douard, (c) 2023 Jonas Bähr
+  installed usr/Mod/PartDesign/fcgear/ (part of FreeCAD, unmodified)
+  used in   the agent kit's spur_gear() (usr/Mod/AcadAgent/acadagent/agent_kit/
+            atech_cad.py) imports it; nothing is copied from it
+  licence text header of usr/Mod/PartDesign/fcgear/involute.py and
+               usr/share/doc/FreeCAD/LICENSE.html
+
+DejaVu fonts (DejaVuSans.ttf)
+  upstream  https://dejavu-fonts.github.io
+  licence   Bitstream Vera Fonts licence; DejaVu changes are public domain;
+            Arev glyphs (c) Tavmjong Bah
+  installed usr/fonts/DejaVuSans.ttf ("Version 2.37", shipped by FreeCAD);
+            the build sandbox prefers the host system's copy when present
+  used in   the one font path the build sandbox gives model scripts for
+            text on parts (usr/Mod/AcadAgent/acadagent/sandbox.py)
+  licence text usr/lib/python3.11/site-packages/matplotlib/mpl-data/fonts/ttf/
+               LICENSE_DEJAVU
+
+bubblewrap (bwrap) — NOT bundled
+  upstream  https://github.com/containers/bubblewrap
+  licence   LGPL-2.0-or-later
+  used in   build isolation, run from the host system when installed
+            (sandbox.py); absent, builds run with weaker isolation and the
+            app says so
+
+Claude Code (the `claude` CLI) — NOT bundled, NOT open source
+  vendor    Anthropic, https://claude.com/claude-code
+  licence   proprietary, Anthropic's terms
+  used in   the chat panel runs the user's own installed copy

@@ -17,7 +17,7 @@ Atech Atelier is the official, **unmodified** FreeCAD 1.1.3 release with the
 Atech workbench, theme and module library added. It comes as one Linux
 AppImage (x86_64), and nothing is installed system-wide.
 
-> Atech Atelier is built on FreeCAD (LGPL-2.1-or-later). It is not endorsed
+> Atech Atelier is built on FreeCAD (LGPL-2.0-or-later, "LGPL2+"). It is not endorsed
 > by, affiliated with, or a product of the FreeCAD project.
 
 **Status: 0.1.0, a preview.** Expect rough edges, and please report them.
@@ -199,7 +199,7 @@ its own files.
 |---|---|---|
 | Atech's code: the Atech workbench (`addon/AcadAgent`), the branding and build scripts | **LGPL-2.1-or-later** | [`LICENSE`](LICENSE) |
 | Atech board and module 3D models, and `presets.yaml` | **CC BY-NC 4.0**: free for any non-commercial use, with credit to Atech | [`LICENSE-models.md`](LICENSE-models.md) |
-| FreeCAD and the libraries it bundles | their own licences (FreeCAD: LGPL-2.1-or-later) | `usr/share/doc/FreeCAD/` in the app |
+| FreeCAD and the libraries it bundles | their own licences (FreeCAD: LGPL-2.0-or-later, "LGPL2+") | `usr/share/doc/FreeCAD/` in the app |
 | third-party components Atech added (FreeCADMCP, Lucide, Feather) | their own licences | `usr/share/doc/atech-atelier/third_party/` in the app |
 
 Inside the app, `usr/share/doc/atech-atelier/` also holds `SOURCE_OFFER.txt`

@@ -18,13 +18,13 @@ the root of the AppImage (run it with `--appimage-extract` to browse them).
 the whole application window come from [FreeCAD](https://www.freecad.org), the
 open-source parametric 3D modeller built by Jürgen Riegel, Werner Mayer, Yorik
 van Havre and thousands of contributors since 2001. Atech adds a workbench, a
-theme and a name on top. Thank you to the FreeCAD project and its community.
+theme and a name on top, plus the extras listed below. Thank you to the FreeCAD project and its community.
 
 | | |
 |---|---|
-| What we ship | the official FreeCAD **1.1.3** Linux AppImage, **unmodified**: no FreeCAD source file is patched or recompiled |
+| What we ship | the official FreeCAD **1.1.3** Linux AppImage. FreeCAD's program files are **unmodified**: no FreeCAD source file is patched or recompiled. Atech changes only the AppImage's launcher script (`AppRun`), its icon and its desktop/AppStream entries, and adds its own files; every change is listed in `ATECH_CHANGES.txt` |
 | Upstream image | `FreeCAD_1.1.3-Linux-x86_64-py311.AppImage`, sha256 `3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef`, from the FreeCAD tag 1.1.3 (commit `145529fe741292ff0b3977a01195bf0247425794`) |
-| Licence | LGPL-2.1-or-later, © 2001-2026 Jürgen Riegel and the FreeCAD contributors |
+| Licence | **LGPL-2.0-or-later**. FreeCAD's own licence page (`usr/share/doc/FreeCAD/LICENSE.html`) says "LGPL2+" and ships the text of the GNU Library General Public License, version 2. © Jürgen Riegel, who started FreeCAD in 2001, and the FreeCAD contributors |
 | Licence text in the app | `usr/share/doc/FreeCAD/LICENSE.html` |
 | Its own library list | `usr/share/doc/FreeCAD/ThirdPartyLibraries.html` |
 | What Atech changed | `usr/share/doc/atech-atelier/ATECH_CHANGES.txt` lists every added, removed or changed file, measured against the upstream image |
@@ -39,8 +39,8 @@ truthfully what we are built on.
 We repackage the FreeCAD team's own release build. That build was made with
 [rattler-build](https://github.com/prefix-dev/rattler-build) and
 [pixi](https://pixi.sh) from [conda-forge](https://conda-forge.org) packages:
-the FreeCAD libraries carry the build path
-`/home/runner/work/FreeCAD/FreeCAD/package/rattler-build/.pixi/...`, and
+the FreeCAD libraries carry the path of that build's rattler-build/pixi
+environment on the FreeCAD project's GitHub Actions runner, and
 `packages.txt` at the root of the image lists **326 bundled packages** — 324
 from conda-forge, `ifcopenshell` from the `freecad` channel, and FreeCAD itself.
 Thanks to the conda-forge community, whose feedstocks

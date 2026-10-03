@@ -14,8 +14,9 @@ Licences
   FreeCAD and the libraries bundled with it
     Their own licences, listed in usr/share/doc/FreeCAD/LICENSE.html and
     usr/share/doc/FreeCAD/ThirdPartyLibraries.html inside the AppImage.
-    FreeCAD is Copyright (C) 2001-2026 Juergen Riegel and the FreeCAD
-    contributors, LGPL-2.1-or-later.
+    FreeCAD is Copyright (C) Juergen Riegel (who started it in 2001) and
+    the FreeCAD contributors, licensed LGPL-2.0-or-later ("LGPL2+", the
+    GNU Library General Public License version 2 or any later version).
   Third-party components Atech added (FreeCADMCP, Lucide, Feather)
     Their own licences: usr/share/doc/atech-atelier/third_party/.
 

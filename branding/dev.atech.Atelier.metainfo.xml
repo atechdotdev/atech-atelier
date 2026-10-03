@@ -9,7 +9,7 @@
                     screenshot is hosted. Never an invented URL.
 
      project_license (ADR-006, owner 2026-10-03): Atech's code is
-     LGPL-2.1-or-later and FreeCAD itself is LGPL-2.1-or-later; the Atech
+     LGPL-2.1-or-later and FreeCAD itself is LGPL-2.0-or-later ("LGPL2+"); the Atech
      module models and presets.yaml are CC BY-NC 4.0. Both kinds ship in the
      image, so the SPDX expression is a conjunction (AND), not a choice (OR).
      The homepage is the PROPOSED public repository (ADR-006); it does not
@@ -38,7 +38,7 @@
       attribution to Atech.
     </p>
     <p>
-      Atech Atelier is built on unmodified FreeCAD (LGPL-2.1-or-later) and is
+      Atech Atelier is built on FreeCAD (LGPL-2.0-or-later, "LGPL2+"), whose program files it ships unmodified, and is
       not endorsed by, affiliated with, or a product of the FreeCAD project.
     </p>
   </description>

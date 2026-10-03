@@ -592,8 +592,8 @@ Module library   $(basename "$ARTIFACTS") @ $ART_REV
 FreeCADMCP       $MCP_COMMIT + ${#MCP_SERIES[@]} Atech patch(es)
 Packed by        $PACKED_BY
 
-FreeCAD is free software licensed LGPL-2.1-or-later, Copyright (C) 2001-2026
-Jürgen Riegel and the FreeCAD contributors. Atech Atelier is NOT endorsed by,
+FreeCAD is free software licensed LGPL-2.0-or-later ("LGPL2+"), Copyright (C)
+Jürgen Riegel (who started it in 2001) and the FreeCAD contributors. Atech Atelier is NOT endorsed by,
 affiliated with, or a product of the FreeCAD project.
 
 No FreeCAD source file is patched or recompiled. The lists below are

@@ -262,7 +262,7 @@ bundled inside the image; and a lowercase slug greets users with
 
 ## Licensing
 
-FreeCAD is LGPL-2.1-or-later and **no FreeCAD source file is patched or
+FreeCAD is LGPL-2.0-or-later ("LGPL2+") and **no FreeCAD source file is patched or
 recompiled**. The build writes `usr/share/doc/atech-atelier/ATECH_CHANGES.txt`
 into the image with the pinned upstream, a measured list of every file
 added, removed or modified (AppRun is modified), preserved copyright, a

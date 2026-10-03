@@ -18,13 +18,13 @@
   <Application>Atech Atelier</Application>
   <WindowTitle>Atech Atelier</WindowTitle>
 
-  <!-- LGPL-2.1-or-later requires we preserve upstream copyright and never
+  <!-- FreeCAD's LGPL2+ requires we preserve upstream copyright and never
        imply endorsement. Both obligations are discharged in this string.
        It is shown in the About box and printed in the version banner, so it
        also carries the product line "Atech Atelier, powered by FreeCAD". The
        whitelist (measured with `strings libFreeCADApp.so`, FreeCAD 1.1.3) has
        no free about-text key: CopyrightInfo is the About box's text line. -->
-  <CopyrightInfo>© 2026 Atech. Atech Atelier, powered by FreeCAD. Atech's code: LGPL-2.1-or-later; Atech module models: CC BY-NC 4.0. FreeCAD © 2001-2026 the FreeCAD contributors, LGPL-2.1-or-later. Not endorsed by or affiliated with the FreeCAD project. Credits: Help → Credits &amp; Open-Source Licences.</CopyrightInfo>
+  <CopyrightInfo>© 2026 Atech. Atech Atelier, powered by FreeCAD. Atech's code: LGPL-2.1-or-later; Atech module models: CC BY-NC 4.0. FreeCAD © Jürgen Riegel and the FreeCAD contributors, LGPL-2.0-or-later (LGPL2+). Not endorsed by or affiliated with the FreeCAD project. Credits: Help → Credits &amp; Open-Source Licences.</CopyrightInfo>
   <MaintainerUrl>https://atech.dev</MaintainerUrl>
 
   <WindowIcon>bin/atech_icon.svg</WindowIcon>

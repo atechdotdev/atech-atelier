@@ -139,11 +139,14 @@ QPushButton { min-width: 0px; }
 # fetched at runtime. currentColor is substituted per mode at render time.
 #
 # SOURCE AND LICENCE (R05, R62). The path data in PATHS is taken from Lucide
-# (https://github.com/lucide-icons/lucide, ISC, (c) Lucide Icons and
-# Contributors), some of it simplified; Lucide's icons derive in part from
-# Feather (https://github.com/feathericons/feather, MIT, (c) 2013-present
-# Cole Bemis). "stop" (a filled square) and "tree" (two columns of lines)
-# are plain shapes drawn for this file. Both licence texts ship in the
+# (https://github.com/lucide-icons/lucide, ISC, Copyright (c) 2026 Lucide
+# Icons and Contributors), mostly as in older Lucide releases (e.g. tag
+# 0.400.0), some of it simplified; Lucide's icons derive in part from
+# Feather (https://github.com/feathericons/feather, MIT; Feather-derived
+# icons (c) 2013-present Cole Bemis per Lucide's LICENSE, Feather's own
+# LICENSE (c) 2013-2023 Cole Bemis). "chat" is Feather's message-square.
+# "stop" (a filled square) and "tree" (two columns of lines) are plain
+# shapes drawn for this file. Both licence texts ship in the
 # AppImage at usr/share/doc/atech-atelier/third_party/LICENSE.Lucide and
 # LICENSE.Feather, listed in NOTICE.third_party (branding/third_party/ in
 # the repo). An icon added here must come from Lucide or be drawn here.

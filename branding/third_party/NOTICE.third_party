@@ -2,16 +2,24 @@ Atech Atelier — third-party components added by Atech
 =====================================================
 
 This file covers what Atech adds on top of the upstream FreeCAD AppImage.
-FreeCAD itself and the libraries it bundles are covered by
-  usr/share/doc/FreeCAD/LICENSE.html
-  usr/share/doc/FreeCAD/ThirdPartyLibraries.html
-and by the source offer in usr/share/doc/@DOC_NAME@/SOURCE_OFFER.txt.
+FreeCAD itself and the libraries it bundles keep their own licences. FreeCAD's
+own list is usr/share/doc/FreeCAD/ThirdPartyLibraries.html (FreeCAD's licence:
+usr/share/doc/FreeCAD/LICENSE.html, "LGPL2+"); every bundled package is listed
+in packages.txt at the image root, and the licence texts that ship are in
+usr/share/doc/<package>/, usr/share/licenses/ and
+usr/lib/python3.11/site-packages/*.dist-info/. CREDITS.md lists the main ones
+(usr/share/doc/@DOC_NAME@/CREDITS.md). Where to get the source:
+usr/share/doc/@DOC_NAME@/SOURCE_OFFER.txt.
 
 FreeCADMCP (the FreeCAD addon half of freecad-mcp)
   upstream  https://github.com/neka-nat/freecad-mcp
   commit    @FREECADMCP_COMMIT@
   licence   MIT — Copyright (c) 2025 Shirokuma (k tanaka)
   installed usr/Mod/FreeCADMCP/
+  what it is an optional XML-RPC server, off by default, that lets an
+            external MCP client (for example the freecad-mcp MCP server)
+            drive the running FreeCAD. Atech Atelier's own chat agent does
+            not use it.
   licence text usr/Mod/FreeCADMCP/LICENSE and
                usr/share/doc/@DOC_NAME@/third_party/LICENSE.FreeCADMCP
   MODIFIED BY ATECH. The patches applied to this copy are installed, as
@@ -19,19 +27,76 @@ FreeCADMCP (the FreeCAD addon half of freecad-mcp)
 
 Lucide icons
   upstream  https://github.com/lucide-icons/lucide
-  licence   ISC — Copyright (c) Lucide Icons and Contributors
+  licence   ISC — Copyright (c) 2026 Lucide Icons and Contributors
   used in   a small set of icon path strings inlined in
-            usr/Mod/AcadAgent/acadagent/style.py (PATHS)
+            usr/Mod/AcadAgent/acadagent/style.py (PATHS): mostly from older
+            Lucide releases (e.g. as in tag 0.400.0), some simplified;
+            "chat" is Feather's message-square; "stop" and "tree" are drawn
+            by Atech
   licence text usr/share/doc/@DOC_NAME@/third_party/LICENSE.Lucide
                (fetched at lucide commit 66d8f9fc394b8530377e5f6112f0b8908ba01280)
 
 Feather icons
   upstream  https://github.com/feathericons/feather
-  licence   MIT — Copyright (c) 2013-present Cole Bemis
+  licence   MIT — Feather-derived icons: Copyright (c) 2013-present Cole
+            Bemis (as stated in LICENSE.Lucide); Feather's own LICENSE reads
+            Copyright (c) 2013-2023 Cole Bemis (LICENSE.Feather)
   used in   Lucide icons derived from Feather (the Lucide licence lists
-            them), inlined the same way
+            them) and "chat" (Feather's message-square), inlined the same way
   licence text usr/share/doc/@DOC_NAME@/third_party/LICENSE.Feather
                (fetched at feather commit 3dc050d97405062eba78aa57115c0a15c63abdaa)
+
+Theme files derived from FreeCAD's own
+  files     usr/share/Gui/Stylesheets/overlay/Atech Overlay.qss
+            usr/share/Gui/Stylesheets/parameters/Atech Atelier Light.yaml
+            usr/share/Gui/Stylesheets/parameters/Atech Atelier Dark.yaml
+  derived from FreeCAD 1.1.3's Gui/Stylesheets/overlay/Freecad Overlay.qss
+            and Gui/Stylesheets/parameters/FreeCAD Light.yaml / FreeCAD
+            Dark.yaml; MODIFIED BY ATECH
+  licence   FreeCAD's ("LGPL2+"), (C) the FreeCAD contributors
+  licence text usr/share/doc/FreeCAD/LICENSE.html
+
+AppImage type-2 runtime (embedded at the start of the .AppImage file)
+  upstream  https://github.com/AppImage/type2-runtime
+  version   commit 8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa (the runtime's own
+            string); pinned from 0.1.1 (the exact file 0.1.0 carried)
+  licence   MIT — Copyright (c) 2004-23 probonopd
+  contains  statically, as the runtime declares itself: libfuse 3.15.0
+            (LGPL-2.1), squashfuse 0.5.2 (BSD-2-Clause), musl libc, libzstd
+            and zlib (each under the licence at the URL the runtime prints)
+  licence text in usr/share/doc/@DOC_NAME@/third_party/:
+               LICENSE.type2-runtime (type2-runtime LICENSE at commit 8f39b89),
+               LICENSE.libfuse-LGPL-2.1 (libfuse LGPL2.txt at tag fuse-3.15.0),
+               LICENSE.squashfuse (squashfuse LICENSE at tag 0.5.2),
+               LICENSE.musl (musl COPYRIGHT at tag v1.2.5; the runtime's musl
+               version is not determined), LICENSE.zstd (text from zstd
+               1.5.7; the runtime's zstd version is not determined).
+  source    see SOURCE_OFFER.txt, "AppImage runtime"
+
+Licence texts Atech adds for libraries bundled by FreeCAD
+  (FreeCAD's image names these licences but ships no text for them)
+  LICENSE.Coin3D    Coin3D 4.0.3, BSD-3-Clause, (c) Kongsberg Oil & Gas
+                    Technologies AS (COPYING from the conda-forge coin3d
+                    4.0.10 package)
+  LICENSE.SoQt      SoQt 1.6.3, BSD-3-Clause, (c) Kongsberg Oil & Gas
+                    Technologies AS (COPYING from the conda-forge soqt6 1.6.3
+                    package)
+  LICENSE.PCL       Point Cloud Library 1.15.0, BSD-3-Clause (LICENSE.txt
+                    from the conda-forge pcl 1.15.1 package)
+  LICENSE.Xerces-C  Xerces-C 3.3.0, Apache License 2.0 (LICENSE from the
+                    conda-forge xerces-c 3.3.0 package)
+  LICENSE.LGPL-3.0  the GNU LGPL v3 text (Qt 6, PySide6, IfcOpenShell,
+                    pythonocc-core, MPFR/GMP/MPC); copied from
+                    usr/share/doc/mpfr/COPYING.LESSER
+  LICENSE.GPL-3.0   the GNU GPL v3 text (required with the LGPL v3; also
+                    GNU Readline and Qt's GPL-only modules); copied from
+                    usr/share/doc/mpfr/COPYING
+  all in    usr/share/doc/@DOC_NAME@/third_party/
+
+FreeType (bundled by FreeCAD, used under the FreeType License)
+  Portions of this software are copyright (C) 2026 The FreeType Project
+  (https://freetype.org). All rights reserved. Atech Atelier is based in
+  part on the work of the FreeType Team.
 
 Upstream components Atech's code relies on directly
   (shipped by FreeCAD, not added by Atech; listed so the dependency is
@@ -65,7 +130,22 @@ bubblewrap (bwrap) — NOT bundled
             (sandbox.py); absent, builds run with weaker isolation and the
             app says so
 
+opencode (the `opencode` CLI) — NOT bundled
+  upstream  https://github.com/sst/opencode
+  licence   MIT — Copyright (c) 2025 opencode
+  used in   an optional alternative agent engine (a running `opencode
+            serve` on 127.0.0.1:4096). AppRun starts one from
+            ~/.npm-global/bin/opencode (or $ATECH_AGENT_BIN) only when
+            ATECH_AGENT_AUTOSTART=1 is set (off by default), and stops what
+            it started on exit
+
 Claude Code (the `claude` CLI) — NOT bundled, NOT open source
   vendor    Anthropic, https://claude.com/claude-code
   licence   proprietary, Anthropic's terms
-  used in   the chat panel runs the user's own installed copy
+  used in   the chat panel runs the user's own installed copy. Atech Atelier
+            is not endorsed by or affiliated with Anthropic.
+
+FreeType License text
+  usr/share/doc/@DOC_NAME@/third_party/LICENSE.FreeType-FTL is docs/FTL.TXT
+  from FreeType tag VER-2-14-3 (gitlab.freedesktop.org/freetype/freetype),
+  the version bundled by FreeCAD.

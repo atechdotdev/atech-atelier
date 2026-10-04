@@ -509,20 +509,60 @@ install -m 0644 "$MCP_V/LICENSE" "$DOC/third_party/LICENSE.FreeCADMCP"
 install -m 0644 "$HERE/third_party/LICENSE.Lucide" "$HERE/third_party/LICENSE.Feather" \
                 "$DOC/third_party/"
 for p in "${MCP_SERIES[@]}"; do install -m 0644 "$p" "$DOC/third_party/FreeCADMCP-patches/"; done
-say "third-party notices" "FreeCADMCP (MIT, modified), Lucide (ISC), Feather (MIT)"
+# Licence texts that bundled components' licences require to ship but that
+# the upstream image lacks (BSD binary-redistribution clauses, Apache-2.0
+# s.4(a), LGPL-3 s.4(b) with the GPL-3), plus libzstd for the AppImage
+# runtime. Provenance of each file: NOTICE.third_party and CREDITS.md.
+EXTRA_LICENSES=(LICENSE.Coin3D LICENSE.SoQt LICENSE.PCL LICENSE.Xerces-C
+                LICENSE.zstd LICENSE.LGPL-3.0 LICENSE.GPL-3.0
+                LICENSE.type2-runtime LICENSE.squashfuse LICENSE.libfuse-LGPL-2.1
+                LICENSE.musl LICENSE.FreeType-FTL)
+for f in "${EXTRA_LICENSES[@]}"; do
+  [[ -s "$HERE/third_party/$f" ]] || fail "branding/third_party/$f missing"
+  install -m 0644 "$HERE/third_party/$f" "$DOC/third_party/$f"
+done
+say "third-party notices" "FreeCADMCP (MIT, modified), Lucide (ISC), Feather (MIT), ${#EXTRA_LICENSES[@]} added licence texts"
 
+RUNTIME_LINE="AppImage/type2-runtime, fetched by appimagetool at pack time
+    (not pinned)"
+[[ -n "${ATECH_APPIMAGE_RUNTIME:-}" && -s "$ATECH_APPIMAGE_RUNTIME" ]] \
+  && RUNTIME_LINE="AppImage/type2-runtime, pinned file $(basename "$ATECH_APPIMAGE_RUNTIME"),
+    sha256 $(sha256sum "$ATECH_APPIMAGE_RUNTIME" | cut -d' ' -f1)"
+if [[ -n "${ATECH_SOURCE_CONTACT:-}" ]]; then
+  WRITTEN_OFFER="For at least three years from the date of this release, Atech will give anyone who asks, at $ATECH_SOURCE_CONTACT, the complete corresponding source code of every GPL- or LGPL-licensed component in this image (including FreeCAD $FREECAD_TAG, commit $FREECAD_COMMIT, Gmsh, CalculiX, FFmpeg, x264, x265, readline, Qt, PySide and the libfuse in the AppImage runtime), on a medium customarily used for software interchange, for no more than the cost of physically performing the distribution."
+else
+  WRITTEN_OFFER="None. Instead of a written offer, the corresponding source is distributed with this release (see \"Source distributed with this release\" above)."
+fi
 cat > "$DOC/SOURCE_OFFER.txt" <<OFFER
 Atech Atelier — where to get the source code
 ============================================
 
-This image contains FreeCAD and roughly 300 libraries it bundles, many under
-the LGPL or GPL. Their licences are listed in
+This image contains FreeCAD and the 325 other packages it bundles
+(packages.txt at the image root lists all 326: 324 from conda-forge,
+ifcopenshell from the freecad channel, and FreeCAD), many under the LGPL or
+GPL. FreeCAD's own list of its libraries and licences is
 
   usr/share/doc/FreeCAD/ThirdPartyLibraries.html
   usr/share/doc/FreeCAD/LICENSE.html
 
+and CREDITS.md (usr/share/doc/$DOC_NAME/CREDITS.md) lists the main ones.
+
+Source distributed with this release
+  The complete corresponding source of every copyleft (GPL, LGPL, MPL, EPL)
+  component in this image is published next to this AppImage, on the same
+  release page it is downloaded from:
+    https://github.com/atechdotdev/atech-atelier/releases/tag/v$VERSION
+  Files there: freecad_source_1.1.3.tar.gz (FreeCAD's own source archive),
+  copyleft-sources-part*.tar (each bundled copyleft package's upstream
+  source plus its conda-forge recipe and patches), the AppImage runtime's
+  sources (type2-runtime, libfuse, squashfuse), SOURCES.md (what is where,
+  with sha256 of every file) and SHA256SUMS-source. Atech's own source is
+  the release's "Source code" archive and the repository
+  https://github.com/atechdotdev/atech-atelier at tag v$VERSION.
+
 FreeCAD
-  The FreeCAD part of this image is the unmodified official release
+  The FreeCAD part of this image is the official release, with FreeCAD's
+  program files unmodified:
     $UPSTREAM_URL
     sha256 $UPSTREAM_SHA256
   built from FreeCAD tag $FREECAD_TAG, commit
@@ -530,12 +570,27 @@ FreeCAD
   (The "Revision" in the version string is a build date, not a commit.)
 
 Bundled libraries
-  packages.txt at the root of this image lists every bundled package with
-  its version, build string and channel (conda-forge). The recipe and source
-  URL of each one is in its conda-forge feedstock:
-    https://github.com/conda-forge/<package>-feedstock
-  and the exact source archives are linked from each package's page at
-    https://anaconda.org/conda-forge/<package>
+  packages.txt lists every bundled package with its version, build string
+  and channel (conda-forge, or freecad for ifcopenshell). The recipe of each
+  package, including the upstream source URL and its sha256, is in the
+  conda-forge feedstock that builds it, at the commit that built the version
+  and build string listed in packages.txt. The feedstock is often named
+  after the source project rather than the package, for example:
+    qt6-main  -> https://github.com/conda-forge/qt-main-feedstock
+    libboost  -> https://github.com/conda-forge/boost-feedstock
+    vtk-base  -> https://github.com/conda-forge/vtk-feedstock
+    soqt6     -> https://github.com/conda-forge/soqt-feedstock
+  ifcopenshell: https://anaconda.org/freecad/ifcopenshell and
+                https://github.com/IfcOpenShell/IfcOpenShell
+
+AppImage runtime
+  The launcher at the start of the .AppImage file is
+    $RUNTIME_LINE
+  source and build scripts: https://github.com/AppImage/type2-runtime
+  (this image's runtime: https://github.com/AppImage/type2-runtime/tree/8f39b89e2ac31e1640b3d3f7e9a5108e6ce805fa,
+  pinned since 0.1.1). It statically links libfuse 3.15.0 (LGPL;
+  https://github.com/libfuse/libfuse/releases/tag/fuse-3.15.0) and
+  squashfuse 0.5.2 (the runtime's own strings).
 
 Atech's additions
   The files Atech added or changed are listed, measured against the
@@ -546,7 +601,7 @@ Atech's additions
   (usr/share/doc/$DOC_NAME/LICENSE-models.md).
 
 Written offer
-  ${ATECH_SOURCE_CONTACT:+On request to $ATECH_SOURCE_CONTACT, Atech will provide the complete corresponding source code for any GPL- or LGPL-licensed component of this image, for at least three years after this release, for no more than the cost of providing it.}${ATECH_SOURCE_CONTACT:-A contact for written source requests has not been set yet (build variable ATECH_SOURCE_CONTACT). Until it is, use the upstream locations above.}
+  $WRITTEN_OFFER
 OFFER
 if [[ -z "${ATECH_SOURCE_CONTACT:-}" ]]; then
   say "source offer" "WARN: no ATECH_SOURCE_CONTACT; offer has no contact (owner)"
@@ -591,12 +646,18 @@ Built by         branding/build_appimage.sh from the Atech Atelier sources
 Module library   $(basename "$ARTIFACTS") @ $ART_REV
 FreeCADMCP       $MCP_COMMIT + ${#MCP_SERIES[@]} Atech patch(es)
 Packed by        $PACKED_BY
+Changed on       $REL_DATE (the release date; this build makes every change listed below)
 
-FreeCAD is free software licensed LGPL-2.0-or-later ("LGPL2+"), Copyright (C)
-Jürgen Riegel (who started it in 2001) and the FreeCAD contributors. Atech Atelier is NOT endorsed by,
-affiliated with, or a product of the FreeCAD project.
+FreeCAD: (C) 2001-2026 FreeCAD contributors (started by Jürgen Riegel in
+2001). FreeCAD is free and open-source software licensed under the terms of
+LGPL2+ license (the GNU LGPL version 2 or any later version,
+usr/share/doc/FreeCAD/LICENSE.html; its source files mostly carry SPDX
+LGPL-2.1-or-later). Atech Atelier is NOT endorsed by, affiliated with, or a
+product of the FreeCAD project or the FreeCAD Project Association.
 
-No FreeCAD source file is patched or recompiled. The lists below are
+FreeCAD's program files are unmodified: no FreeCAD source file is patched or
+recompiled. Atech changes the launcher (AppRun), the icon (.DirIcon) and the
+desktop/AppStream entries, and adds its own files. The lists below are
 MEASURED: every file in this image was compared (sha256, or link target for
 symlinks) with the same path in the unmodified upstream image. This file
 itself (usr/share/doc/$DOC_NAME/ATECH_CHANGES.txt) is written after the

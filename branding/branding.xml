@@ -18,13 +18,21 @@
   <Application>Atech Atelier</Application>
   <WindowTitle>Atech Atelier</WindowTitle>
 
-  <!-- FreeCAD's LGPL2+ requires we preserve upstream copyright and never
-       imply endorsement. Both obligations are discharged in this string.
-       It is shown in the About box and printed in the version banner, so it
-       also carries the product line "Atech Atelier, powered by FreeCAD". The
-       whitelist (measured with `strings libFreeCADApp.so`, FreeCAD 1.1.3) has
-       no free about-text key: CopyrightInfo is the About box's text line. -->
-  <CopyrightInfo>© 2026 Atech. Atech Atelier, powered by FreeCAD. Atech's code: LGPL-2.1-or-later; Atech module models: CC BY-NC 4.0. FreeCAD © Jürgen Riegel and the FreeCAD contributors, LGPL-2.0-or-later (LGPL2+). Not endorsed by or affiliated with the FreeCAD project. Credits: Help → Credits &amp; Open-Source Licences.</CopyrightInfo>
+  <!-- FreeCAD's licence requires that we keep upstream's copyright and
+       licence notice intact. Upstream's banner (src/Gui/MainGui.cpp at tag
+       1.1.3) is "(C) 2001-{year} FreeCAD contributors" / "FreeCAD is free
+       and open-source software licensed under the terms of LGPL2+ license."
+       and is assigned to CopyrightInfo, so this key REPLACES it: the string
+       below reproduces it verbatim (year 2026, from FreeCAD 1.1.3's build
+       date). The LGPL itself has no endorsement clause; we never imply
+       endorsement because of the FPA's registered trademark on the FreeCAD
+       logo and its brand guidelines ("only ... to provide credit for
+       FreeCAD"). The string is shown in the About box and printed in the
+       version banner, so it also carries the product line "Atech Atelier,
+       powered by FreeCAD". The whitelist (measured with
+       `strings libFreeCADApp.so`, FreeCAD 1.1.3) has no free about-text key:
+       CopyrightInfo is the About box's text line. -->
+  <CopyrightInfo>© 2026 Atech. Atech Atelier, powered by FreeCAD. Atech's code: LGPL-2.1-or-later; Atech module models: CC BY-NC 4.0. FreeCAD: (C) 2001-2026 FreeCAD contributors. FreeCAD is free and open-source software licensed under the terms of LGPL2+ license. Not endorsed by or affiliated with the FreeCAD project or the FreeCAD Project Association. Credits: Help → Credits &amp; Open-Source Licences.</CopyrightInfo>
   <MaintainerUrl>https://atech.dev</MaintainerUrl>
 
   <WindowIcon>bin/atech_icon.svg</WindowIcon>

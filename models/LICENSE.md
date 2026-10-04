@@ -21,7 +21,7 @@ or the third-party components listed in `branding/third_party/NOTICE.third_party
 
 ## Licence
 
-Copyright (c) Atech.
+Copyright (c) 2026 Atech.
 
 These models are licensed under the **Creative Commons
 Attribution-NonCommercial 4.0 International** licence (CC BY-NC 4.0).
@@ -32,13 +32,17 @@ Attribution-NonCommercial 4.0 International** licence (CC BY-NC 4.0).
 The full legal code is published at the URL above and is the binding text.
 This file is only a notice and does not reproduce or change it.
 
-Under that licence you may use, share and adapt the models for
-**non-commercial** purposes, as long as you credit Atech. Commercial use
-needs separate permission from Atech.
+Under that licence you may share and adapt the models for **non-commercial**
+purposes, provided you credit Atech, keep the copyright and licence notices,
+link the licence, and indicate if you changed the models (CC BY-NC 4.0
+§3(a)). Commercial use needs separate permission from Atech.
+
+The licence does not grant any right to use the names "Atech" or "Atech
+Atelier" or the Atech logos except to describe where the models come from.
 
 ## Attribution
 
 When you share the models or work based on them, credit Atech like this:
 
 > Atech module models by Atech (https://atech.dev), licensed under CC BY-NC 4.0
-> (https://creativecommons.org/licenses/by-nc/4.0/).
+> (https://creativecommons.org/licenses/by-nc/4.0/); modified by <you> [if changed].

@@ -13,14 +13,19 @@ It also knows the Atech hardware: the 14-port board and its plug-in modules
 ship inside the app, so you can design enclosures and parts around real
 modules that sit where they really go.
 
-Atech Atelier is the official, **unmodified** FreeCAD 1.1.3 release with the
-Atech workbench, theme and module library added. It comes as one Linux
+Atech Atelier is the official FreeCAD 1.1.3 release, with FreeCAD's program
+files unmodified (no FreeCAD source patched or recompiled), plus the Atech
+workbench, theme and module library. Atech changes only the launcher
+(`AppRun`), the icon and the desktop/AppStream entries, and adds a FreeCAD
+branding file; `ATECH_CHANGES.txt` lists every change. It comes as one Linux
 AppImage (x86_64), and nothing is installed system-wide.
 
-> Atech Atelier is built on FreeCAD (LGPL-2.0-or-later, "LGPL2+"). It is not endorsed
-> by, affiliated with, or a product of the FreeCAD project.
+> Atech Atelier is built on FreeCAD ((C) 2001-2026 FreeCAD contributors,
+> licensed "LGPL2+": the GNU LGPL version 2 or any later version). It is not
+> endorsed by, affiliated with, or a product of the FreeCAD project or the
+> FreeCAD Project Association.
 
-**Status: 0.1.0, a preview.** Expect rough edges, and please report them.
+**Status: 0.1.1, a preview.** Expect rough edges, and please report them.
 
 ---
 
@@ -198,9 +203,9 @@ its own files.
 | what | licence | text |
 |---|---|---|
 | Atech's code: the Atech workbench (`addon/AcadAgent`), the branding and build scripts | **LGPL-2.1-or-later** | [`LICENSE`](LICENSE) |
-| Atech board and module 3D models, and `presets.yaml` | **CC BY-NC 4.0**: free for any non-commercial use, with credit to Atech | [`LICENSE-models.md`](LICENSE-models.md) |
-| FreeCAD and the libraries it bundles | their own licences (FreeCAD: LGPL-2.0-or-later, "LGPL2+") | `usr/share/doc/FreeCAD/` in the app |
-| third-party components Atech added (FreeCADMCP, Lucide, Feather) | their own licences | `usr/share/doc/atech-atelier/third_party/` in the app |
+| Atech board and module 3D models, and `presets.yaml` | **CC BY-NC 4.0**: share and adapt for non-commercial purposes, crediting Atech, keeping the notices, linking the licence and saying if you changed them | [`LICENSE-models.md`](LICENSE-models.md) |
+| FreeCAD and the libraries it bundles | their own licences (FreeCAD: "LGPL2+", the GNU LGPL version 2 or any later version, per its `LICENSE.html`; its source files mostly carry LGPL-2.1-or-later) | FreeCAD's list: `usr/share/doc/FreeCAD/ThirdPartyLibraries.html`; every package: `packages.txt` at the image root; texts: `usr/share/doc/<package>/`, `usr/share/licenses/`, `site-packages/*.dist-info/` in the app |
+| third-party components Atech added (FreeCADMCP, Lucide, Feather, the AppImage type-2 runtime and the libraries it statically links), theme files derived from FreeCAD's own, and licence texts Atech adds for bundled libraries that lacked them | their own licences | `usr/share/doc/atech-atelier/third_party/` in the app |
 
 Inside the app, `usr/share/doc/atech-atelier/` also holds `SOURCE_OFFER.txt`
 (where to get the source) and `ATECH_CHANGES.txt` (every file Atech added or
@@ -210,7 +215,14 @@ browse them without running the app:
 `squashfs-root/usr/share/doc/`.
 
 Claude Code is a proprietary Anthropic product. It is **not** part of Atech
-Atelier: the app runs the copy you installed, under Anthropic's terms.
+Atelier: the app runs the copy you installed, under Anthropic's terms. Atech
+Atelier is not endorsed by or affiliated with Anthropic.
+
+The FreeCAD logo is a registered trademark (Benelux) of the FreeCAD Project
+Association AISBL (FPA), which holds the rights over commercial use of the
+FreeCAD name and logo; we use the name only to say what Atech Atelier is built
+on. These licences do not grant any right to use the names "Atech" or "Atech
+Atelier" or the Atech logos except to describe where the software comes from.
 
 ## Credits
 
@@ -219,9 +231,10 @@ community for the modeller, the geometry kernel integration and the whole
 application this is built on, and to the people behind Open CASCADE, Qt,
 Coin3D, Python and the many other open-source projects FreeCAD brings with it.
 
-[`CREDITS.md`](CREDITS.md) lists every project we build on or ship, with the
-version we ship, its licence and where its licence text is in the app. In the
-app: *Help → Credits & Open-Source Licences* (also in the *Atech* menu).
+[`CREDITS.md`](CREDITS.md) lists the main projects we build on or ship (and
+every component Atech adds), with the version we ship, its licence and where
+its licence text is in the app; `packages.txt` at the image root lists all 326
+bundled packages. In the app: *Help → Credits & Open-Source Licences* (also in the *Atech* menu).
 
 ## Building from source
 

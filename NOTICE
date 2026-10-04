@@ -1,8 +1,10 @@
 Atech Atelier
 Copyright (c) 2026 Atech
 
-Atech Atelier is the FreeCAD 1.1.3 application, unmodified, distributed with
-the Atech agent workbench (AcadAgent), Atech branding and the Atech module
+Atech Atelier is the FreeCAD 1.1.3 AppImage with FreeCAD's program files
+unmodified (Atech changes only AppRun, the icon and the desktop/AppStream
+entries, and adds its own files; see ATECH_CHANGES.txt), distributed with the
+Atech agent workbench (AcadAgent), Atech branding and the Atech module
 library.
 
 Licences
@@ -12,16 +14,40 @@ Licences
     Creative Commons Attribution-NonCommercial 4.0 International
     (CC BY-NC 4.0). Notice: LICENSE-models.md.
   FreeCAD and the libraries bundled with it
-    Their own licences, listed in usr/share/doc/FreeCAD/LICENSE.html and
-    usr/share/doc/FreeCAD/ThirdPartyLibraries.html inside the AppImage.
-    FreeCAD is Copyright (C) Juergen Riegel (who started it in 2001) and
-    the FreeCAD contributors, licensed LGPL-2.0-or-later ("LGPL2+", the
-    GNU Library General Public License version 2 or any later version).
-  Third-party components Atech added (FreeCADMCP, Lucide, Feather)
+    Their own licences. FreeCAD's own list is
+    usr/share/doc/FreeCAD/ThirdPartyLibraries.html; every bundled package is
+    listed in packages.txt at the image root, and the licence texts that
+    ship are in usr/share/doc/<package>/, usr/share/licenses/ and
+    usr/lib/python3.11/site-packages/*.dist-info/. CREDITS.md lists the main
+    ones and where their texts are.
+    FreeCAD: (C) 2001-2026 FreeCAD contributors (FreeCAD was started by
+    Juergen Riegel in 2001). FreeCAD is free and open-source software
+    licensed under the terms of LGPL2+ license (the GNU LGPL version 2 or
+    any later version; usr/share/doc/FreeCAD/LICENSE.html). FreeCAD's
+    repository LICENSE file is the LGPL 2.1 text, and many of its source
+    files carry SPDX LGPL-2.1-or-later.
+  Licence texts Atech adds for bundled libraries that lacked them (Coin3D,
+  SoQt, Point Cloud Library, Xerces-C, the GNU LGPL v3 and GPL v3)
+    usr/share/doc/atech-atelier/third_party/.
+  Third-party components Atech added (FreeCADMCP, Lucide, Feather, the
+  AppImage type-2 runtime and the libraries it statically links), plus theme
+  files derived from FreeCAD's own
     Their own licences: usr/share/doc/atech-atelier/third_party/.
 
+Portions of this software are copyright (C) 2026 The FreeType Project
+(https://freetype.org). All rights reserved. Atech Atelier is based in part
+on the work of the FreeType Team.
+
 Atech Atelier is not endorsed by, affiliated with, or a product of the FreeCAD
-project.
+project or the FreeCAD Project Association. The FreeCAD logo is a registered
+trademark (Benelux) of the FreeCAD Project Association AISBL (FPA), which
+holds the rights over commercial use of the FreeCAD name and logo; the name is
+used only to say what Atech Atelier is built on. Claude Code, which the chat
+panel runs, is a proprietary Anthropic product, not included; Atech Atelier is
+not endorsed by or affiliated with Anthropic.
+
+These licences do not grant any right to use the names "Atech" or "Atech
+Atelier" or the Atech logos except to describe where the software comes from.
 
 What Atech changed relative to the upstream FreeCAD AppImage is listed,
 measured, in usr/share/doc/atech-atelier/ATECH_CHANGES.txt. Where to get the

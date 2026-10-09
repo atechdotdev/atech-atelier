@@ -83,7 +83,7 @@ written, built and measured by the agent:
 ## Download and run
 
 Download `AtechAICAD-<version>-x86_64.AppImage` and `SHA256SUMS` from
-the [Releases page](https://github.com/atechdotdev/atech-ai-cad/releases),
+the [Releases page](https://github.com/atechdotdev/atech-atelier/releases),
 then, in the folder you downloaded them to (releases up to 0.1.1 are named
 `AtechAtelier-<version>-x86_64.AppImage`, from before the rename):
 
@@ -235,7 +235,7 @@ Join the [Atech Discord](https://discord.gg/B6kuhUW27S) to meet other Atech
 builders, show what you made and get help. You can always mail anyone on the
 team (see [atech.dev](https://atech.dev)), or write to
 [hello@atech.dev](mailto:hello@atech.dev). Bugs and feature requests are also
-welcome as [GitHub issues](https://github.com/atechdotdev/atech-ai-cad/issues).
+welcome as [GitHub issues](https://github.com/atechdotdev/atech-atelier/issues).
 
 ## Troubleshooting
 

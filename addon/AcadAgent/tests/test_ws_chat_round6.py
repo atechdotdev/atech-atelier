@@ -357,7 +357,9 @@ class TestR145ModuleFace(twp.Case):
             return None                     # "could not capture": no turn
         self.patch(capture, "capture_to_panel", fake_c2p)
         self.assertFalse(vision.ask_in_chat(panel=self.p))
-        self.assertEqual(asked, [capture.MODULE_FACE])
+        # R500 supersedes R145 for "Ask about this view": the camera as the
+        # user framed it, also on a board ("Add view" keeps the module face).
+        self.assertEqual(asked, [None])
 
 
 # ------------------------------------------------------------------ R146
@@ -483,6 +485,8 @@ class TestR153Markdown(twp.Case):
             return path
         self.patch(capture, "capture_to_panel", fake_c2p)
         self.assertTrue(vision.ask_in_chat(panel=self.p))
+        self.p.input.setPlainText(vision.DEFAULT_QUESTION)     # R500
+        self.p._on_send()
         self.assertTrue(self.idle())
         answers = [b for b in self.p.findChildren(panel.Bubble)
                    if b.label.objectName() == "AgentText" and b.markdown]

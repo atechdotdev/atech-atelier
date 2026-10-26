@@ -32,6 +32,10 @@ APP_ID = "dev.atech.Atelier"
 DOC_NAME = "atech-atelier"
 PROJECT_LICENSE = "LGPL-2.1-or-later AND CC-BY-NC-4.0"
 OLD_NAMES = ("Atech Studio", "atech-studio", "dev.atech.Studio", "AtechStudio")
+# The macOS build (branding/build_macos.sh) runs this gate too: the same
+# image checks, with Info.plist in place of the AppImage's desktop entry,
+# metainfo and AppRun.
+MACOS = sys.platform == "darwin"
 
 # The embedded interpreter ignores PYTHONDONTWRITEBYTECODE (measured); stop
 # our own imports from writing __pycache__ into the tree we are judging.
@@ -72,8 +76,11 @@ _own_dir = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
 sys.path[:] = [p for p in sys.path
                if os.path.realpath(p or os.curdir) != _own_dir]
 _user_home = os.path.realpath(os.environ.get("HOME") or "/nonexistent")
+# On macOS the build sets FREECAD_USER_HOME to that same empty HOME, and
+# FreeCAD then lists the folder itself, not only folders under it.
 _outside = [p for p in sys.path
             if not inside(p or os.curdir)
+            and os.path.realpath(p or os.curdir) != _user_home
             and not os.path.realpath(p or os.curdir).startswith(_user_home + os.sep)]
 row("sys.path", "%d entries" % len(sys.path), not _outside,
     "FAIL (outside the image: %s)" % ", ".join(_outside[:3]), key="sys-path")
@@ -223,6 +230,28 @@ try:
         _cp is not None and os.path.realpath(_cp) == os.path.realpath(_want_cp),
         "FAIL (addon resolves %s; the image ships %s)"
         % (_cp, os.path.relpath(_want_cp, home)), key="credits-dialog")
+
+    # The studio.atech.dev look of the board and modules (board_look): every
+    # part's GLB must resolve, and resolve INSIDE the image.
+    from acadagent import board_look as _bl
+    _gd = _bl.glb_dir()
+    _miss = sorted(m for m in _bl.SLUG if _bl.glb_path(m) is None)
+    row("studio look", "%d GLBs" % (len(_bl.SLUG) - len(_miss)),
+        _gd is not None and inside(_gd) and not _miss,
+        "FAIL (%s)" % ("missing: %s" % ", ".join(_miss) if _miss
+                       else "resolves outside the image: %s" % _gd),
+        key="studio-look")
+
+    # R450: the default projects the app comes with: manifest.json lists at
+    # least 6, each file is there with its sha256, all inside the image.
+    from acadagent import default_projects as _dp
+    _dpd = _dp.shipped_dir()
+    _dp_ok, _dp_why = _dp.check_shipped(_dpd)
+    row("default projects", _dp_why[:22] if _dp_ok else "manifest.json",
+        _dp_ok and inside(_dpd),
+        "FAIL (%s)" % (_dp_why if not _dp_ok
+                       else "resolves outside the image: %s" % _dpd),
+        key="default-projects")
 except Exception as e:                                   # noqa: BLE001
     row("addon import", "acadagent", False, "FAIL (%s)" % e, key="addon")
 
@@ -247,7 +276,7 @@ except Exception as e:                                   # noqa: BLE001
     row("mcp autostart", "settings", False, "FAIL (%s)" % e, key="mcp-settings")
 
 # ------------------------------------------------ notices and docs (R01-R06)
-top = os.path.dirname(home)                  # squashfs-root
+top = os.path.dirname(home)                  # squashfs-root (macOS: Contents)
 doc_dir = os.path.join(home, "share", "doc", DOC_NAME)
 for rel in ("README.md", "CREDITS.md", "ATECH_CHANGES.txt", "SOURCE_OFFER.txt",
             "third_party/NOTICE.third_party",
@@ -305,59 +334,94 @@ row("mcp licence", "Mod/FreeCADMCP/LICENSE", ok, "FAIL (missing MIT text)",
     key="mcp-licence")
 
 # ------------------------------------------------ desktop integration (R38)
-upstream_ids = [p for p in ("share/applications/org.freecad.FreeCAD.desktop",
-                            "share/metainfo/org.freecad.FreeCAD.metainfo.xml",
-                            "../org.freecad.FreeCAD.desktop")
-                if os.path.exists(os.path.join(home, p))]
-row("desktop", "no upstream entries", not upstream_ids,
-    "FAIL (%s)" % ", ".join(upstream_ids), key="upstream-desktop")
 DESKTOP_SHARE = os.path.join(home, "share", "applications", APP_ID + ".desktop")
 DESKTOP_ROOT = os.path.join(top, APP_ID + ".desktop")
 METAINFO = os.path.join(home, "share", "metainfo", APP_ID + ".metainfo.xml")
-for p in (DESKTOP_SHARE, METAINFO):
-    row("desktop", os.path.basename(p), os.path.isfile(p),
-        "FAIL (missing)", key="desktop:" + os.path.relpath(p, home))
-row("desktop", "root .desktop", os.path.isfile(DESKTOP_ROOT),
-    "FAIL (missing)", key="desktop:root")
-
-# The AppImage runtime and appimaged need: one top-level .desktop, an icon at
-# the top level whose basename is Icon=, and .DirIcon resolving to it.
-_root_desktops = sorted(f for f in os.listdir(top) if f.endswith(".desktop"))
-row("desktop", "one top-level .desktop", _root_desktops == [APP_ID + ".desktop"],
-    "FAIL (%s)" % _root_desktops, key="desktop:root-unique")
-_dt = _read(DESKTOP_ROOT)
-_icon = re.search(r"^Icon=(.+)$", _dt, re.M) if _dt else None
-_icon = _icon.group(1).strip() if _icon else None
-row("desktop", "Icon=%s" % _icon,
-    _icon == APP_ID and os.path.isfile(os.path.join(top, APP_ID + ".svg")),
-    "FAIL (want Icon=%s with %s.svg at the top level)" % (APP_ID, APP_ID),
-    key="desktop:icon")
-_di = os.path.join(top, ".DirIcon")
-row("desktop", ".DirIcon",
-    os.path.islink(_di) and os.readlink(_di) == APP_ID + ".svg"
-    and os.path.isfile(_di),
-    "FAIL (want a link to %s.svg)" % APP_ID, key="desktop:diricon")
-for _name, _p in (("root", DESKTOP_ROOT), ("share", DESKTOP_SHARE)):
-    _t = _read(_p)
-    row("desktop", "Name= (%s)" % _name,
-        re.search(r"^Name=%s$" % re.escape(PRODUCT), _t, re.M) is not None,
-        "FAIL (Name is not %s)" % PRODUCT, key="desktop:name:" + _name)
-
-# AppStream: the id, the launchable and the licence the owner decided.
+INFO_PLIST = os.path.join(top, "Info.plist")
 try:
-    import xml.etree.ElementTree as _ET
-    _mi = _ET.parse(METAINFO).getroot()
-    _got = {"id": (_mi.findtext("id") or "").strip(),
-            "name": (_mi.findtext("name") or "").strip(),
-            "project_license": (_mi.findtext("project_license") or "").strip(),
-            "launchable": (_mi.findtext("launchable") or "").strip()}
-    _exp = {"id": APP_ID, "name": PRODUCT, "project_license": PROJECT_LICENSE,
-            "launchable": APP_ID + ".desktop"}
-    for _k in sorted(_exp):
-        row("metainfo", "%s=%s" % (_k, _got[_k])[:22], _got[_k] == _exp[_k],
-            "FAIL (want %r)" % _exp[_k], key="metainfo:" + _k)
-except Exception as e:                                   # noqa: BLE001
-    row("metainfo", "parse", False, "FAIL (%s)" % e, key="metainfo")
+    import plistlib as _plistlib
+    with open(INFO_PLIST, "rb") as _fh:
+        _plist = _plistlib.load(_fh)
+except (OSError, ValueError):
+    _plist = {}
+if not MACOS:
+    upstream_ids = [p for p in ("share/applications/org.freecad.FreeCAD.desktop",
+                                "share/metainfo/org.freecad.FreeCAD.metainfo.xml",
+                                "../org.freecad.FreeCAD.desktop")
+                    if os.path.exists(os.path.join(home, p))]
+    row("desktop", "no upstream entries", not upstream_ids,
+        "FAIL (%s)" % ", ".join(upstream_ids), key="upstream-desktop")
+    for p in (DESKTOP_SHARE, METAINFO):
+        row("desktop", os.path.basename(p), os.path.isfile(p),
+            "FAIL (missing)", key="desktop:" + os.path.relpath(p, home))
+    row("desktop", "root .desktop", os.path.isfile(DESKTOP_ROOT),
+        "FAIL (missing)", key="desktop:root")
+
+    # The AppImage runtime and appimaged need: one top-level .desktop, an icon at
+    # the top level whose basename is Icon=, and .DirIcon resolving to it.
+    _root_desktops = sorted(f for f in os.listdir(top) if f.endswith(".desktop"))
+    row("desktop", "one top-level .desktop", _root_desktops == [APP_ID + ".desktop"],
+        "FAIL (%s)" % _root_desktops, key="desktop:root-unique")
+    _dt = _read(DESKTOP_ROOT)
+    _icon = re.search(r"^Icon=(.+)$", _dt, re.M) if _dt else None
+    _icon = _icon.group(1).strip() if _icon else None
+    row("desktop", "Icon=%s" % _icon,
+        _icon == APP_ID and os.path.isfile(os.path.join(top, APP_ID + ".svg")),
+        "FAIL (want Icon=%s with %s.svg at the top level)" % (APP_ID, APP_ID),
+        key="desktop:icon")
+    _di = os.path.join(top, ".DirIcon")
+    row("desktop", ".DirIcon",
+        os.path.islink(_di) and os.readlink(_di) == APP_ID + ".svg"
+        and os.path.isfile(_di),
+        "FAIL (want a link to %s.svg)" % APP_ID, key="desktop:diricon")
+    for _name, _p in (("root", DESKTOP_ROOT), ("share", DESKTOP_SHARE)):
+        _t = _read(_p)
+        row("desktop", "Name= (%s)" % _name,
+            re.search(r"^Name=%s$" % re.escape(PRODUCT), _t, re.M) is not None,
+            "FAIL (Name is not %s)" % PRODUCT, key="desktop:name:" + _name)
+
+    # AppStream: the id, the launchable and the licence the owner decided.
+    try:
+        import xml.etree.ElementTree as _ET
+        _mi = _ET.parse(METAINFO).getroot()
+        _got = {"id": (_mi.findtext("id") or "").strip(),
+                "name": (_mi.findtext("name") or "").strip(),
+                "project_license": (_mi.findtext("project_license") or "").strip(),
+                "launchable": (_mi.findtext("launchable") or "").strip()}
+        _exp = {"id": APP_ID, "name": PRODUCT, "project_license": PROJECT_LICENSE,
+                "launchable": APP_ID + ".desktop"}
+        for _k in sorted(_exp):
+            row("metainfo", "%s=%s" % (_k, _got[_k])[:22], _got[_k] == _exp[_k],
+                "FAIL (want %r)" % _exp[_k], key="metainfo:" + _k)
+    except Exception as e:                                   # noqa: BLE001
+        row("metainfo", "parse", False, "FAIL (%s)" % e, key="metainfo")
+else:
+    # The macOS bundle: Contents/Info.plist carries the identity a Linux
+    # build puts in the desktop entry and metainfo; the Finder icon is
+    # Resources/<CFBundleIconFile>; FreeCAD's own document-type claims are
+    # demoted so the app never takes .FCStd from an installed FreeCAD.
+    _pl = _plist
+    for _k, _v in (("CFBundleIdentifier", APP_ID), ("CFBundleName", PRODUCT),
+                   ("CFBundleDisplayName", PRODUCT), ("CFBundleExecutable", "FreeCAD")):
+        row("Info.plist", "%s=%s" % (_k, _pl.get(_k))[:22], _pl.get(_k) == _v,
+            "FAIL (want %r)" % _v, key="plist:" + _k)
+    _icns = os.path.join(home, _pl.get("CFBundleIconFile") or "<none>")
+    row("Info.plist", "icon %s" % os.path.basename(_icns),
+        _icns.endswith(".icns") and os.path.isfile(_icns)
+        and "freecad" not in os.path.basename(_icns).lower(),
+        "FAIL (missing, or FreeCAD's icon)", key="plist:icon")
+    _claims = [t for d in _pl.get("CFBundleDocumentTypes") or []
+               for t in d.get("CFBundleTypeExtensions") or []
+               if d.get("LSHandlerRank") != "Alternate"
+               or d.get("LSIsAppleDefaultForType")]
+    row("Info.plist", "documents: Alternate", not _claims,
+        "FAIL (claims %s as owner)" % _claims, key="plist:doc-rank")
+    row("Info.plist", "no exported FreeCAD UTI",
+        not _pl.get("UTExportedTypeDeclarations"),
+        "FAIL (exports FreeCAD's type)", key="plist:uti")
+    row("Info.plist", "copyright",
+        "FreeCAD" in (_pl.get("NSHumanReadableCopyright") or ""),
+        "FAIL (does not credit FreeCAD)", key="plist:copyright")
 
 # The previous product name must not survive in any file name the build
 # controls: the top level, the doc dir, the desktop/metainfo dirs, the themes.
@@ -400,7 +464,8 @@ _pii_roots = [os.path.join(home, "Mod", "AcadAgent"),
               os.path.join(home, "Mod", "FreeCADMCP"), doc_dir,
               os.path.join(home, "bin", "branding.xml"),
               os.path.join(home, "bin", "atech_user_template.cfg"),
-              os.path.join(top, "AppRun"), DESKTOP_ROOT, DESKTOP_SHARE, METAINFO]
+              os.path.join(top, "AppRun"), DESKTOP_ROOT, DESKTOP_SHARE, METAINFO,
+              INFO_PLIST]
 _pii_hits, _pii_n = [], 0
 for _r in _pii_roots:
     _files = ([_r] if os.path.isfile(_r) else
@@ -425,12 +490,16 @@ row("personal data", "%d files" % _pii_n, _pii_n > 0 and not _pii_hits,
 # stamped agrees with every other -- and that none was skipped.
 _re = re
 _versions = {}
-for _name, _p in (("desktop:root", DESKTOP_ROOT), ("desktop:share", DESKTOP_SHARE)):
-    _m = _re.search(r"^X-AppImage-Version=(\S+)$", _read(_p), _re.M)
-    _versions[_name] = _m.group(1) if _m else None
-_m = _re.search(r'<release version="([^"]+)" date="\d{4}-\d{2}-\d{2}"',
-                _read(METAINFO))
-_versions["metainfo"] = _m.group(1) if _m else None
+if not MACOS:
+    for _name, _p in (("desktop:root", DESKTOP_ROOT), ("desktop:share", DESKTOP_SHARE)):
+        _m = _re.search(r"^X-AppImage-Version=(\S+)$", _read(_p), _re.M)
+        _versions[_name] = _m.group(1) if _m else None
+    _m = _re.search(r'<release version="([^"]+)" date="\d{4}-\d{2}-\d{2}"',
+                    _read(METAINFO))
+    _versions["metainfo"] = _m.group(1) if _m else None
+else:
+    _versions["Info.plist short"] = _plist.get("CFBundleShortVersionString")
+    _versions["Info.plist"] = _plist.get("CFBundleVersion")
 _m = _re.search(r"^Version\s+(\S+)$",
                 _read(os.path.join(doc_dir, "ATECH_CHANGES.txt")),
                 _re.M)
@@ -453,24 +522,25 @@ row("branding", "no Atech CAD assets", not _stale,
     "FAIL (%s)" % ", ".join(_stale), key="stale-brand")
 
 # ------------------------------------------------ AppRun env snapshot (R61)
-_apprun = _read(os.path.join(top, "AppRun"))
-_snap = "# --- Atech: pre-AppRun environment snapshot (release PRD R61) ---"
-_first_export = _apprun.find("\nexport ")
-row("apprun", "env snapshot first",
-    _snap in _apprun and 0 <= _apprun.find(_snap) < _first_export,
-    "FAIL (missing, or after an upstream export)", key="apprun-env-snapshot")
-# ADR-005: the profile copy from the previous name runs before FreeCAD, and
-# before the backend block creates the new data folder for its log.
-_mig = _apprun.find("\natech_migrate_tree()")
-_agent = _apprun.find("\natech_cleanup()")
-_launch = _apprun.find('\n"${MAIN}" "$@"')
-row("apprun", "profile migration",
-    0 <= _mig < _agent < _launch and 'ATECH_NEW_NAME="%s"' % PRODUCT in _apprun,
-    "FAIL (missing, misplaced, or not migrating to %r)" % PRODUCT,
-    key="apprun-migration")
-row("apprun", "backend log dir",
-    "/%s/v1-1\"" % PRODUCT in _apprun,
-    "FAIL (agent log dir is not under %s)" % PRODUCT, key="apprun-logdir")
+if not MACOS:
+    _apprun = _read(os.path.join(top, "AppRun"))
+    _snap = "# --- Atech: pre-AppRun environment snapshot (release PRD R61) ---"
+    _first_export = _apprun.find("\nexport ")
+    row("apprun", "env snapshot first",
+        _snap in _apprun and 0 <= _apprun.find(_snap) < _first_export,
+        "FAIL (missing, or after an upstream export)", key="apprun-env-snapshot")
+    # ADR-005: the profile copy from the previous name runs before FreeCAD, and
+    # before the backend block creates the new data folder for its log.
+    _mig = _apprun.find("\natech_migrate_tree()")
+    _agent = _apprun.find("\natech_cleanup()")
+    _launch = _apprun.find('\n"${MAIN}" "$@"')
+    row("apprun", "profile migration",
+        0 <= _mig < _agent < _launch and 'ATECH_NEW_NAME="%s"' % PRODUCT in _apprun,
+        "FAIL (missing, misplaced, or not migrating to %r)" % PRODUCT,
+        key="apprun-migration")
+    row("apprun", "backend log dir",
+        "/%s/v1-1\"" % PRODUCT in _apprun,
+        "FAIL (agent log dir is not under %s)" % PRODUCT, key="apprun-logdir")
 
 # ------------------------------------------------------------ template
 tpl = os.path.join(home, "bin", "atech_user_template.cfg")

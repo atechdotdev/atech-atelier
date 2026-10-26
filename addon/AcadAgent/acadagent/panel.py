@@ -21,7 +21,19 @@ signatures without telling the callers:
         Send `text` as a chat turn, as if typed (vision.ask_in_chat, R36).
     AgentPanel.new_chat() -> bool
         Clear the transcript and start a fresh chat for the active document
-        (R70). Bodies already built stay in the document.
+        (R70). Bodies already built stay in the document. R500: the chat it
+        replaces is kept in the project's past chats (past_chats(),
+        open_past_chat(index)).
+    AgentPanel.open_view_question(paths) -> bool
+        R500 "Ask about this view": the composer opens with the captures
+        attached, the draft kept; the next send runs read-only.
+    AgentPanel.start_from_example(path, title) -> ChatState | None
+        R500: shell.open_example's hand-over - a new project whose chat's
+        model.py is the example, built through the chat.
+    AgentPanel.focus_composer() -> bool
+        R500: Cmd+L (shell.SHORTCUTS "focus_chat").
+    AgentPanel.go_back_to_build(n) -> bool
+        R500: rebuild kept build n ("Go back to this build").
 
 NO RAW EXCEPTION EVER REACHES THIS PANEL. Exception text goes to
 FreeCAD.Console.PrintLog(); the user gets a Notice with a next step.
@@ -33,12 +45,14 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 import traceback
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import build, client, engine, settings as cfgmod, style
+from . import projects_store
 
 PAD = 16
 
@@ -93,6 +107,7 @@ PANEL_QSS = """
 
 #Context {{ background: {panel}; }}
 #DocName {{ color: {text}; font-size: 13px; font-weight: 600; }}
+#DocUnsaved {{ color: {warn}; font-size: 11px; }}
 #DocMeta {{ color: {dim}; font-size: 11px; }}
 #StateText {{ color: {muted}; font-size: 11px; }}
 
@@ -201,8 +216,18 @@ def FreeCAD_doc_obj(doc_name, name):
 
 
 def _repolish(w):
-    w.style().unpolish(w)
-    w.style().polish(w)
+    """Re-apply the style sheet after an objectName/property change. R512:
+    MEASURED in long offscreen runs (a settings dialog's style-sheet styles
+    deleted earlier), w.style() came back as a stale wrapper of another
+    type (a QWidgetItem) and raised AttributeError mid-turn; then the
+    style sheet is re-set instead, which re-polishes the widget too."""
+    st = w.style()
+    if hasattr(st, "unpolish") and hasattr(st, "polish"):
+        st.unpolish(w)
+        st.polish(w)
+    else:
+        w.setStyleSheet(w.styleSheet())
+    w.update()
 
 
 def _logo_label(height):
@@ -475,6 +500,38 @@ class ToolCard(QtWidgets.QFrame):
         self._stall_fn = None
         self._stall_stop_fn = None
         lay.addWidget(self.stall_row)
+
+    def set_action(self, text, fn, tip=""):
+        """R500: one action button under the card ("Go back to this
+        build"); text "" removes it."""
+        btn = getattr(self, "action_btn", None)
+        if not text:
+            if btn is not None:
+                btn.hide()
+            self._action_fn = None
+            return None
+        if btn is None:
+            btn = QtWidgets.QPushButton(text)
+            btn.setObjectName("NoticeBtn")
+            btn.setCursor(QtCore.Qt.PointingHandCursor)
+            btn.clicked.connect(self._on_action)
+            row = QtWidgets.QHBoxLayout()
+            row.setContentsMargins(0, 2, 0, 0)
+            row.addWidget(btn)
+            row.addStretch(1)
+            self.layout().addLayout(row)
+            self.action_btn = btn
+        btn.setText(text)
+        btn.setAccessibleName(text)
+        btn.setToolTip(tip or text)
+        btn.show()
+        self._action_fn = fn
+        return btn
+
+    def _on_action(self):
+        fn = getattr(self, "_action_fn", None)
+        if fn is not None:
+            fn()
 
     def set_note(self, text):
         """The card's caveat line (R127) in the warning style; "" hides
@@ -1229,10 +1286,12 @@ class ClaudeProbe(QtCore.QThread):
 
 class ChatState(object):
     """One document's chat: its workspace, last good build and Claude
-    session (R17). Keyed by the document's Uid in AgentPanel._docs."""
+    session (R17). Keyed by the document's project id (R365:
+    projects_store.doc_key, AtechProjectId, kept equal to doc.Uid) in
+    AgentPanel._docs."""
 
     def __init__(self, key, doc_name, ws, prev=None):
-        self.key = key              # doc.Uid, or NO_DOC until a build lands
+        self.key = key              # project id, or NO_DOC until a build lands
         self.doc_name = doc_name    # FreeCAD document Name at send time
         self.ws = ws
         self.prev = prev            # build.Result.record() of the last good build
@@ -1259,6 +1318,332 @@ class ChatState(object):
         self.adopt_on_first_turn = False
 
 
+# ------------------------------------------- R452: design level checkpoints
+#: A design level that ended on a clean build is kept in the chat workspace
+#: as these files (read-only, never followed through a link). A later level
+#: that still fails after its fix rounds, or whose CLI dies, goes back to
+#: the newest one below it, so a bad level never loses the product.
+LEVEL_CKPT_MODEL = ".atech_level%d_model.py"
+LEVEL_CKPT_INTENT = ".atech_level%d_intent.json"
+
+
+def _read_regular(path):
+    """The bytes of `path` when it is a regular file (a link is refused,
+    O_NOFOLLOW), else None."""
+    try:
+        if os.path.islink(path) or not os.path.isfile(path):
+            return None
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with os.fdopen(fd, "rb") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
+def _write_file(path, data, mode=0o644):
+    """Write `data` to `path` through a fresh temp file (O_EXCL|O_NOFOLLOW;
+    a link at either name is removed, never followed)."""
+    if os.path.islink(path):
+        os.unlink(path)
+    tmp = path + ".tmp"
+    if os.path.lexists(tmp):
+        os.unlink(tmp)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(data)
+        os.fchmod(fh.fileno(), mode)
+    os.replace(tmp, path)
+
+
+def save_level_checkpoint(ws, level):
+    """R452: keep model.py and intent.json of LEVEL `level` (which just
+    ended on a clean build) as .atech_level<N>_model.py / _intent.json.
+    An old intent checkpoint goes when the level has none. True when
+    saved."""
+    try:
+        code = _read_regular(os.path.join(ws, build.SCRIPT))
+        if code is None:
+            return False
+        _write_file(os.path.join(ws, LEVEL_CKPT_MODEL % level), code, 0o444)
+        intent = _read_regular(os.path.join(ws, build.INTENT))
+        ipath = os.path.join(ws, LEVEL_CKPT_INTENT % level)
+        if intent is not None:
+            _write_file(ipath, intent, 0o444)
+        elif os.path.lexists(ipath):
+            os.unlink(ipath)
+        return True
+    except OSError as exc:
+        _log("level checkpoint %s not saved: %r" % (level, exc))
+        return False
+
+
+def last_level_checkpoint(ws, below):
+    """R452: the highest level under `below` with a checkpoint, or None."""
+    for n in range(int(below) - 1, 0, -1):
+        if _read_regular(os.path.join(ws, LEVEL_CKPT_MODEL % n)) is not None:
+            return n
+    return None
+
+
+def restore_level_checkpoint(ws, level):
+    """R452: put LEVEL `level`'s model.py and intent.json back (an
+    intent.json the failed level added goes). True when restored."""
+    code = _read_regular(os.path.join(ws, LEVEL_CKPT_MODEL % level))
+    if code is None:
+        return False
+    try:
+        _write_file(os.path.join(ws, build.SCRIPT), code)
+        intent = _read_regular(os.path.join(ws, LEVEL_CKPT_INTENT % level))
+        ipath = os.path.join(ws, build.INTENT)
+        if intent is not None:
+            _write_file(ipath, intent)
+        elif os.path.lexists(ipath):
+            os.unlink(ipath)
+        return True
+    except OSError as exc:
+        _log("level checkpoint %s not restored: %r" % (level, exc))
+        return False
+
+
+# --------------------------------------- R500: undo follows the chat
+#: Every final build of a chat that landed is kept in the chat workspace:
+#: its model.py and intent.json as these read-only files, and the list of
+#: builds (with the document's UndoCount right after each one) in
+#: BUILDS_FILE. Build 0 is what the workspace held before the chat's first
+#: build. A FreeCAD undo of an agent build rolls model.py and the panel's
+#: build record back to the build before it; "Go back to this build"
+#: rebuilds a kept one.
+BUILDS_FILE = ".atech_builds.json"
+BUILD_CKPT_MODEL = ".atech_build%d_model.py"
+BUILD_CKPT_INTENT = ".atech_build%d_intent.json"
+BUILDS_MAX = 60
+UNDO_TXNS = (build.BUILD_TXN, build.PREVIEW_TXN)
+GO_BACK_TEXT = "Go back to this build"
+BUILD_UNDONE = "Build undone"
+BUILD_REDONE = "Build redone"
+
+
+def load_builds(ws):
+    """{"builds": [entry], "undone": [entry]} of a chat workspace. An entry
+    is {"n", "undo_count", "record", "hash", "script", "intent", "t"}."""
+    raw = _read_regular(os.path.join(ws, BUILDS_FILE)) if ws else None
+    try:
+        data = json.loads(raw.decode("utf-8")) if raw else {}
+    except (ValueError, UnicodeDecodeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    out = {}
+    for k in ("builds", "undone"):
+        v = data.get(k)
+        out[k] = [e for e in v if isinstance(e, dict) and
+                  isinstance(e.get("n"), int)] if isinstance(v, list) else []
+    return out
+
+
+def save_builds(ws, data):
+    try:
+        _write_file(os.path.join(ws, BUILDS_FILE),
+                    json.dumps(data, indent=1).encode("utf-8"), 0o644)
+        return True
+    except (OSError, TypeError, ValueError) as exc:
+        _log("builds not saved: %r" % (exc,))
+        return False
+
+
+def _clean_record(rec):
+    """A build record as the NEXT build should see it: no live-preview
+    marks (a preview of an earlier turn is that turn's result, R76)."""
+    if not isinstance(rec, dict):
+        return None
+    return {k: v for k, v in rec.items() if k not in ("preview",
+                                                       "undo_count")}
+
+
+def _keep_ckpt(ws, n, code, intent):
+    _write_file(os.path.join(ws, BUILD_CKPT_MODEL % n), code, 0o444) \
+        if code is not None else None
+    ipath = os.path.join(ws, BUILD_CKPT_INTENT % n)
+    if intent is not None:
+        _write_file(ipath, intent, 0o444)
+    elif os.path.lexists(ipath):
+        os.unlink(ipath)
+
+
+def record_build(ws, record, undo_count, built_hash=None, base=None):
+    """R500: keep the build that just landed (model.py and intent.json as
+    they are now) as the next numbered build. `base` (the workspace before
+    the chat's first build: {"script", "intent", "record"}) is kept as
+    build 0 when nothing is kept yet. A new build drops the undone ones.
+    Returns the build's number, or None when it could not be kept."""
+    data = load_builds(ws)
+    try:
+        if not data["builds"] and base is not None:
+            _keep_ckpt(ws, 0, base.get("script"), base.get("intent"))
+            data["builds"].append({
+                "n": 0, "undo_count": None, "hash": None,
+                "record": _clean_record(base.get("record")),
+                "script": base.get("script") is not None,
+                "intent": base.get("intent") is not None, "t": time.time()})
+        n = 1 + max([e["n"] for e in data["builds"] + data["undone"]] or [0])
+        code = _read_regular(os.path.join(ws, build.SCRIPT))
+        intent = _read_regular(os.path.join(ws, build.INTENT))
+        _keep_ckpt(ws, n, code, intent)
+    except OSError as exc:
+        _log("build not kept: %r" % (exc,))
+        return None
+    for e in data["undone"]:
+        _drop_ckpt(ws, e["n"])
+    data["undone"] = []
+    data["builds"].append({"n": n, "undo_count": undo_count,
+                           "record": _clean_record(record),
+                           "hash": built_hash, "script": code is not None,
+                           "intent": intent is not None, "t": time.time()})
+    while len(data["builds"]) > BUILDS_MAX:
+        _drop_ckpt(ws, data["builds"].pop(1)["n"])
+    save_builds(ws, data)
+    return n
+
+
+def _drop_ckpt(ws, n):
+    for pat in (BUILD_CKPT_MODEL, BUILD_CKPT_INTENT):
+        try:
+            path = os.path.join(ws, pat % n)
+            if os.path.lexists(path):
+                os.unlink(path)
+        except OSError:
+            pass
+
+
+def find_build(data, n):
+    for e in data.get("builds", []) + data.get("undone", []):
+        if e.get("n") == n:
+            return e
+    return None
+
+
+def restore_build(ws, entry):
+    """R500: model.py and intent.json of the kept build `entry` back in the
+    workspace (a build that had none removes them). True when restored."""
+    n = entry["n"]
+    code = _read_regular(os.path.join(ws, BUILD_CKPT_MODEL % n))
+    if entry.get("script") and code is None:
+        return False
+    intent = _read_regular(os.path.join(ws, BUILD_CKPT_INTENT % n))
+    try:
+        for name, data in ((build.SCRIPT, code), (build.INTENT, intent)):
+            path = os.path.join(ws, name)
+            if data is not None:
+                _write_file(path, data)
+            elif os.path.lexists(path):
+                os.unlink(path)
+        return True
+    except OSError as exc:
+        _log("build %s not restored: %r" % (n, exc))
+        return False
+
+
+def undo_event(undo_count, undo_names, redo_names, data):
+    """R500: what the user's undo / redo did to the chat's builds.
+
+    ("undo", entry) when the newest kept build's transaction is on the
+    redo stack (the user undid it, maybe after undoing later hand edits);
+    ("redo", entry) when the newest undone build is the newest undo step
+    again; else None. Pure: the counts and names come from the document."""
+    builds = data.get("builds") or []
+    undone = data.get("undone") or []
+    try:
+        undo_count = int(undo_count)
+    except (TypeError, ValueError):
+        return None
+    redo_names = list(redo_names or ())
+    undo_names = list(undo_names or ())
+    if builds:
+        top = builds[-1]
+        u = top.get("undo_count")
+        if isinstance(u, int) and top.get("n", 0) > 0 and undo_count < u:
+            i = u - undo_count - 1
+            if 0 <= i < len(redo_names) and redo_names[i] in UNDO_TXNS:
+                return ("undo", top)
+    if undone:
+        top = undone[-1]
+        u = top.get("undo_count")
+        if isinstance(u, int) and undo_count >= u:
+            i = undo_count - u
+            if 0 <= i < len(undo_names) and undo_names[i] in UNDO_TXNS:
+                return ("redo", top)
+    return None
+
+
+# ------------------------------------------- R500: past chats per project
+#: "New chat" keeps the chat it replaces here, per project id, newest
+#: first: its folder, Claude session, last build and transcript (as data).
+PAST_CHATS_FILE = "past_chats.json"
+PAST_CHATS_MAX = 20
+
+
+def past_chats_path():
+    return os.path.join(cfgmod.chat_workspace_root(), PAST_CHATS_FILE)
+
+
+def load_past_chats(path=None):
+    try:
+        with open(path or past_chats_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_past_chats(data, path=None):
+    path = path or past_chats_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=1)
+        os.replace(tmp, path)
+        return True
+    except (OSError, TypeError, ValueError) as exc:
+        _log("past chats: %r" % (exc,))
+        return False
+
+
+def _plain_transcript(snap):
+    """A transcript snapshot as JSON data: notice actions (callables) are
+    dropped, everything else is kept."""
+    out = {"entries": [], "last_text": (snap or {}).get("last_text") or ""}
+    for e in (snap or {}).get("entries") or []:
+        e = dict(e)
+        if e.get("kind") == "notice":
+            e["actions"] = []
+            e["enabled"] = []
+            e["tag"] = None
+        out["entries"].append(e)
+    return out
+
+
+def chat_title(snap, when=None):
+    """The first thing the user said in a chat, one line, else its date."""
+    for e in (snap or {}).get("entries") or []:
+        if e.get("kind") == "bubble" and e.get("role") == "user":
+            t = " ".join(str(e.get("text") or "").split())
+            if t:
+                return t if len(t) <= 60 else t[:59] + "…"
+    return time.strftime("Chat of %d %b %H:%M", time.localtime(when or
+                                                            time.time()))
+
+
+def rollback_note(restored, failed, why):
+    """R452: the line that starts the next level after a rollback (the
+    harness's run_eval.rollback_note says the same)."""
+    return ("Atelier restored model.py and intent.json to the passing build "
+            "of LEVEL %d: LEVEL %d did not end on a passing build (%s). "
+            "Start this level from that build." % (restored, failed, why))
+
+
 NO_DOC = "__no_document__"
 
 #: Notices about the sample crane failing to load; removed once a crane
@@ -1270,8 +1655,9 @@ CRANE_NOTICE_TITLES = ("Sample crane not available",
 
 # ------------------------------------------------ session store (S07)
 def sessions_path():
-    """{doc Uid: {ws, sid, prev}} across restarts, next to the chat
-    workspaces in the user data dir."""
+    """{project id: {ws, sid, prev, path}} across restarts, next to the
+    chat workspaces in the user data dir (R365: keyed by the project id,
+    which for a file saved before R365 is its old Uid)."""
     return os.path.join(cfgmod.chat_workspace_root(), "sessions.json")
 
 
@@ -1284,10 +1670,12 @@ def load_sessions(path=None):
         return {}
 
 
-def save_session(key, state, path=None):
+def save_session(key, state, path=None, file=None):
     """Persist (or with state=None, forget) one document's chat. Only real
-    document Uids are stored. Never raises: a lost record only costs the
-    next session its --resume."""
+    project ids are stored. Never raises: a lost record only costs the
+    next session its --resume. R365: the record keeps where the project
+    file is ("path": `file`, or what the record already said), which is
+    how a copy is told from the original."""
     if not key or key == NO_DOC:
         return False
     path = path or sessions_path()
@@ -1296,8 +1684,12 @@ def save_session(key, state, path=None):
         if data.pop(key, None) is None:
             return True
     else:
+        old = data.get(key) if isinstance(data.get(key), dict) else {}
         data[key] = {"ws": state.ws, "sid": state.sid, "prev": state.prev,
-                     "doc": state.doc_name, "saved": int(time.time())}
+                     "doc": state.doc_name, "saved": int(time.time()),
+                     "v": 2,
+                     "path": os.path.realpath(file) if file
+                     else old.get("path", "")}
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
@@ -1375,6 +1767,35 @@ class PromptEdit(QtWidgets.QPlainTextEdit):
 
 
 # ----------------------------------------------------------------- panel
+class _QuitGuard(QtCore.QObject):
+    """R368: an event filter on the main window. A close while the agent
+    works asks to confirm (ignored on no); on yes the partial state is
+    saved before FreeCAD's own close runs."""
+
+    def __init__(self, panel, window):
+        super().__init__(window)
+        self._panel = panel
+        self._window = window
+        self.asked = 0
+
+    def eventFilter(self, obj, ev):                    # noqa: N802
+        if obj is not self._window or ev.type() != QtCore.QEvent.Close:
+            return False
+        p = self._panel
+        try:
+            running = p.turn_running()
+        except RuntimeError:                           # panel deleted
+            return False
+        if not running:
+            return False
+        self.asked += 1
+        if not p.confirm_quit():
+            ev.ignore()
+            return True
+        p.save_partial()
+        return False
+
+
 class AgentPanel(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1393,11 +1814,13 @@ class AgentPanel(QtWidgets.QWidget):
         self._last_text = ""        # the last message the user sent (R23)
         self._pending_shots = []    # "Add view" captures for the next turn
         self._shot_captions = {}    # their captions (R138 re-shows them)
-        self._docs = {}             # doc Uid -> ChatState (R17)
+        self._docs = {}             # project id -> ChatState (R17, R365)
         self._shown_key = None      # whose chat the transcript shows (R138)
-        # R190: doc Uid -> the kept transcript of a document not on screen,
-        # as data (Transcript entries, queued shots, last message).
+        # R190: project id -> the kept transcript of a document not on
+        # screen, as data (Transcript entries, queued shots, last message).
         self._transcripts = {}
+        # R366: project ids whose file's saved chat has been read once.
+        self._seeded = set()
         self._fitting = False       # Welcome.fit in progress (R132)
         self._cur = None            # the ChatState of the turn in flight
         self._privacy_ok = False    # acknowledged this session (R02)
@@ -1421,6 +1844,11 @@ class AgentPanel(QtWidgets.QWidget):
         self._preview_intent = None     # ... short of intent.json only (S49)
         self._preview_intent_hash = None    # the script that preview built
         self._turn_budget = None    # --max-budget-usd of the turn (R101)
+        # R500: "Ask about this view" opened the composer with these
+        # captures for this project id: (key, [paths]), or None.
+        self._view_question = None
+        self._view_turn = False     # the turn in flight is a view question
+        self._past = None           # R500: past chats, loaded on first use
         self.stats = {"previews": 0, "previews_skipped": 0,
                       "previews_failed": 0, "pill_updates": 0}
         self.setMinimumWidth(320)
@@ -1431,12 +1859,15 @@ class AgentPanel(QtWidgets.QWidget):
         # signal we might miss (documents open from menus, macros, the RPC).
         self._doc_timer = QtCore.QTimer(self)
         self._doc_timer.timeout.connect(self.refresh_doc_pill)
+        # R500: an undo of an agent build rolls the chat back with it.
+        self._doc_timer.timeout.connect(self._check_undo)
         self._doc_timer.start(800)
         # R93: a sandboxed build runs in its own process group; quitting
         # while one is in flight must not leave it running to its timeout.
         app = QtWidgets.QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._cancel_build)
+        self._install_projects()
 
     # ------------------------------------------------------- PUBLIC HOOKS
     def show_notice(self, title, body, actions=None, detail=None):
@@ -1489,8 +1920,14 @@ class AgentPanel(QtWidgets.QWidget):
         return path
 
     def workspaces(self):
-        """Every chat workspace this panel is using (kept by Clear)."""
-        return [st.ws for st in self._docs.values()]
+        """Every chat workspace this panel is using (kept by Clear), and
+        the past chats of the projects it has open (R500)."""
+        out = [st.ws for st in self._docs.values()]
+        past = self._past_chats()
+        for key in self._docs:
+            out += [c.get("ws") for c in past.get(key) or ()
+                    if isinstance(c, dict) and c.get("ws")]
+        return out
 
     def restyle(self):
         """Re-read the mode and repaint. Called by the shell on theme flips."""
@@ -1535,7 +1972,20 @@ class AgentPanel(QtWidgets.QWidget):
         self.doc_name.setObjectName("DocName")
         self.doc_meta = QtWidgets.QLabel("")
         self.doc_meta.setObjectName("DocMeta")
-        col.addWidget(self.doc_name)
+        # R386: the unsaved dot, as on the project picker (R362).
+        self.doc_unsaved = QtWidgets.QLabel("\u25cf")
+        self.doc_unsaved.setObjectName("DocUnsaved")
+        self.doc_unsaved.setAccessibleName("Unsaved changes")
+        self.doc_unsaved.setToolTip("Unsaved changes. Save with \u2318S or "
+                                    "the Save button.")
+        self.doc_unsaved.setVisible(False)
+        name_row = QtWidgets.QHBoxLayout()
+        name_row.setContentsMargins(0, 0, 0, 0)
+        name_row.setSpacing(6)
+        name_row.addWidget(self.doc_name)
+        name_row.addWidget(self.doc_unsaved, 0, QtCore.Qt.AlignVCenter)
+        name_row.addStretch(1)
+        col.addLayout(name_row)
         col.addWidget(self.doc_meta)
         cl.addLayout(col, 1)
         self.state_dot = Dot()
@@ -1548,6 +1998,12 @@ class AgentPanel(QtWidgets.QWidget):
                                    "Start a new conversation. What is "
                                    "already built stays in the document.")
         cl.addWidget(self.btn_new, 0, QtCore.Qt.AlignVCenter)
+        # R500: the chats "New chat" put aside, for this project.
+        self.btn_past = self._ghost("Past chats", self._on_past_btn,
+                                    "Open an earlier chat of this project")
+        self.btn_past.setAccessibleName("Past chats")
+        self.btn_past.hide()
+        cl.addWidget(self.btn_past, 0, QtCore.Qt.AlignVCenter)
         outer.addWidget(ctx)
 
         # R113: the way back to the script review after "Not now" (or once
@@ -2071,6 +2527,29 @@ class AgentPanel(QtWidgets.QWidget):
     # Kept for callers outside this file (backend.py).
     _on_retry = _probe_backend_again
 
+    def _open_macos_terminal(self, exe):
+        """macOS: run `exe` in Terminal.app through a .command file. `open`
+        needs no Automation permission (an AppleScript `do script` would ask
+        the user to let Atech control Terminal). True when it was opened."""
+        import shlex
+        import tempfile
+        try:
+            fd, path = tempfile.mkstemp(prefix="atech-claude-signin-",
+                                        suffix=".command")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("#!/bin/sh\nrm -f %s\nexec %s\n"
+                         % (shlex.quote(path), shlex.quote(exe)))
+            os.chmod(path, 0o700)
+        except OSError as exc:
+            _log("terminal .command: %r" % (exc,))
+            return False
+        ok = QtCore.QProcess.startDetached("/usr/bin/open", ["-a", "Terminal", path])
+        if isinstance(ok, tuple):
+            ok = ok[0]
+        if ok:
+            _log("opened Terminal running %s" % exe)
+        return bool(ok)
+
     def _open_claude_terminal(self):
         """Run `claude` in a terminal so the user can sign in (R21).
 
@@ -2081,6 +2560,8 @@ class AgentPanel(QtWidgets.QWidget):
         env = QtCore.QProcessEnvironment()
         for k, v in claude_cli._child_env().items():
             env.insert(k, v)
+        if sys.platform == "darwin" and self._open_macos_terminal(exe):
+            return
         for term, args in (("x-terminal-emulator", ["-e", exe]),
                            ("gnome-terminal", ["--", exe]),
                            ("konsole", ["-e", exe]),
@@ -2135,7 +2616,15 @@ class AgentPanel(QtWidgets.QWidget):
         except Exception:                              # noqa: BLE001
             n = -1
         return (id(doc), getattr(doc, "Name", ""), getattr(doc, "Label", ""),
-                n, docs)
+                n, self._unsaved(doc), docs)
+
+    @staticmethod
+    def _unsaved(doc):
+        """R386: the active project has unsaved changes (projects_store)."""
+        try:
+            return bool(projects_store.is_modified(doc))
+        except Exception:                              # noqa: BLE001
+            return False
 
     def refresh_doc_pill(self, force=False):
         """The context line MEASURES the document; it never asserts one.
@@ -2153,6 +2642,11 @@ class AgentPanel(QtWidgets.QWidget):
             return
         self._pill_sig = sig
         self.stats["pill_updates"] += 1
+        unsaved = doc is not None and self._unsaved(doc)
+        if self.doc_unsaved.isVisibleTo(self) != unsaved:
+            self.doc_unsaved.setVisible(unsaved)
+        self.doc_name.setAccessibleDescription(
+            "Unsaved changes" if unsaved else "")
         if doc is None:
             self.doc_name.setText("No document")
             self.doc_meta.setText("Nothing open")
@@ -2168,6 +2662,7 @@ class AgentPanel(QtWidgets.QWidget):
         self._drop_stale_crane_notices(sig[-1])
         self._check_untrusted(doc)      # R98
         self._sync_review_btn(doc)      # R113
+        self._sync_past_btn(doc)        # R500
         # The welcome follows the document: swap it when one opens or closes,
         # but only while the transcript is still empty.
         if (followed and not self._has_messages) or (
@@ -2460,12 +2955,23 @@ class AgentPanel(QtWidgets.QWidget):
                 b.setEnabled(False)
 
     # ------------------------------------------------ Claude Code + build
-    MAX_FIX_ATTEMPTS = 2
+    #: R230: automatic fix turns after a failed final build - 2 in fast
+    #: mode, 5 in quality mode (build.quality_mode: a detailed product has
+    #: more booleans that can fail at the end).
+    FAST_MAX_FIX_ATTEMPTS, QUALITY_MAX_FIX_ATTEMPTS = 2, 5
+
+    @property
+    def MAX_FIX_ATTEMPTS(self):
+        return (self.QUALITY_MAX_FIX_ATTEMPTS if build.quality_mode()
+                else self.FAST_MAX_FIX_ATTEMPTS)
 
     def _doc_key(self, doc):
+        """R365: the document's project id (AtechProjectId, stamped from its
+        Uid on first use and new for a Save As / copy), not its raw Uid:
+        FreeCAD copies the Uid into every copy of a file."""
         if doc is None:
             return NO_DOC
-        return getattr(doc, "Uid", None) or getattr(doc, "Name", NO_DOC)
+        return projects_store.doc_key(doc) or getattr(doc, "Name", NO_DOC)
 
     def _state_for(self, doc):
         """The chat state of `doc`, created (and adopted) on first use.
@@ -2502,6 +3008,9 @@ class AgentPanel(QtWidgets.QWidget):
             return state
         state = ChatState(key, getattr(doc, "Name", None),
                           build.new_workspace())
+        # R366: a file that carries its chat gets its views and brief back
+        # (never model.py: adopt below loads a script only if trusted).
+        self._unpack_file_chat(doc, key, state.ws)
         if doc is not None:
             try:
                 state.prev = build.adopt(doc, state.ws)
@@ -2654,6 +3163,11 @@ class AgentPanel(QtWidgets.QWidget):
         if not isinstance(rec, dict):
             return None
         ws = rec.get("ws")
+        if isinstance(ws, str) and not os.path.isdir(ws):
+            # R366: the chat folder was cleared but the file carries the
+            # chat: the same folder again, so the agent's session (stored
+            # per working folder) can still resume.
+            ws = self._recreate_ws(ws, doc, key)
         if not isinstance(ws, str) or not os.path.isdir(ws):
             return None
         state = ChatState(key, doc.Name, ws,
@@ -2671,9 +3185,256 @@ class AgentPanel(QtWidgets.QWidget):
         return state
 
     def _remember(self, state):
-        """S07: persist this chat so a restart can pick it up."""
+        """S07: persist this chat so a restart can pick it up (R365: with
+        where its project file is)."""
         if state is not None and state.key != NO_DOC:
-            save_session(state.key, state)
+            doc = self._state_doc(state)
+            save_session(state.key, state,
+                         file=getattr(doc, "FileName", "") or None
+                         if doc is not None else None)
+
+    # ------------------------------------- projects (R363, R365, R366, R368)
+    def _install_projects(self):
+        """The project lifecycle hooks: projects_store asks this panel for
+        a document's chat when the file is saved (R366) and tells it when
+        a document got a new project id (R365); the 60 s autosave and the
+        save observer start (R363); quitting mid-turn asks first (R368).
+        Outside FreeCAD (tests with a stub) only the two callbacks are
+        registered."""
+        projects_store.set_chat_provider(self._chat_for_file)
+        projects_store.add_rekey_listener(self._on_project_rekey)
+        try:
+            if projects_store.install():
+                import FreeCADGui
+                mw = FreeCADGui.getMainWindow()
+                if mw is not None:
+                    self.install_quit_guard(mw)
+        except Exception as exc:                       # noqa: BLE001
+            _log("projects: %r" % (exc,))
+
+    def _chat_for_file(self, doc):
+        """R366: what of this document's chat goes into its file, or None
+        when this panel holds nothing newer than the file (a chat not read
+        from the file yet is never overwritten with an empty one)."""
+        key = self._doc_key(doc)
+        if key == NO_DOC:
+            return None
+        state = self._docs.get(key)
+        if key == self._shown_key:
+            snap = self._snapshot(key)
+        elif key in self._transcripts:
+            snap = self._transcripts[key]
+        elif state is not None and key in self._seeded:
+            snap = {"entries": []}
+        else:
+            return None
+        if key not in self._seeded and not snap.get("entries") and \
+                projects_store.read_doc_chat(doc):
+            return None
+        return {"transcript": snap,
+                "ws": state.ws if state is not None else None}
+
+    def _file_chat(self, doc, key):
+        if key == NO_DOC or doc is None:
+            return None
+        try:
+            return projects_store.read_doc_chat(doc)
+        except Exception as exc:                       # noqa: BLE001
+            _log("chat in file: %r" % (exc,))
+            return None
+
+    def _unpack_file_chat(self, doc, key, ws, bundle=None):
+        """R366: the file's captured views (and, for a project this
+        computer knows, its intent.json) into the chat folder `ws`."""
+        bundle = bundle or self._file_chat(doc, key)
+        if not bundle:
+            return None
+        try:
+            return projects_store.unpack_chat(
+                bundle, ws, allow_intent=projects_store.is_local(key))
+        except Exception as exc:                       # noqa: BLE001
+            _log("unpack chat: %r" % (exc,))
+            return None
+
+    def _recreate_ws(self, ws, doc, key):
+        """The cleared chat folder `ws` again, filled from the file, when
+        the file carries a chat and `ws` is one of ours. Else None."""
+        bundle = self._file_chat(doc, key)
+        root = os.path.realpath(cfgmod.chat_workspace_root())
+        if not bundle or os.path.dirname(os.path.realpath(ws)) != root or \
+                not os.path.basename(ws).startswith("chat-"):
+            return None
+        try:
+            os.makedirs(ws, exist_ok=True)
+        except OSError as exc:
+            _log("recreate %s: %r" % (ws, exc))
+            return None
+        self._unpack_file_chat(doc, key, ws, bundle)
+        return ws
+
+    def _seed_transcript(self, doc, key):
+        """R366: once per project, the transcript saved in its file becomes
+        the document's kept transcript (drawn when it is shown), unless
+        this session already holds one for it."""
+        if doc is None or key == NO_DOC or key in self._seeded:
+            return False
+        self._seeded.add(key)
+        if key in self._transcripts:
+            return False
+        bundle = self._file_chat(doc, key)
+        if not bundle or not (bundle.get("transcript") or {}).get("entries"):
+            return False
+        had = self._has_messages
+        try:
+            state = self._state_for(doc)    # may post the review (R98)
+            kept = self._unpack_file_chat(doc, key, state.ws, bundle)
+        except Exception as exc:                       # noqa: BLE001
+            _log("seed transcript: %r" % (exc,))
+            return False
+        if not kept or not kept.get("entries"):
+            return False
+        shown = self._shown_key
+        if shown == key and had:
+            return False                # this session's chat wins
+        if shown in (None, key):
+            self._restore(kept)
+            # A script review posted while reading stays the last word.
+            n = getattr(state, "review_notice", None)
+            if n is not None and self.stream.indexOf(n) >= 0:
+                self.stream.removeWidget(n)
+                self.stream.insertWidget(self.stream.count() - 1, n)
+            self._shown_key = key
+            self._follow = True
+            QtCore.QTimer.singleShot(0, self._scroll_bottom)
+        else:
+            self._transcripts[key] = kept
+        _log("chat of %s read from its file (%d entries)"
+             % (getattr(doc, "Name", "?"), len(kept["entries"])))
+        return True
+
+    def _on_project_rekey(self, old, new, doc, reason):
+        """R365: a Save As gave the open document a new project id; its
+        chat moves with it (the old file keeps the chat saved in it, and
+        its record is dropped so it never shares this chat folder). A copy
+        opened beside its original gets a new id before any chat state
+        exists for it: nothing to move."""
+        if reason != "save_as" or old == new:
+            return
+        state = self._docs.pop(old, None)
+        if state is not None:
+            state.key = new
+            if isinstance(state.prev, dict):
+                state.prev = dict(state.prev, uid=new)
+            self._docs[new] = state
+        if old in self._transcripts:
+            self._transcripts[new] = self._transcripts.pop(old)
+        if old in self._seeded:
+            self._seeded.add(new)
+        if self._shown_key == old:
+            self._shown_key = new
+        save_session(old, None)
+        if state is not None:
+            save_session(new, state, file=getattr(doc, "FileName", "")
+                         or None)
+
+    # hand edits and measurements across builds (R387) ------------------
+    def _capture_hand_edits(self, state):
+        """Before a build: record the colour, see-through, visibility and
+        moves the user gave the agent's parts by hand
+        (export_tools.capture_overrides; an exploded view is put back
+        first, never recorded as a move)."""
+        doc = self._state_doc(state)
+        if doc is None:
+            return None
+        try:
+            from . import export_tools
+            return export_tools.capture_overrides(doc)
+        except Exception as exc:                       # noqa: BLE001
+            _log("hand edits before build: %r" % (exc,))
+            return None
+
+    def _reapply_hand_edits(self, state, preview=False):
+        """After a build landed (its colours are on): put each hand edit
+        back on the new part with the same label. After the FINAL build the
+        kept measurements are re-measured against the new parts too
+        (measure.refresh), once the GUI is idle."""
+        doc = self._state_doc(state)
+        if doc is None:
+            return None
+        applied = None
+        try:
+            from . import export_tools
+            applied = export_tools.reapply_overrides(doc)
+        except Exception as exc:                       # noqa: BLE001
+            _log("hand edits after build: %r" % (exc,))
+        if not preview:
+            def remeasure(d=doc):
+                try:
+                    from . import measure
+                    measure.refresh(d)
+                except Exception as exc:               # noqa: BLE001
+                    _log("measurements after build: %r" % (exc,))
+            QtCore.QTimer.singleShot(0, remeasure)
+        return applied
+
+    def _autosave_after_build(self, state):
+        """R363: a final build that landed is saved with its project (and
+        the chat with it), once the reply is on screen."""
+        def run():
+            doc = self._state_doc(state)
+            if doc is not None:
+                projects_store.request_save(doc)
+        QtCore.QTimer.singleShot(0, run)
+
+    # quit guard (R368) ------------------------------------------------
+    def install_quit_guard(self, window):
+        """Closing `window` (the main window: Cmd+Q, the close button) while
+        the agent works asks first; on yes the turn stops and the chat and
+        open projects are saved."""
+        guard = _QuitGuard(self, window)
+        window.installEventFilter(guard)
+        self._quit_guard = guard
+        return guard
+
+    def turn_running(self):
+        return bool(self._busy or self._pending is not None)
+
+    def confirm_quit(self):
+        """True: quit. Tests replace ask_quit."""
+        ask = getattr(self, "ask_quit", None)
+        if callable(ask):
+            return bool(ask())
+        box = QtWidgets.QMessageBox(self.window())
+        box.setIcon(QtWidgets.QMessageBox.Warning)
+        box.setWindowTitle("The agent is still working")
+        box.setText("The agent is still working. Quit anyway?")
+        box.setInformativeText(
+            "The turn stops now. The chat so far and the parts already "
+            "built are saved with the project.")
+        quit_btn = box.addButton("Stop and quit",
+                                 QtWidgets.QMessageBox.DestructiveRole)
+        keep = box.addButton("Keep working",
+                             QtWidgets.QMessageBox.RejectRole)
+        box.setDefaultButton(keep)
+        box.exec()
+        return box.clickedButton() is quit_btn
+
+    def save_partial(self):
+        """R368: stop the turn, keep its chat records and save the open
+        projects that have a file (their chat goes into them)."""
+        try:
+            if self._busy:
+                self._on_stop()
+            self._cancel_build()
+        except Exception as exc:                       # noqa: BLE001
+            _log("stop on quit: %r" % (exc,))
+        for st in list(self._docs.values()):
+            self._remember(st)
+        try:
+            return projects_store.save_open_projects()
+        except Exception as exc:                       # noqa: BLE001
+            _log("save on quit: %r" % (exc,))
+            return []
 
     def _state_doc(self, state):
         """The live document a state belongs to, or None if it was closed."""
@@ -2683,7 +3444,7 @@ class AgentPanel(QtWidgets.QWidget):
             import FreeCAD
             for name in FreeCAD.listDocuments():
                 d = FreeCAD.getDocument(name)
-                if getattr(d, "Uid", None) == state.key or (
+                if projects_store.doc_id(d) == state.key or (
                         not getattr(d, "Uid", None) and name == state.key):
                     return d
         except Exception:                              # noqa: BLE001
@@ -2725,11 +3486,54 @@ class AgentPanel(QtWidgets.QWidget):
         r"\bmodules?\b[^.\n]{0,40}\bboard\b|\bboard\b[^.\n]{0,40}\bmodules?\b",
         re.I)
 
+    def _show_board_first(self, doc):
+        """R281: in CAD + electronics mode (hw_mode, the top bar's switch) a
+        design starts from the real 14-port board: it is put in the
+        document and shown BEFORE the agent writes anything, and the agent
+        builds the CAD around it (its model.py's ap.board_object(doc) finds
+        this board instead of making one). One undo step; never on a fix
+        turn; nothing when a board is already there, in CAD only mode, or
+        without the module library. Returns the board placed, or None."""
+        try:
+            from . import hw_mode
+            if doc is None or not hw_mode.electronics() \
+                    or not build.library_available():
+                return None
+            if any(getattr(o, "AtechRole", None) == "board" for o in doc.Objects):
+                return None
+            import atech_ports as ap
+            doc.openTransaction("Atech board")
+            try:
+                board = ap.board_object(doc)
+                doc.recompute()
+            finally:
+                doc.commitTransaction()
+            try:
+                import FreeCADGui
+                gd = FreeCADGui.getDocument(doc.Name)
+                view = gd.ActiveView if gd is not None else None
+                if view is not None:
+                    view.viewIsometric()
+                    view.fitAll()
+            except Exception as exc:                   # noqa: BLE001
+                _log("board view: %r" % (exc,))
+            return board
+        except Exception as exc:                       # noqa: BLE001
+            _log("show board first: %r" % (exc,))
+            return None
+
     def _involves_atech(self, text, doc, ws):
         """Does this turn involve Atech modules? The request names them, the
         document holds a seated board/module, or the chat's model.py
         imports the port library. Measured off the document and the file,
-        never assumed."""
+        never assumed. R220: with build.board_default() every turn does -
+        designs are built around the board unless the request says not."""
+        fn = getattr(build, "board_default", None)
+        try:
+            if callable(fn) and fn():
+                return True
+        except Exception:                              # noqa: BLE001
+            pass
         if text and self._ATECH_WORDS.search(text):
             return True
         # R110: build.mentions_atech is what system_prompt reads; a request
@@ -2800,12 +3604,24 @@ class AgentPanel(QtWidgets.QWidget):
                     pass
         return out
 
-    #: R216: the agent kit modules ./check and atech_cad run on. They live
-    #: in the addon (build.KIT_DIR), outside the chat's one --add-dir, so a
-    #: traceback naming them sent the agent to read a folder it may not
-    #: (S7 c1r77: a refused Read of agent_kit mid-turn). atech_cad.py and
-    #: the examples are already copied into the workspace by build.py.
-    KIT_REFERENCE = ("atech_geom.py", "check.py")
+    #: R216: the agent kit modules copied read-only into <ws>/reference/kit.
+    #: R600 (the user, 2026-10-26: "it overfits too much to be a box now"):
+    #: none. With check.py and atech_geom.py in reach the toy car agent spent
+    #: its whole level reading and grepping them for the gates and never
+    #: designed anything. ./check's own output says what fails and how to
+    #: fix it; a traceback still names the kit file (R216's concern), and
+    #: the prompt says that file is not needed (KIT_TRACEBACK_NOTE).
+    #: atech_cad.py and the examples are copied by build.py as before.
+    KIT_REFERENCE = ()
+    #: R600: the files R216 used to copy; a stale copy is removed.
+    KIT_WITHDRAWN = ("atech_geom.py", "check.py")
+
+    #: R600: the prompt line for a traceback that names the kit's installed
+    #: folder (outside the one --add-dir): name the file, never read it.
+    KIT_TRACEBACK_NOTE = (
+        "A traceback may name a kit file in %s: that folder is not readable "
+        "and you never need it - the traceback's last lines and ./check say "
+        "what to fix in model.py.\n")
 
     def _kit_copy(self, ws):
         """R216: read-only copies of KIT_REFERENCE in <ws>/reference/kit,
@@ -2816,6 +3632,15 @@ class AgentPanel(QtWidgets.QWidget):
             return []
         out = []
         dst_dir = os.path.join(ws, self.REFERENCE_DIR, "kit")
+        # R600: a copy an earlier turn left (a workspace from before R600)
+        # goes - the checker's source is never in reach.
+        for name in self.KIT_WITHDRAWN:
+            stale = os.path.join(dst_dir, name)
+            if name not in self.KIT_REFERENCE and os.path.lexists(stale):
+                try:
+                    os.unlink(stale)
+                except OSError as exc:
+                    _log("stale kit copy: %r" % (exc,))
         for name in self.KIT_REFERENCE:
             src = os.path.join(kit, name)
             dst = os.path.join(dst_dir, name)
@@ -2881,6 +3706,9 @@ class AgentPanel(QtWidgets.QWidget):
             sp += ("A traceback may name the kit's installed folder (%s); "
                    "you cannot read that folder - read the copies above "
                    "instead.\n" % getattr(build, "KIT_DIR", "agent_kit"))
+        else:
+            sp += self.KIT_TRACEBACK_NOTE % getattr(build, "KIT_DIR",
+                                                    "agent_kit")
         agent = dict(claude_cli.agent_settings(), ws=ws,
                      allowed=claude_cli.CHECK_ALLOW)
         return sp, agent
@@ -2913,10 +3741,22 @@ class AgentPanel(QtWidgets.QWidget):
         except (TypeError, ValueError):
             takes = False
         if takes:
-            return build.document_brief(doc, cache=self._brief_cache)
-        return build.document_brief(doc)
+            text = build.document_brief(doc, cache=self._brief_cache)
+        else:
+            text = build.document_brief(doc)
+        # R700: the dimensions the user set by hand (Dimensions window).
+        try:
+            from . import params
+            state = self._docs.get(self._doc_key(doc)) if doc is not None \
+                else None
+            lines = params.brief_lines(state.ws) if state is not None else []
+            if lines:
+                text = "%s\n\n%s" % (text, "\n".join(lines))
+        except Exception as exc:                       # noqa: BLE001
+            _log("brief: hand dimensions: %r" % (exc,))
+        return text
 
-    def _send_claude(self, text, state=None, fix=False):
+    def _send_claude(self, text, state=None, fix=False, title=None):
         """One Claude Code turn. The agent writes model.py into the chat
         workspace of the document active NOW (or `state`, for a fix turn);
         when the turn ends Studio builds it (see build.py).
@@ -2924,9 +3764,16 @@ class AgentPanel(QtWidgets.QWidget):
         Returns True when the turn started. On any setup failure the user
         gets a notice (never a silent loss) and False (R19, R67)."""
         from . import claude_cli
+        view = self._take_view_question(state, fix)        # R500
         try:
             doc = self._active_document() if state is None else None
-            if state is None:
+            if view and state is None:
+                brief_doc = doc
+                state = self._state_for(brief_doc)
+            elif view:
+                brief_doc = self._state_doc(state)      # a Retry (R184)
+            elif state is None:
+                self._show_board_first(doc)                 # R281
                 state = self._state_for(doc)
                 brief_doc = doc
                 if getattr(state, "adopt_on_first_turn", False):
@@ -2960,13 +3807,25 @@ class AgentPanel(QtWidgets.QWidget):
             if isinstance(state.prev, dict) and state.prev.get("preview"):
                 state.prev = {k: v for k, v in state.prev.items()
                               if k not in ("preview", "undo_count")}
-            self._watch_workspace()
-            prompt = "%s\n\n---\n%s" % (text, self._brief(brief_doc))
             images = self._turn_images(state.ws)
-            sp, agent = self._turn_args(state.ws, text=text, doc=brief_doc)
+            if view:
+                # R500: a question about the view: read-only (plan mode, the
+                # read tools only, the view budget), no system prompt, no
+                # reference copies - nothing in the workspace changes.
+                from . import vision
+                prompt = vision.view_prompt(text, images,
+                                            self._brief(brief_doc))
+                sp, agent, mode = None, vision.view_agent(state.ws), "plan"
+            else:
+                self._keep_base(state)                      # R500
+                self._watch_workspace()
+                prompt = "%s\n\n---\n%s" % (text, self._brief(brief_doc))
+                sp, agent = self._turn_args(state.ws, text=text,
+                                            doc=brief_doc)
+                mode = "acceptEdits"
             run = claude_cli.ClaudeRun(
                 prompt, cwd=state.ws, session_id=state.sid, images=images,
-                permission_mode="acceptEdits", system_prompt=sp,
+                permission_mode=mode, system_prompt=sp,
                 agent=agent, parent=None)
         except Exception as exc:                       # noqa: BLE001
             _log("could not start the turn: %s" % traceback.format_exc())
@@ -2988,7 +3847,13 @@ class AgentPanel(QtWidgets.QWidget):
         self._turn_shots = list(images or ())   # R184: a Retry resends them
         self._fix_from = (state.failed, state.failed_intent) if fix \
             else (None, None)
-        self._card = ToolCard("Designing", "Claude Code", mono=False)
+        if title is None:
+            # a fix turn keeps its level's title; a user turn is "Designing"
+            title = getattr(self, "_turn_title", None) if fix else None
+        self._turn_title = title or ("Looking at the view" if view
+                                     else "Designing")
+        self._view_turn = bool(view)
+        self._card = ToolCard(self._turn_title, "Claude Code", mono=False)
         self._add(self._card)
         self._build_card = None         # R76: one build card per turn
         self._build_sig = None
@@ -3058,6 +3923,482 @@ class AgentPanel(QtWidgets.QWidget):
         self._on_send()
         return bool(self._busy)
 
+    # ------------------------------------------- R500: agent integration
+    def focus_composer(self):
+        """Cmd+L (shell.SHORTCUTS "focus_chat"): put the cursor at the end
+        of the composer, keeping whatever is typed there."""
+        try:
+            self.input.setFocus(QtCore.Qt.ShortcutFocusReason)
+            self.input.moveCursor(QtGui.QTextCursor.End)
+        except RuntimeError:
+            return False
+        return True
+
+    VIEW_PLACEHOLDER = "Ask about this view…"
+    VIEW_HINT = ("The view is attached as you framed it. Ask about it: the "
+                 "agent looks and answers, it does not change the model.")
+
+    def open_view_question(self, paths):
+        """R500: "Ask about this view" - the captures (already in the
+        transcript and queued, add_shot) go with the next message, which
+        runs read-only (vision.view_agent). The composer opens; a draft
+        already typed is kept as it is, never replaced."""
+        paths = [p for p in (paths or ()) if p]
+        if not paths:
+            return False
+        key = self._doc_key(self._active_document())
+        self._view_question = (key, list(paths))
+        self._sync_view_hint()
+        self._flash_hint(self.VIEW_HINT)
+        self.focus_composer()
+        return True
+
+    def ask_view(self, question, paths=None):
+        """R500: send `question` about the captured view at once, read-only
+        (the old vision.ask_in_chat(question) path)."""
+        if paths:
+            key = self._doc_key(self._active_document())
+            self._view_question = (key, list(paths))
+        return self.ask(question)
+
+    def _sync_view_hint(self):
+        self.input.setPlaceholderText(
+            self.VIEW_PLACEHOLDER if self._view_question else
+            "Ask about the model, or describe a change…")
+
+    def _take_view_question(self, state, fix):
+        """R500: is this turn the view question the composer was opened
+        for? It is when the active document's chat sends it with the
+        captures still queued. Consumed either way."""
+        vq = self._view_question
+        if not vq or fix:
+            return False
+        self._view_question = None
+        self._sync_view_hint()
+        key, paths = vq
+        own = state.key if state is not None else \
+            self._doc_key(self._active_document())
+        if key != own:
+            return False
+        return any(p in self._pending_shots for p in paths)
+
+    # build history ------------------------------------------------------
+    def _builds_of(self, state):
+        data = getattr(state, "builds", None)
+        if data is None:
+            data = load_builds(state.ws)
+            state.builds = data
+        return data
+
+    def _keep_base(self, state):
+        """Before a design turn: what the workspace holds, in case this is
+        the chat's first build (build 0 of the history)."""
+        if self._builds_of(state)["builds"] or \
+                getattr(state, "base_ckpt", None) is not None:
+            return
+        state.base_ckpt = {
+            "script": _read_regular(os.path.join(state.ws, build.SCRIPT)),
+            "intent": _read_regular(os.path.join(state.ws, build.INTENT)),
+            "record": copy.deepcopy(state.prev)}
+
+    def _record_build(self, state, res, built_hash, card):
+        """A final build landed: keep it (record_build) and give its card
+        "Go back to this build"."""
+        if getattr(res, "undo_count", None) is None:
+            undo = None
+        else:
+            undo = int(res.undo_count)
+        base = getattr(state, "base_ckpt", None)
+        if base is None and not self._builds_of(state)["builds"]:
+            base = {"script": None, "intent": None, "record": None}
+        n = record_build(state.ws, res.record(), undo, built_hash, base)
+        state.builds = None
+        state.base_ckpt = None
+        if n is None:
+            return None
+        if card is not None:
+            self._offer_go_back(card, n)
+        return n
+
+    def _offer_go_back(self, card, n):
+        card.go_back = n
+        card.set_action(GO_BACK_TEXT, functools.partial(
+            self.go_back_to_build, n),
+            "Put the design back to this build (rebuilds it from its "
+            "script)")
+
+    def _check_undo(self):
+        """Doc poll (R500): when the user undid (or redid) an agent build
+        with FreeCAD's Undo, the chat follows: the workspace model.py and
+        the build record go back to the build before it."""
+        if self._busy or self._pending is not None:
+            return None
+        doc = self._active_document()
+        if doc is None:
+            return None
+        state = self._docs.get(self._doc_key(doc))
+        if state is None:
+            return None
+        try:
+            data = self._builds_of(state)
+            if not data["builds"] and not data["undone"]:
+                return None
+            ev = undo_event(getattr(doc, "UndoCount", None),
+                            getattr(doc, "UndoNames", ()),
+                            getattr(doc, "RedoNames", ()), data)
+        except Exception as exc:                       # noqa: BLE001
+            _log("undo check: %r" % (exc,))
+            return None
+        if ev is None:
+            return None
+        kind, entry = ev
+        if kind == "undo":
+            data["builds"].pop()
+            data["undone"].append(entry)
+            back = data["builds"][-1] if data["builds"] else None
+        else:
+            data["undone"].pop()
+            data["builds"].append(entry)
+            back = entry
+        save_builds(state.ws, data)
+        state.builds = data
+        restored = back is not None and restore_build(state.ws, back)
+        state.prev = (copy.deepcopy(back.get("record")) if back is not None
+                      else None)
+        if isinstance(state.prev, dict):
+            state.prev = dict(state.prev, doc=doc.Name)
+        state.good_hash = back.get("hash") if back is not None else None
+        state.failed = state.failed_intent = None
+        self._remember(state)
+        self._preview_hash = None
+        if self._shown_key in (None, state.key):
+            if kind == "undo":
+                where = ("build %d" % back["n"]) if back and back["n"] else \
+                    "before the agent's first build"
+                self.show_notice(
+                    BUILD_UNDONE,
+                    "You undid the agent's build %d, so the chat went back "
+                    "too: the design script is %s again, and the next "
+                    "change starts from there." % (
+                        entry["n"], where if restored or back is None
+                        else "unchanged (that build's script is gone)"))
+            else:
+                self.show_notice(
+                    BUILD_REDONE,
+                    "You redid the agent's build %d: the design script is "
+                    "that build's again." % entry["n"])
+        _log("%s of build %s followed" % (kind, entry.get("n")))
+        return kind
+
+    def go_back_to_build(self, n):
+        """R500: "Go back to this build": put build `n`'s model.py and
+        intent.json back in the chat folder and build them into the
+        document, as a new build. True when the build started."""
+        if self._busy or self._pending is not None:
+            self._flash_hint("Wait for the agent to finish, then go back.")
+            return False
+        doc = self._active_document()
+        state = self._docs.get(self._doc_key(doc))
+        if state is None:
+            return False
+        data = self._builds_of(state)
+        entry = find_build(data, n)
+        if entry is None or not entry.get("script"):
+            self.show_notice("That build is not kept",
+                             "Build %d is no longer in this chat's folder, "
+                             "so it cannot be rebuilt." % n)
+            return False
+        if data["builds"] and data["builds"][-1]["n"] == n:
+            self._flash_hint("This is the current build.")
+            return False
+        if not restore_build(state.ws, entry):
+            self.show_notice("Could not go back",
+                             "Build %d's script could not be put back. The "
+                             "details are in the Report view." % n)
+            return False
+        self._cur = state
+        self._build_card = None
+        self._build_sig = None
+        self._turn_failed = False
+        self._progress_note = ""
+        self._applied = build.snapshot(state.ws)
+        files = [build.SCRIPT] + ([build.INTENT] if os.path.isfile(
+            os.path.join(state.ws, build.INTENT)) else [])
+        self.show_notice("Going back to build %d" % n,
+                         "Rebuilding that design from its script. Undo "
+                         "(⌘Z) puts the current one back.")
+
+        def done(fix, n=n):
+            if fix:
+                self.show_notice("Could not go back",
+                                 "Build %d did not build again; the document "
+                                 "keeps the current design." % n)
+        self._run_build(files, preview=False, send_fix=False, then=done)
+        return True
+
+    # hand-edited dimensions (R700, dimensions.py) -----------------------
+    def dimensions_target(self, doc=None):
+        """The design the Dimensions window edits: {"state", "path",
+        "source", "params"} for the active document's model.py, or
+        {"why": plain sentence} when there is none to edit now."""
+        from . import params
+        doc = self._active_document() if doc is None else doc
+        if doc is None:
+            return {"why": "Open a project first."}
+        if self._busy:
+            return {"why": "The agent is working on the model. Change the "
+                           "dimensions when it has finished."}
+        state = self._state_for(doc)
+        if self._needs_review(state):
+            return {"why": "This file carries a design script you have not "
+                           "reviewed yet. Use Review script above the chat "
+                           "first."}
+        path = os.path.join(state.ws, build.SCRIPT)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                source = fh.read()
+        except OSError:
+            return {"why": "This model has no design script yet. Ask the "
+                           "agent to build something first."}
+        found = params.read(source)
+        if not found:
+            return {"why": "The design script has no dimensions at its top "
+                           "to change. Ask the agent to put them in a "
+                           "parameter block.", "state": state, "path": path}
+        return {"state": state, "path": path, "source": source,
+                "params": found}
+
+    def apply_dimensions(self, changes, doc=None, then=None):
+        """Put the user's numbers ({name: value}) into model.py and rebuild
+        it as a new build (one undo step, "Go back to this build" on its
+        card). With no changes, rebuilds a script edited outside Atech.
+        `then(ok)` once the build is in. Returns (started, message)."""
+        from . import params
+        if self._pending is not None:
+            return False, "A build is running. Try again when it ends."
+        target = self.dimensions_target(doc)
+        if "source" not in target:
+            return False, target["why"]
+        state, path, source = target["state"], target["path"], target["source"]
+        try:
+            new = params.write(source, changes)
+        except ValueError as exc:
+            return False, "Could not put that in the script: %s" % exc
+        if new == source and self._script_hash(state.ws) == state.good_hash:
+            return False, "Nothing to rebuild: the model already has these " \
+                          "values."
+        before = {p.name: p.value for p in target["params"]}
+        self._keep_base(state)                          # R500
+        if new != source:
+            _write_file(path, new.encode("utf-8"))
+            params.record(state.ws, before, {
+                k: v for k, v in changes.items() if k in before})
+        said = ", ".join("%s %s → %s" % (
+            p.name, params.fmt(p.value, p.is_int),
+            params.fmt(changes[p.name], p.is_int))
+            for p in target["params"] if p.name in changes
+            and params.fmt(changes[p.name], p.is_int) != params.fmt(p.value, p.is_int))
+        self._clear_empty()
+        self._has_messages = True
+        self.show_notice(
+            "Rebuilding with your dimensions",
+            (said + ". " if said else "") + "Undo (⌘Z) puts the last "
+            "build back. The agent keeps your values in its next turns.")
+        self._cur = state
+        self._build_card = None
+        self._build_sig = None
+        self._turn_failed = False
+        self._progress_note = ""
+        self._applied = build.snapshot(state.ws)
+        files = [build.SCRIPT] + ([build.INTENT] if os.path.isfile(
+            os.path.join(state.ws, build.INTENT)) else [])
+
+        def done(fix):
+            self._remember(state)
+            if then is not None:
+                then(not fix)
+        self._run_build(files, preview=False, send_fix=False, then=done)
+        return True, "Rebuilding. The result shows in the chat."
+
+    # start from an example (shell.open_example) -------------------------
+    def start_from_example(self, path, title):
+        """R500: "Start from an example" as a chat: a new project named
+        `title`, the example script as the new chat's model.py (and its
+        INTENT as intent.json), built through the chat so the agent picks
+        up from it. Returns the ChatState, or None (a notice says why)."""
+        if self._busy or self._pending is not None:
+            self._flash_hint("Wait for the agent to finish, then open the "
+                             "example.")
+            return None
+        try:
+            import FreeCAD
+            from . import shell
+            with open(path, encoding="utf-8") as fh:
+                code = fh.read()
+            doc = FreeCAD.newDocument(shell._doc_name_for(
+                str(title).replace(" ", "_")))
+            doc.Label = title
+            FreeCAD.setActiveDocument(doc.Name)
+            key = self._doc_key(doc)
+            state = ChatState(key, doc.Name, build.new_workspace())
+            _write_file(os.path.join(state.ws, build.SCRIPT),
+                        code.encode("utf-8"))
+            intent = shell._example_intent(path)
+            if intent is not None:
+                _write_file(os.path.join(state.ws, build.INTENT),
+                            json.dumps(intent, indent=1).encode("utf-8"))
+            try:
+                build.prepare_workspace(state.ws, reset_intent=False, doc=doc)
+            except Exception as exc:                   # noqa: BLE001
+                _log("example workspace: %r" % (exc,))
+            state.prev = {"uid": key, "doc": doc.Name, "names": [],
+                          "labels": {}}
+        except Exception as exc:                       # noqa: BLE001
+            _log("example: %s" % traceback.format_exc())
+            self.show_notice("Could not start from the example",
+                             "The details are in the Report view.",
+                             detail="%s: %s" % (type(exc).__name__, exc))
+            return None
+        self._docs[key] = state
+        self._seeded.add(key)
+        self._follow_active_doc()
+        self._shown_key = key
+        self._clear_empty()
+        self._has_messages = True
+        self.show_notice(
+            "Starting from the %s example" % str(title).lower(),
+            "Its design script is this chat's model.py. Ask for a change and "
+            "the agent edits that design.")
+        state.base_ckpt = {"script": None, "intent": None, "record": None}
+        self._cur = state
+        self._build_card = None
+        self._build_sig = None
+        self._turn_failed = False
+        self._progress_note = ""
+        self._applied = build.snapshot(state.ws)
+        files = [build.SCRIPT] + ([build.INTENT] if os.path.isfile(
+            os.path.join(state.ws, build.INTENT)) else [])
+        self._run_build(files, preview=False, send_fix=False,
+                        then=lambda _fix: self._remember(state))
+        return state
+
+    # past chats ---------------------------------------------------------
+    def _past_chats(self):
+        if self._past is None:
+            self._past = load_past_chats()
+        return self._past
+
+    def past_chats(self, doc=None):
+        """R500: the earlier chats of `doc`'s project (default: the active
+        document), newest first: [{"title", "saved", "ws", ...}]."""
+        key = self._doc_key(doc if doc is not None else
+                            self._active_document())
+        return [c for c in self._past_chats().get(key) or ()
+                if isinstance(c, dict)]
+
+    def _archive_chat(self, key, state, elsewhere=False):
+        """New chat: the chat it replaces goes to the project's past chats
+        when it said anything (a transcript or a Claude session)."""
+        if state is None or key == NO_DOC:
+            return False
+        if key == self._shown_key and not elsewhere:
+            snap = self._snapshot(key)
+        else:
+            snap = self._transcripts.get(key) or {"entries": []}
+        if not snap.get("entries") and not state.sid:
+            return False
+        now = time.time()
+        rec = {"ws": state.ws, "sid": state.sid,
+               "prev": state.prev if isinstance(state.prev, dict) else None,
+               "saved": int(now), "title": chat_title(snap, now),
+               "transcript": _plain_transcript(snap)}
+        past = self._past_chats()
+        lst = [c for c in past.get(key) or () if isinstance(c, dict)
+               and c.get("ws") != state.ws]
+        past[key] = ([rec] + lst)[:PAST_CHATS_MAX]
+        save_past_chats(past)
+        return True
+
+    def open_past_chat(self, index, doc=None):
+        """R500: make past chat `index` of the project the current one: its
+        folder, Claude session, last build and transcript come back, and
+        the chat on screen goes to the past chats in its place."""
+        if self._busy or self._pending is not None:
+            self._flash_hint("Wait for the agent to finish first.")
+            return False
+        doc = doc if doc is not None else self._active_document()
+        key = self._doc_key(doc)
+        past = self._past_chats()
+        lst = [c for c in past.get(key) or () if isinstance(c, dict)]
+        if not 0 <= index < len(lst):
+            return False
+        rec = lst[index]
+        ws = rec.get("ws")
+        if not isinstance(ws, str) or not os.path.isdir(ws):
+            self.show_notice("That chat's folder is gone",
+                             "Its files were cleared, so it cannot be "
+                             "opened again.")
+            lst.pop(index)
+            past[key] = lst
+            save_past_chats(past)
+            self._sync_past_btn(doc)
+            return False
+        self._follow_active_doc()
+        cur = self._docs.get(key)
+        lst.pop(index)
+        past[key] = lst
+        self._archive_chat(key, cur)
+        state = ChatState(key, getattr(doc, "Name", None), ws,
+                          rec.get("prev") if isinstance(rec.get("prev"), dict)
+                          else None)
+        state.sid = rec.get("sid") or None
+        state.framed = state.faced = True
+        if isinstance(state.prev, dict) and doc is not None:
+            state.prev = dict(state.prev, doc=doc.Name)
+        self._docs[key] = state
+        self._transcripts.pop(key, None)
+        self._cur = None
+        self._view_question = None
+        self._sync_view_hint()
+        self._clear_transcript()
+        self._pending_shots = []
+        self._shot_captions = {}
+        self._build_card = None
+        self._card = None
+        self._shown_key = key
+        n = self._restore(rec.get("transcript") or {})
+        if not n:
+            self._show_empty_state(getattr(self, "_connected", True))
+        self._shown_key = key
+        save_session(key, state)
+        save_past_chats(past)
+        self._sync_past_btn(doc)
+        return True
+
+    def _sync_past_btn(self, doc=None):
+        try:
+            n = len(self.past_chats(doc))
+        except Exception:                              # noqa: BLE001
+            n = 0
+        self.btn_past.setVisible(bool(n))
+        self.btn_past.setToolTip("Open an earlier chat of this project "
+                                 "(%d kept)" % n)
+
+    def _on_past_btn(self):
+        chats = self.past_chats()
+        if not chats:
+            self._sync_past_btn()
+            return
+        menu = QtWidgets.QMenu(self)
+        for i, c in enumerate(chats):
+            when = time.strftime("%d %b %H:%M",
+                                 time.localtime(c.get("saved") or 0))
+            act = menu.addAction("%s  ·  %s" % (c.get("title") or "Chat",
+                                                     when))
+            act.triggered.connect(functools.partial(self.open_past_chat, i))
+        menu.exec(self.btn_past.mapToGlobal(
+            QtCore.QPoint(0, self.btn_past.height())))
+
     def new_chat(self):
         """R70: a clean conversation for the active document. The transcript
         is cleared, and the document's chat gets a new workspace, no Claude
@@ -3090,6 +4431,7 @@ class AgentPanel(QtWidgets.QWidget):
                              detail="%s: %s" % (type(exc).__name__, exc))
             return False
         old = self._docs.get(key)
+        self._archive_chat(key, old, elsewhere)        # R500: past chats
         if self._needs_review(old):
             # R113: a new chat does not trust the script either; the review
             # stays reachable from the context line (not re-announced).
@@ -3110,6 +4452,8 @@ class AgentPanel(QtWidgets.QWidget):
         self._attempt = 0
         self._pending_shots = []
         self._shot_captions = {}
+        self._view_question = None          # R500
+        self._sync_view_hint()
         self._last_text = ""
         self._preview_error = ""
         self._preview_intent = None
@@ -3121,6 +4465,7 @@ class AgentPanel(QtWidgets.QWidget):
         self._shown_key = key
         self._show_empty_state(getattr(self, "_connected", True))
         self._sync_review_btn(doc)
+        self._sync_past_btn(doc)
         return True
 
     def _continue_design(self, state, doc):
@@ -3215,6 +4560,7 @@ class AgentPanel(QtWidgets.QWidget):
             return False
         doc = self._active_document()
         key = self._doc_key(doc)
+        self._seed_transcript(doc, key)         # R366
         shown = self._shown_key
         if shown == key:
             return False
@@ -3316,7 +4662,8 @@ class AgentPanel(QtWidgets.QWidget):
                         w.status.objectName(), "idle"),
                     "tip": w.status.toolTip(),
                     "caveat": w.caveat, "caveat_text": w.caveat_text,
-                    "info_text": w.info_text})
+                    "info_text": w.info_text,
+                    "go_back": getattr(w, "go_back", None)})
             elif isinstance(w, Notice):
                 title, body, actions, detail = w.spec
                 tag = None
@@ -3366,6 +4713,8 @@ class AgentPanel(QtWidgets.QWidget):
                 c.caveat = e.get("caveat") or ""
                 if e.get("caveat_text") or e.get("info_text"):
                     c.set_notes(e.get("caveat_text"), e.get("info_text"))
+                if isinstance(e.get("go_back"), int):
+                    self._offer_go_back(c, e["go_back"])     # R500
                 self._add(c)
             elif kind == "notice":
                 n = self._add(Notice(e["title"], e["body"],
@@ -3700,6 +5049,7 @@ class AgentPanel(QtWidgets.QWidget):
         if fix and self._disputed_check():
             self._not_confirmed(final, card)
             return
+        view = self._view_turn          # R500: a view question builds nothing
         self._end_turn()
         if final:
             if self._turn_failed:
@@ -3713,6 +5063,17 @@ class AgentPanel(QtWidgets.QWidget):
                 self.say(final)
         if fix:
             self._send_fix(fix)
+        elif not self._turn_failed and self._cur is not None and not view:
+            # R400: the level built cleanly - the design ladder goes on.
+            # R452: first keep it as the checkpoint a later level falls
+            # back to.
+            lvl = self._ladder_level(self._cur.ws)
+            if lvl is not None:
+                save_level_checkpoint(self._cur.ws, lvl)
+            nxt = getattr(build, "next_level", None)
+            msg = nxt(self._cur.ws) if callable(nxt) else None
+            if msg:
+                self._send_level(msg)
 
     #: R191: the card line and note when a fix turn leaves model.py as it
     #: was and only intent.json misses remain.
@@ -3762,6 +5123,7 @@ class AgentPanel(QtWidgets.QWidget):
             self.say(final)
 
     def _end_turn(self):
+        self._view_turn = False         # R500
         self._finishing = False
         self._busy = False
         self._set_sending(False)
@@ -3816,7 +5178,14 @@ class AgentPanel(QtWidgets.QWidget):
     #: final time of 52 s; a minute of nothing is already unusual, while a
     #: model thinking before a long Write stays under it. The run is never
     #: killed from here: the turn timeout still decides that.
-    STALL_AFTER_S = 60
+    #: R230: 300 s in quality mode - effort xhigh thinks for minutes before
+    #: a long Write, and a Retry click there kills good work (r1 #26).
+    FAST_STALL_AFTER_S, QUALITY_STALL_AFTER_S = 60, 300
+
+    @property
+    def STALL_AFTER_S(self):
+        return (self.QUALITY_STALL_AFTER_S if build.quality_mode()
+                else self.FAST_STALL_AFTER_S)
 
     def _heard(self, kind="model", detail=""):
         """A stream event arrived (R184): restart the stall clock, and take
@@ -3936,8 +5305,14 @@ class AgentPanel(QtWidgets.QWidget):
     #: so the R184 silence watchdog never spoke, and the card sat on a
     #: stale "preview: in progress" for minutes. Eval r10: median final
     #: 51 s (n=12), so 5 minutes without a new build is far outside a
-    #: normal turn.
-    BUILD_QUIET_S = 300
+    #: normal turn. R230: 900 s in quality mode, whose review rounds
+    #: read renders and plan for minutes between builds.
+    FAST_BUILD_QUIET_S, QUALITY_BUILD_QUIET_S = 300, 900
+
+    @property
+    def BUILD_QUIET_S(self):
+        return (self.QUALITY_BUILD_QUIET_S if build.quality_mode()
+                else self.FAST_BUILD_QUIET_S)
     PREVIEW_IN_PROGRESS = "preview: in progress"
 
     def build_quiet_line(self, quiet):
@@ -4011,6 +5386,9 @@ class AgentPanel(QtWidgets.QWidget):
         # The views the stalled turn was sent with go again (captures
         # queued since then stay queued for the next message).
         self._pending_shots = list(getattr(self, "_turn_shots", ()) or ())
+        if self._view_turn and state is not None:
+            # R500: a view question is retried as one (read-only).
+            self._view_question = (state.key, list(self._pending_shots))
         _log("stalled turn retried by the user")
         try:
             return self._send_claude(text, state=state, fix=fix)
@@ -4140,6 +5518,7 @@ class AgentPanel(QtWidgets.QWidget):
                if build.SCRIPT in files else None,
                "t0": time.monotonic()}
         self._activate_state_doc(state)
+        self._capture_hand_edits(state)             # R387
         try:
             pending = self._start(state, files, preview)
             res = pending.poll() if pending is not None else None
@@ -4225,6 +5604,8 @@ class AgentPanel(QtWidgets.QWidget):
                 self._turn_card(preview).set_status("nothing to build",
                                                     "idle")
         else:
+            if res.ok:
+                self._reapply_hand_edits(state, preview)   # R387
             fix = self._settle(state, res, preview, ctx["built_hash"])
         then = ctx["then"]
         if fix and not preview and then is None and ctx["send_fix"]:
@@ -4289,9 +5670,16 @@ class AgentPanel(QtWidgets.QWidget):
         if res.ok:
             state.prev = res.record()
             self._rekey(state, res.doc)
+            if not preview:
+                # R500: every final build that landed in the document (one
+                # undo step) is kept, also one whose checks failed: undoing
+                # it must roll the chat back too.
+                self._record_build(state, res, built_hash, card)
             self._remember(state)
             self._frame(state, res, preview)
             self.refresh_doc_pill()
+            if not preview:
+                self._autosave_after_build(state)       # R363
         if not preview:
             # R98: what the script on disk measured, for a fix turn that
             # leaves it unchanged.
@@ -4605,6 +5993,11 @@ class AgentPanel(QtWidgets.QWidget):
         The fix turn stays on the chat (document) that failed."""
         self._attempt = getattr(self, "_attempt", 0) + 1
         if self._attempt > self.MAX_FIX_ATTEMPTS:
+            # R452: a design level out of fixes goes back to the last
+            # passing level and the ladder goes on.
+            if self._level_rollback("still failing after %d fixes"
+                                    % self.MAX_FIX_ATTEMPTS):
+                return
             self.show_notice(
                 "The build still fails",
                 "Tried %d fixes. The last error is in the build card above; "
@@ -4618,6 +6011,105 @@ class AgentPanel(QtWidgets.QWidget):
                          % (self._attempt, self.MAX_FIX_ATTEMPTS))
         self._send_claude(message + "\nFix model.py and write it again.",
                           state=self._cur, fix=True)
+
+    def _send_level(self, message, note=None):
+        """R400: start the next design level (build.next_level) on the
+        chat that just passed the last one. Each level has its own fix
+        budget; the Stop button or the user's own message ends the ladder
+        (R452: a failed level rolls back and goes on, _level_rollback).
+        `note` (R452) goes before the level's text."""
+        if self._doc_was_closed(self._cur):
+            self._on_doc_closed_mid_turn(self._cur)
+            return
+        self._attempt = 0
+        title = self._level_title(message)
+        self._flash_hint("Next design level: %s" % title)
+        self._send_claude("%s\n\n%s" % (note, message) if note else message,
+                          state=self._cur, title=title)
+
+    # ------------------------------------------- R452: level rollback
+    @staticmethod
+    def _ladder_level(ws):
+        """The design level running in `ws` (atech_levels.read), or None."""
+        try:
+            state = build._levels().read(ws)
+        except Exception as exc:                       # noqa: BLE001
+            _log("ladder level: %r" % (exc,))
+            return None
+        return state["level"] if state else None
+
+    #: R452: the one line the user sees when a level is rolled back, and
+    #: when there is nothing to roll back to.
+    ROLLBACK_LINE = ("Level %d did not pass (%s). Went back to level %d's "
+                     "passing build; it is being rebuilt and the design "
+                     "goes on from there.")
+    NO_CHECKPOINT_LINE = ("Level %d did not pass (%s) and there is no "
+                          "earlier passing level to go back to, so the "
+                          "design levels stop here.")
+
+    def _level_rollback(self, why):
+        """R452: a design level ended failing (out of fix rounds, or its CLI
+        died). Restore the newest checkpoint below it into the workspace,
+        rebuild it, say so in one line, then send the next level from it.
+        True when the rollback started; False (after a one-line report
+        when the ladder runs) when there is no checkpoint - the caller's
+        own notice follows and nothing more is sent."""
+        state = self._cur
+        if state is None or not getattr(state, "ws", None):
+            return False
+        failed = self._ladder_level(state.ws)
+        if failed is None:
+            return False                # no ladder: the old behaviour
+        back = last_level_checkpoint(state.ws, failed)
+        if back is None or not restore_level_checkpoint(state.ws, back):
+            _log("level %d failed (%s); no checkpoint to roll back to"
+                 % (failed, why))
+            self.say(self.NO_CHECKPOINT_LINE % (failed, why))
+            return False
+        _log("level %d failed (%s); rolled back to level %d"
+             % (failed, why, back))
+        self.say(self.ROLLBACK_LINE % (failed, why, back))
+        self._attempt = 0
+        self._turn_failed = False
+        self._build_card = None         # the restored build gets its own card
+        self._build_sig = None
+        self._applied = build.snapshot(state.ws)
+        self._run_build([build.SCRIPT], then=functools.partial(
+            self._after_rollback, state, back, failed, why))
+        return True
+
+    def _after_rollback(self, state, back, failed, why, fix):
+        """R452: the restored level's build is in. Clean: send the next
+        level from it (or end the ladder on it after the last). Failing:
+        report and stop - nothing better is left to go back to."""
+        if self._busy or self._cur is not state or self._doc_was_closed(state):
+            return                      # the user took over meanwhile
+        if fix:
+            _log("restored level %d failed to build: %s" % (back, fix[:300]))
+            self.show_notice(
+                "The design levels stopped",
+                "Level %d's saved build no longer builds. The last error is "
+                "in the build card above; describe the next change to go "
+                "on." % back)
+            return
+        nxt = getattr(build, "next_level", None)
+        msg = nxt(state.ws) if callable(nxt) else None
+        if msg:
+            self._send_level(msg, note=rollback_note(back, failed, why))
+
+    @staticmethod
+    def _level_title(message):
+        """"LEVEL 3 of 9 - SHAPE THE SURFACES (...)" -> "Level 3/9: Shape the
+        surfaces" for the turn's card."""
+        m = re.match(r"LEVEL (\d+) of (\d+) - ([^(\n]+)", message or "")
+        if not m:
+            return "Designing"
+        name = m.group(3).strip().capitalize()
+        try:
+            name = build._levels().LEVELS[int(m.group(1)) - 1][0]
+        except Exception:                              # noqa: BLE001
+            pass                                       # the message's own words
+        return "Level %s/%s: %s" % (m.group(1), m.group(2), name)
 
     def _on_claude_failed(self, msg):
         """Name the cause in words (R21): signed out, offline, or something
@@ -4638,6 +6130,15 @@ class AgentPanel(QtWidgets.QWidget):
         self._set_sending(False)
         if budget:
             self._on_budget_stop(msg)
+            return
+        if kind not in (claude_cli.CANCELLED, claude_cli.AUTH,
+                        claude_cli.OFFLINE) and \
+                engine.available(engine.CLAUDE)[0] and \
+                self._level_rollback("the agent stopped before finishing"):
+            # R452: a design level whose CLI died goes back to the last
+            # passing level and the ladder goes on (Stop, sign-in and
+            # offline keep their own notices: the next level would fail too).
+            self.set_backend_state("idle")
             return
         self._restore_input()
         if kind == claude_cli.CANCELLED:

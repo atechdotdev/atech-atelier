@@ -14,7 +14,8 @@ job.json:
      "request": "<the user request>" | null,
      "session": "<placeholder>", "seed": null}
     {"mode": "build", "workspace": "...", "out": "result.json",
-     "expect": {...}, "render": "render.png" | null,
+     "expect": {...}, "render": "render.png" | null   (R230: the kit's
+     review sheet; + render_inside.png, the cutaway - see _render),
      "prompt": "<the user request>", "seed": "<seed script>" | null,
      "preview": false}
 
@@ -53,7 +54,9 @@ FITNESS CHECKS (S15) are reported in `fitness`, separate from `checks`, so
 the 12-prompt expectation score stays comparable with earlier runs:
     no_overlap        every pair of shape objects (agent's end results +
                       seed) has common volume <= OVERLAP_TOL_MM3, unless the
-                      pair is listed in expect["allow_overlap"]
+                      pair is listed in expect["allow_overlap"] or - R243,
+                      as the agent's ./check - model.py's INTENDED_OVERLAPS
+                      names it (a literal value; never a pair with a seed)
     not_below_desk    when the prompt says "on a desk" (or expect["on_desk"]):
                       no Part shape or mesh reaches below z = -DESK_TOL_MM
     gear_teeth        expect["gear_teeth"]: teeth counted on the section of
@@ -1263,11 +1266,73 @@ def _has_shape(o):
     return sh is not None and not sh.isNull() and not _is_mesh(o)
 
 
-def overlaps(objs, allow=()):
+def intended_overlaps(workspace):
+    """R243: model.py's INTENDED_OVERLAPS, as the agent's ./check honours it
+    (check.py: env["INTENDED_OVERLAPS"] after the run, kept by
+    atech_geom.sanitize_intended - names and 2-name pairs only). Read from
+    the source: every top-level `INTENDED_OVERLAPS = <literal>` (and `+=`),
+    in order - the production build does not hand the run's globals back.
+    Returns (list, note); a value that is not a literal is not honoured and
+    the note says so (never guessed at)."""
+    import ast
+    path = os.path.join(workspace or "", "model.py")
+    if not workspace or not os.path.isfile(path):
+        return [], None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError) as exc:
+        return [], "model.py unreadable: %s" % exc
+    value, note = [], None
+    for st in tree.body:
+        name = None
+        if isinstance(st, ast.Assign) and len(st.targets) == 1 and \
+                isinstance(st.targets[0], ast.Name):
+            name, add = st.targets[0].id, False
+        elif isinstance(st, ast.AugAssign) and isinstance(st.target, ast.Name) \
+                and isinstance(st.op, ast.Add):
+            name, add = st.target.id, True
+        if name != "INTENDED_OVERLAPS":
+            continue
+        try:
+            got = ast.literal_eval(st.value)
+        except (ValueError, SyntaxError, TypeError):
+            note = "INTENDED_OVERLAPS (line %d) is not a literal: not honoured" % st.lineno
+            continue
+        got = list(got) if isinstance(got, (list, tuple)) else []
+        value = (value + got) if add else got
+    out = []
+    for e in value:
+        if isinstance(e, str):
+            out.append(e)
+        elif isinstance(e, (list, tuple)) and len(e) == 2 and all(isinstance(x, str) for x in e):
+            out.append([e[0], e[1]])
+    return out, note
+
+
+def _excused(a, b, intended, seeds):
+    """R243: INTENDED_OVERLAPS names the pair (or either one alone), by Name
+    or Label - atech_geom._allowed's rule. Never a pair with a seed object
+    (the user's: R156, INTENDED_OVERLAPS never excuses it)."""
+    if not intended or a.Name in seeds or b.Name in seeds:
+        return False
+    singles = {e for e in intended if isinstance(e, str)}
+    pairs = {frozenset(e) for e in intended if not isinstance(e, str)}
+    ka, kb = {a.Name, a.Label}, {b.Name, b.Label}
+    if ka & singles or kb & singles:
+        return True
+    return any(frozenset((x, y)) in pairs for x in ka for y in kb)
+
+
+def overlaps(objs, allow=(), intended=(), seeds=(), excused=None):
     """Pairwise common volume of shape objects. Returns (pairs over the
     tolerance, meshes skipped). A bound-box test first: common() is only run
-    where the boxes meet."""
+    where the boxes meet. R243: a pair model.py's INTENDED_OVERLAPS covers
+    (`intended`, see _excused; `seeds` = Names of the seed objects, never
+    excused) is not reported; it is appended to `excused` (a list) with
+    its volume."""
     allowed = {frozenset(p) for p in (allow or [])}
+    seeds = set(seeds or ())
     shp = [o for o in objs if _has_shape(o)][:MAX_OVERLAP_OBJECTS]
     bad = []
     for i in range(len(shp)):
@@ -1276,6 +1341,7 @@ def overlaps(objs, allow=()):
             if frozenset((a.Label, b.Label)) in allowed or \
                     frozenset((a.Name, b.Name)) in allowed:
                 continue
+            declared = _excused(a, b, intended, seeds)
             if not a.Shape.BoundBox.intersect(b.Shape.BoundBox):
                 continue
             try:
@@ -1284,6 +1350,11 @@ def overlaps(objs, allow=()):
                 bad.append({"pair": [a.Label, b.Label], "error": str(exc)})
                 continue
             if v > OVERLAP_TOL_MM3:
+                if declared:
+                    if excused is not None:
+                        excused.append({"pair": [a.Label, b.Label],
+                                        "common_mm3": round(v, 3)})
+                    continue
                 bad.append({"pair": [a.Label, b.Label], "common_mm3": round(v, 3)})
     return bad, [o.Label for o in objs if _is_mesh(o)]
 
@@ -1695,10 +1766,19 @@ def fitness(doc, ends, seeds, expect, prompt, workspace=None):
         out.append({"check": name, "pass": bool(ok), "detail": detail})
 
     objs = list(ends) + [o for o in seeds if o not in ends]
-    bad, meshes = overlaps(objs, e.get("allow_overlap"))
+    # R243: honour model.py's INTENDED_OVERLAPS as the agent's ./check does
+    # (showcase baseline: the toy car declared its glass/body pairs, the
+    # harness failed it on them anyway)
+    intended, i_note = intended_overlaps(workspace)
+    excused = []
+    bad, meshes = overlaps(objs, e.get("allow_overlap"), intended,
+                           [o.Name for o in seeds], excused)
     add("no_overlap", not bad, {"over_tol": bad, "tol_mm3": OVERLAP_TOL_MM3,
                                 "shapes": len([o for o in objs if _has_shape(o)]),
-                                "meshes_not_measured": meshes})
+                                "meshes_not_measured": meshes,
+                                "intended_overlaps": intended,
+                                "excused_by_intended": excused,
+                                "intended_note": i_note})
     if _says_on_desk(prompt, e):
         low = lowest_z(objs)
         add("not_below_desk", low is not None and low[0] >= -DESK_TOL_MM,
@@ -1744,7 +1824,191 @@ def fitness(doc, ends, seeds, expect, prompt, workspace=None):
 
 
 # ----------------------------------------------------------------- render
-def _render(objs, path):
+# R230 (eval): render.png is the kit's review.py sheet - the six views the
+# agent's own ./check drew (review.png), in the colours model.py recorded,
+# with the seated board, modules and ap.cable() cables - and render_inside.png
+# its cutaway, so a grader judges the picture the agent judged. The old
+# two-view matplotlib picture (_render_legacy) is the fallback, and the
+# result says why it was used (render_kind / render_note).
+_VIEW_SEEN = {}
+
+
+def _capture_view(build):
+    """R230: build.apply hands the recorded ViewObject props (ShapeColor,
+    DiffuseColor, Transparency) only to build._colour - headless that is a
+    no-op and the Result does not keep them. Wrap it once so the eval sees
+    the colours Studio would apply. Production code is not changed."""
+    if getattr(build._colour, "_eval_capture", False):
+        return
+    orig = build._colour
+
+    def _colour(ends, view):
+        _VIEW_SEEN.clear()
+        _VIEW_SEEN.update(view or {})
+        return orig(ends, view)
+    _colour._eval_capture = True
+    build._colour = _colour
+
+
+def _kit_review():
+    """The kit's review module from the addon under test (EVAL_ADDON too),
+    or (None, why)."""
+    kit = os.path.join(ADDON, "acadagent", "agent_kit")
+    if not os.path.isfile(os.path.join(kit, "review.py")):
+        return None, "no agent_kit/review.py in %s" % ADDON
+    if kit not in sys.path:
+        sys.path.insert(0, kit)
+    import review
+    why = review.available()
+    return (None, why) if why else (review, None)
+
+
+def _closeups_of(workspace):
+    """REVIEW_CLOSEUPS = [...] from model.py, read as a literal (the kit's
+    ./check reads it off the executed module; a literal is what it says to
+    write). [] when absent or not a list of labels."""
+    import ast
+    try:
+        with open(os.path.join(workspace, "model.py"), encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except Exception:                                   # noqa: BLE001
+        return []
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "REVIEW_CLOSEUPS" for t in node.targets):
+            try:
+                v = ast.literal_eval(node.value)
+            except Exception:                           # noqa: BLE001
+                return []
+            v = [v] if isinstance(v, str) else v
+            if isinstance(v, (list, tuple)) and all(isinstance(x, str) for x in v):
+                return list(dict.fromkeys(x for x in v if x))
+    return []
+
+
+def review_items(review, doc, ends, seeds, view, bad=()):
+    """The objects the sheet draws, coloured by check._review_items' rule
+    (check.py is a script - importing it runs it - so the rule is mirrored,
+    not imported): the recorded ShapeColor / DiffuseColor; a cable its own
+    colour; the board near-black, a module graphite; else review.PALETTE in
+    build._colour's order (one body: the default grey). Plus the seated
+    Atech meshes and the seed (the user's part) in the user grey."""
+    items, free = [], 0
+    bodies = [o for o in ends if o.TypeId != "Mesh::Feature" and _has_shape(o)]
+    for o in bodies:
+        rec = view.get(o.Name) or {}
+        col = rec.get("ShapeColor")
+        dif = rec.get("DiffuseColor")
+        if col is None and isinstance(dif, (list, tuple)) and dif:
+            col = dif[0] if isinstance(dif[0], (list, tuple)) else dif
+        role = getattr(o, "AtechRole", None)
+        kind = "body"
+        if getattr(o, "AtechCableModule", None):
+            kind, col = "cable", col or review.CABLE
+        elif role:
+            kind = "board" if role == "board" else "module"
+            col = col or (review.BOARD if role == "board" else review.MODULE)
+        if col is None:
+            col = review.PALETTE[free % len(review.PALETTE)] if len(bodies) > 1 \
+                else review.DEFAULT
+            free += 1
+        try:
+            col = tuple(float(c) for c in col)[:3]
+            if len(col) < 3:
+                raise ValueError
+        except Exception:                               # noqa: BLE001
+            col = review.DEFAULT
+        items.append({"label": o.Label, "shape": o.Shape, "color": col, "kind": kind,
+                      "problem": o.Label in bad})
+    seed_names = {o.Name for o in seeds}
+    for o in doc.Objects:
+        role = getattr(o, "AtechRole", None)
+        if o.TypeId == "Mesh::Feature" and role and o.Name not in seed_names:
+            items.append({"label": o.Label, "mesh": o.Mesh,
+                          "kind": "board" if role == "board" else "module",
+                          "color": review.BOARD if role == "board" else review.MODULE,
+                          "problem": o.Label in bad})
+    for o in seeds:
+        if _has_shape(o) and not _is_mesh(o):
+            items.append({"label": o.Label, "shape": o.Shape, "kind": "user",
+                          "color": review.USER, "problem": False})
+    return items
+
+
+def _render(objs, path, doc=None, ends=(), seeds=(), prompt=None, failures="",
+            workspace=None):
+    """R230: the review sheet as `path` (render.png) and its cutaway as
+    render_inside.png beside it (+ render_<label>.png per REVIEW_CLOSEUPS).
+    Returns {"render", "render_inside", "render_closeups", "render_kind":
+    "review" | "legacy", "render_note", "render_triangles"}. Falls back to
+    the old two-view picture of `objs`, with the reason in render_note."""
+    import re
+    import shutil
+    import tempfile
+    out_dir = os.path.dirname(os.path.abspath(path))
+    stem = os.path.splitext(os.path.basename(path))[0]
+    # no picture of an earlier attempt survives this one (R230's rule)
+    for nm in os.listdir(out_dir):
+        if nm.startswith(stem + "_") and nm.endswith(".png"):
+            try:
+                os.unlink(os.path.join(out_dir, nm))
+            except OSError:
+                pass
+    res = {"render": None, "render_inside": None, "render_closeups": {},
+           "render_kind": "review", "render_note": None}
+    why = None
+    tmp = None
+    try:
+        review, why = _kit_review()
+        if os.environ.get("ATECH_EVAL_RENDER_SABOTAGE") == "review":
+            raise RuntimeError("review sabotaged (ATECH_EVAL_RENDER_SABOTAGE, a test)")
+        if review is not None and doc is not None:
+            lines = [ln for ln in str(failures or "").splitlines() if ln.strip()]
+            labels = [o.Label for o in doc.Objects]
+            text = "\n".join(lines)
+            bad = {lab for lab in labels if lab and lines and re.search(
+                r"(?<![\w])%s(?![\w])" % re.escape(lab), text)}
+            items = review_items(review, doc, ends, seeds, _VIEW_SEEN, bad)
+            title = " ".join(str(prompt or "model.py").split())
+            title = (title[:90] + "...") if len(title) > 90 else title
+            tmp = tempfile.mkdtemp(prefix=".render-", dir=out_dir)
+            rv = review.draw(items, tmp, title=title, notes=lines[:14],
+                             banner=("FAILED CHECK", lines[0]) if lines else None,
+                             closeups=_closeups_of(workspace) if workspace else ())
+            res["render_triangles"] = rv.get("triangles")
+            res["render_review_seconds"] = rv.get("seconds")
+            if rv.get("errors"):
+                res["render_errors"] = rv["errors"]
+            if rv.get("sheet"):
+                shutil.move(rv["sheet"], path)
+                res["render"] = path
+                if rv.get("inside"):
+                    p = os.path.join(out_dir, stem + "_inside.png")
+                    shutil.move(rv["inside"], p)
+                    res["render_inside"] = p
+                else:
+                    res["render_note"] = "no cutaway: %s" % rv.get("inside_skipped")
+                for lab, src in (rv.get("closeups") or {}).items():
+                    p = os.path.join(out_dir, "%s_%s.png" % (stem, review.safe_label(lab)))
+                    shutil.move(src, p)
+                    res["render_closeups"][lab] = p
+                return res
+            why = "review drew nothing: %s" % rv.get("why")
+        elif review is not None:
+            why = "no document to review"
+    except Exception as exc:                            # noqa: BLE001
+        why = "review failed: %s: %s" % (type(exc).__name__, exc)
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+    res["render_kind"] = "legacy"
+    legacy = _render_legacy(objs, path)
+    res["render"] = None if legacy else path
+    res["render_note"] = "legacy render (%s)%s" % (why, ("; " + legacy) if legacy else "")
+    return res
+
+
+def _render_legacy(objs, path):
     """Headless render: tessellate, flat-shade, two isometric views."""
     import matplotlib
     matplotlib.use("Agg")
@@ -1979,6 +2243,7 @@ def mode_argv(job):
 
 def mode_build(job):
     from acadagent import build
+    _capture_view(build)                # R230: the recorded colours, for _render
     ws = job["workspace"]
     script = os.path.join(ws, build.SCRIPT)
     res_out = {"headless_patched": False}
@@ -2074,9 +2339,10 @@ def mode_build(job):
     if job.get("render"):
         t0 = time.time()
         try:
-            why = _render(ends, job["render"])
-            res_out["render"] = None if why else job["render"]
-            res_out["render_note"] = why
+            # R230: the kit's review sheet + cutaway, the hardware included
+            res_out.update(_render(ends, job["render"], doc=doc, ends=all_ends,
+                                   seeds=seed_objs, prompt=job.get("prompt"),
+                                   failures=res_out.get("failures"), workspace=ws))
         except Exception as exc:                        # noqa: BLE001
             res_out["render"] = None
             res_out["render_note"] = "render failed: %s" % exc

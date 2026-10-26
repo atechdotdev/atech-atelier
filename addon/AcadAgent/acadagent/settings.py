@@ -36,10 +36,43 @@ DEFAULTS = {
     # isolated launch, that is Opus (init reports claude-opus-5). Sonnet
     # becomes the default only if a full eval earns it (release PRD S26).
     "agent_model": "",
+    # "" = the mode's default (R230: "xhigh" in quality mode, the CLI's own
+    # in fast mode - claude_cli.agent_settings).
     "agent_effort": "",
-    # --max-budget-usd per turn; 0 = no limit.
-    "agent_budget_usd": 3.00,
+    # --max-budget-usd per turn; 0 = no limit. None = the mode's default
+    # (R230: claude_cli.QUALITY_BUDGET_USD in quality mode,
+    # DEFAULT_BUDGET_USD in fast mode).
+    "agent_budget_usd": None,
+    # R230: how the chat agent works. "quality" (the default) = the
+    # industrial-design workflow (design brief, sculpted forms, a detail
+    # list, review rounds; long turns); "fast" = the draft-first prompt that
+    # stops at the first CHECK PASS (the behaviour before R230). One switch
+    # for the prompt (build.quality_mode), the budget/effort defaults
+    # (claude_cli.agent_settings), the build and ./check timeout
+    # (sandbox.default_timeout) and the panel's fix/stall limits.
+    # $ATECH_PROMPT_MODE overrides it (the eval, the tests).
+    "agent_quality": "quality",
 }
+
+#: R230: the agent modes (settings "agent_quality", $ATECH_PROMPT_MODE).
+QUALITY, FAST = "quality", "fast"
+AGENT_QUALITIES = [
+    (QUALITY, "Quality - designs the whole product, takes longer"),
+    (FAST, "Fast - a quick first version"),
+]
+#: R230: the env override of "agent_quality" (the eval harness, the tests).
+MODE_ENV = "ATECH_PROMPT_MODE"
+#: R275: the --effort levels (claude_cli.EFFORTS, from `claude --help`;
+#: test_quality_prompt_r270 keeps the two equal) and quality mode's default
+#: effort (claude_cli.QUALITY_EFFORT, kept equal by the same test). xhigh
+#: stays the default until an A/B run shows "high" scores the same with
+#: fewer thinking stalls (round 1: 12-19 min before the first write).
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+QUALITY_EFFORT = "xhigh"
+#: R275: the env override of the MODE DEFAULT effort, for that A/B run (the
+#: eval sets it per arm). It never overrides the user's own "agent_effort";
+#: an unknown level is ignored.
+EFFORT_ENV = "ATECH_AGENT_EFFORT"
 
 #: Model choices offered for Claude Code (aliases the CLI resolves itself).
 AGENT_MODELS = [
@@ -76,6 +109,63 @@ def load():
     except (OSError, ValueError):
         pass
     return cfg
+
+
+def agent_quality(cfg=None):
+    """R230: "quality" or "fast" - $ATECH_PROMPT_MODE when it names one,
+    else the settings' "agent_quality" (an unknown value = the default).
+    A `cfg` dict passed WITHOUT the key (a caller that built its own dict,
+    from before R230) keeps the fast behaviour it was written for;
+    load() always carries the key, so Studio's own reads default to
+    quality."""
+    env = (os.environ.get(MODE_ENV) or "").strip().lower()
+    if env in (QUALITY, FAST):
+        return env
+    if cfg is None:
+        cfg = load()
+    if "agent_quality" not in cfg:
+        return FAST
+    val = str(cfg.get("agent_quality") or "").strip().lower()
+    return val if val in (QUALITY, FAST) else DEFAULTS["agent_quality"]
+
+
+def quality_default_effort():
+    """R275: quality mode's default effort - $ATECH_AGENT_EFFORT when it
+    names a level, else QUALITY_EFFORT."""
+    env = (os.environ.get(EFFORT_ENV) or "").strip().lower()
+    return env if env in EFFORT_LEVELS else QUALITY_EFFORT
+
+
+def mode_default_effort(cfg=None):
+    """R275: the effort a turn gets when the user chose none ("Mode
+    default"): quality_default_effort() in quality mode, "" (the CLI's
+    own) in fast mode."""
+    return quality_default_effort() if agent_quality(cfg) == QUALITY else ""
+
+
+def effective_effort(cfg=None):
+    """R275: the effort the next turn really runs at - the user's own
+    "agent_effort" when set, else mode_default_effort(). The eval records
+    it next to each turn so the A/B is measured, not assumed."""
+    if cfg is None:
+        cfg = load()
+    own = cfg.get("agent_effort")
+    own = own.strip().lower() if isinstance(own, str) else ""
+    return own or mode_default_effort(cfg)
+
+
+def effort_default_label():
+    """R500: the "Mode default" effort entry names what BOTH modes run at
+    (quality: quality_default_effort(), which follows $ATECH_AGENT_EFFORT;
+    fast: the CLI's own)."""
+    return "Mode default (quality: %s, fast: Claude Code's own)" % (
+        quality_default_effort())
+
+
+def mode_default_budget(mode):
+    """R500: the budget a turn gets in `mode` when the user set none."""
+    from . import claude_cli as _cc
+    return _cc.QUALITY_BUDGET_USD if mode == QUALITY else _cc.DEFAULT_BUDGET_USD
 
 
 def save(cfg):
@@ -173,21 +263,25 @@ def chat_workspace_root():
     """The folder build.new_workspace() creates chat-* folders in.
 
     Same derivation as build.new_workspace (FreeCAD's user data dir, else
-    ~/.local/share/Atech Atelier) - kept in step by
+    acadagent.fallback_data_root()) - kept in step by
     tests/test_chat_robustness.py, which compares the two."""
     try:
         import FreeCAD
         root = FreeCAD.getUserAppDataDir()
     except Exception:                                  # noqa: BLE001
-        root = os.path.expanduser("~/.local/share/Atech Atelier")
+        from . import fallback_data_root
+        root = fallback_data_root()
     return os.path.join(root, "agent")
 
 
 def old_workspaces(keep=(), root=None):
-    """chat-* folders under the workspace root, except those in `keep`.
+    """chat-* folders under the workspace root, except those in `keep` and
+    those of saved projects (saved_project_workspaces, R500).
     Returns [(path, bytes)]. Only folders named chat-* are ever listed."""
     root = root or chat_workspace_root()
-    keep = {os.path.realpath(k) for k in keep if k}
+    # R500: a saved project's chat folders are never offered for deletion.
+    keep = {os.path.realpath(k) for k in
+            tuple(keep or ()) + tuple(saved_project_workspaces(root)) if k}
     out = []
     try:
         names = sorted(os.listdir(root))
@@ -209,9 +303,43 @@ def old_workspaces(keep=(), root=None):
     return out
 
 
+def saved_project_workspaces(root=None):
+    """R500: the chat folders of SAVED projects - every chat folder the
+    session store (panel.sessions_path: sessions.json) records for a
+    project whose file is still on disk, and the past chats
+    (past_chats.json) of those projects. "Clear old chats" never deletes
+    a saved project's chat."""
+    root = root or chat_workspace_root()
+    out = []
+
+    def _load(name):
+        try:
+            with open(os.path.join(root, name), encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+    sessions = _load("sessions.json")
+    saved = set()
+    for key, rec in sessions.items():
+        if not isinstance(rec, dict):
+            continue
+        path = rec.get("path")
+        if isinstance(path, str) and path and os.path.isfile(path):
+            saved.add(key)
+            if isinstance(rec.get("ws"), str):
+                out.append(rec["ws"])
+    for key, chats in _load("past_chats.json").items():
+        if key in saved and isinstance(chats, list):
+            out += [c["ws"] for c in chats if isinstance(c, dict)
+                    and isinstance(c.get("ws"), str)]
+    return out
+
+
 def clear_workspaces(keep=(), root=None):
-    """Delete old chat folders (never those in `keep`, never anything not
-    named chat-*). Returns (removed_count, failed_count)."""
+    """Delete old chat folders (never those in `keep`, never a saved
+    project's (saved_project_workspaces, R500), never anything not named
+    chat-*). Returns (removed_count, failed_count)."""
     import shutil
     import stat
     removed = failed = 0
@@ -369,8 +497,21 @@ class SettingsDialog(QtWidgets.QDialog):
         else:
             self.agent_model.setEditText(cur)
         form.addRow("Claude model", self.agent_model)
+        # R230: the agent mode (quality by default; $ATECH_PROMPT_MODE wins).
+        self.agent_quality = QtWidgets.QComboBox()
+        for qid, label in AGENT_QUALITIES:
+            self.agent_quality.addItem(label, qid)
+        qidx = self.agent_quality.findData(agent_quality(cfg))
+        self.agent_quality.setCurrentIndex(max(0, qidx))
+        self.agent_quality.setToolTip(
+            "Quality: the agent writes a design brief, sculpts the body, works "
+            "through a detail list and reviews its own renders (long replies, "
+            "higher cost). Fast: a quick first version that stops at the "
+            "first passing check.")
+        form.addRow("Agent mode", self.agent_quality)
         self.agent_effort = QtWidgets.QComboBox()
-        self.agent_effort.addItem("Claude Code default", "")
+        # R275: the label names the default the mode really uses.
+        self.agent_effort.addItem(effort_default_label(), "")
         from . import claude_cli as _cc
         for lvl in _cc.EFFORTS:
             self.agent_effort.addItem(lvl, lvl)
@@ -383,15 +524,54 @@ class SettingsDialog(QtWidgets.QDialog):
         self.agent_budget.setDecimals(2)
         self.agent_budget.setPrefix("$ ")
         self.agent_budget.setSpecialValueText("no limit")
+        # R230: the budget the next turn really gets (an unset budget shows
+        # the mode's default). It is saved only when the user changes it, so
+        # an untouched dialog never pins the mode default as a choice.
         try:
-            self.agent_budget.setValue(float(cfg.get("agent_budget_usd")
-                                             or 0.0))
-        except (TypeError, ValueError):
+            shown = _cc.agent_settings(cfg)["budget"]
+            self.agent_budget.setValue(float(shown or 0.0))
+        except (TypeError, ValueError, KeyError):
             self.agent_budget.setValue(_cc.DEFAULT_BUDGET_USD)
+        self._budget_shown = round(float(self.agent_budget.value()), 2)
         self.agent_budget.setToolTip(
             "Claude Code stops a reply that would cost more than this "
             "(API-equivalent figure).")
-        form.addRow("Budget per reply", self.agent_budget)
+        # R500: "Use mode default" forgets the user's own budget, so the
+        # mode's default applies again (and follows a mode change).
+        self._budget_user = bool(cfg.get("agent_budget_user")) and \
+            cfg.get("agent_budget_usd") is not None
+        self._budget_reset = False
+        brow = QtWidgets.QHBoxLayout()
+        brow.setContentsMargins(0, 0, 0, 0)
+        brow.addWidget(self.agent_budget, 1)
+        self.budget_default = QtWidgets.QPushButton("Use mode default")
+        self.budget_default.setAccessibleName("Use the mode's default budget")
+        self.budget_default.setToolTip(
+            "Forget your own budget: quality mode gets $%.0f a reply, fast "
+            "mode $%.0f." % (mode_default_budget(QUALITY),
+                             mode_default_budget(FAST)))
+        self.budget_default.clicked.connect(self._on_budget_default)
+        brow.addWidget(self.budget_default)
+        self._budget_row = QtWidgets.QWidget()
+        self._budget_row.setLayout(brow)
+        form.addRow("Budget per reply", self._budget_row)
+        self.agent_quality.currentIndexChanged.connect(self._on_mode_changed)
+
+        # R500: where new projects go (projects_store.projects_dir).
+        self._projects_folder = self._projects_dir()
+        frow = QtWidgets.QHBoxLayout()
+        frow.setContentsMargins(0, 0, 0, 0)
+        self.projects_folder = QtWidgets.QLineEdit(self._projects_folder)
+        self.projects_folder.setReadOnly(True)
+        self.projects_folder.setAccessibleName("Projects folder")
+        pbrowse = QtWidgets.QPushButton("Choose…")
+        pbrowse.setAccessibleName("Choose the projects folder")
+        pbrowse.clicked.connect(self._on_choose_projects)
+        frow.addWidget(self.projects_folder, 1)
+        frow.addWidget(pbrowse)
+        self._projects_row = QtWidgets.QWidget()
+        self._projects_row.setLayout(frow)
+        form.addRow("Projects folder", self._projects_row)
 
         self.backend = QtWidgets.QLineEdit(cfg["backend_url"])
         form.addRow("Backend URL", self.backend)
@@ -445,6 +625,15 @@ class SettingsDialog(QtWidgets.QDialog):
         form.addRow("Chat data", ww)
         form.addRow("", self.ws_info)
 
+        # R500: Theme and navigation style live here too (shell's panel).
+        self.appearance = None
+        try:
+            from . import shell as _shell
+            self.appearance = _shell.appearance_panel(self)
+            form.addRow("Appearance", self.appearance)
+        except Exception as exc:                      # noqa: BLE001
+            _log("appearance panel not embedded: %r" % (exc,))
+
         self.status = QtWidgets.QLabel("")
         self.status.setWordWrap(True)
         # The install command shows here: it must be copyable.
@@ -463,6 +652,40 @@ class SettingsDialog(QtWidgets.QDialog):
 
         self._on_provider_changed()
         self._on_engine_changed()
+
+    @staticmethod
+    def _projects_dir():
+        try:
+            from . import projects_store
+            return projects_store.projects_dir()
+        except Exception as exc:                      # noqa: BLE001
+            _log("projects folder: %r" % (exc,))
+            return ""
+
+    def _on_choose_projects(self):
+        path = QtWidgets.QFileDialog.getExistingDirectory(
+            self, "Choose the projects folder",
+            self.projects_folder.text() or os.path.expanduser("~"))
+        if path:
+            self.projects_folder.setText(path)
+
+    def _on_budget_default(self):
+        """R500: show the mode's default budget; Save forgets the user's."""
+        self._budget_reset = True
+        self._budget_user = False
+        val = mode_default_budget(self.agent_quality.currentData() or QUALITY)
+        self.agent_budget.setValue(val)
+        self._budget_shown = round(float(self.agent_budget.value()), 2)
+
+    def _on_mode_changed(self, *_):
+        """R500: an untouched budget shows the new mode's default."""
+        if self._budget_user:
+            return
+        if round(float(self.agent_budget.value()), 2) != self._budget_shown:
+            return                      # changed in this dialog: theirs
+        val = mode_default_budget(self.agent_quality.currentData() or QUALITY)
+        self.agent_budget.setValue(val)
+        self._budget_shown = round(float(self.agent_budget.value()), 2)
 
     def _hide_row(self, widget):
         try:
@@ -514,7 +737,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.test_btn.setEnabled(eid == self._engine_mod.OPENCODE)
         self.test_btn.setVisible(self._dev)
         self._claude_row.setEnabled(eid == self._engine_mod.CLAUDE)
-        for w in (self.agent_model, self.agent_effort, self.agent_budget):
+        for w in (self.agent_model, self.agent_effort, self.agent_budget,
+                  self.agent_quality):
             w.setEnabled(eid == self._engine_mod.CLAUDE)
         desc = next((d for i, t, d in self._engine_mod.ENGINES if i == eid), "")
         if eid == self._engine_mod.CLAUDE:
@@ -561,7 +785,8 @@ class SettingsDialog(QtWidgets.QDialog):
             return
         total = sum(n for _p, n in old)
         self.ws_info.setText(
-            "%d folder%s, %s, in %s. The chat that is open now is kept."
+            "%d folder%s, %s, in %s. The chats open now and the chats of "
+            "saved projects are kept."
             % (len(old), "" if len(old) == 1 else "s", _human(total),
                chat_workspace_root()))
         self.ws_confirm.setText("Delete %d folder%s"
@@ -589,8 +814,17 @@ class SettingsDialog(QtWidgets.QDialog):
             "show_cost": bool(self.show_cost.isChecked()),
             "agent_model": self._agent_model_value(),
             "agent_effort": self.agent_effort.currentData() or "",
-            "agent_budget_usd": round(float(self.agent_budget.value()), 2),
+            "agent_quality": self.agent_quality.currentData() or QUALITY,
         }
+        budget = round(float(self.agent_budget.value()), 2)
+        if budget != self._budget_shown:
+            # R230: an explicit budget - it wins over the mode default.
+            changes["agent_budget_usd"] = budget
+            changes["agent_budget_user"] = True
+        elif self._budget_reset:
+            # R500: "Use mode default": no budget of the user's own.
+            changes["agent_budget_usd"] = None
+            changes["agent_budget_user"] = False
         if not self._dev:
             # Hidden fields keep their stored values.
             for k in ("backend_url", "provider", "model"):
@@ -621,6 +855,18 @@ class SettingsDialog(QtWidgets.QDialog):
             self._set_status("Could not save settings. Check that %s is "
                              "writable." % CONFIG_DIR, False)
             return
+        folder = self.projects_folder.text().strip()
+        if folder and folder != self._projects_folder:
+            try:
+                from . import projects_store
+                if not projects_store.set_projects_dir(folder):
+                    raise OSError("not saved")
+                self._projects_folder = folder
+            except Exception as exc:                  # noqa: BLE001
+                _log("projects folder not saved: %r" % (exc,))
+                self._set_status("Settings saved, but the projects folder "
+                                 "could not be changed.", False)
+                return
         self._set_status("Saved", True)
         QtCore.QTimer.singleShot(500, self.accept)
 

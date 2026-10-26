@@ -59,7 +59,7 @@ THE API IN ONE PAGE
 
 WHAT IT DOES NOT KNOW (raises UndefinedByLibrary rather than guessing)
     Pin-1 end of the row, retention, any board other than the 14-port, any
-    module whose mesh carries no header (knob, n20_wheel).
+    part whose mesh carries no header (n20_wheel, nema17_stepper).
 """
 import json
 import math
@@ -1197,8 +1197,8 @@ def _feat_for(mesh, name="?"):
 # and THIS source file, so it is kept next to the board entry, one file per
 # module, keyed by the sha256 of both: a changed module mesh or a changed
 # measuring rule re-measures. A module whose mesh has no header is cached as
-# that verdict (NoConnector, message and info) and raised again, so knob and
-# n20_wheel do not pay the measurement on every cold start either. Same
+# that verdict (NoConnector, message and info) and raised again, so parts
+# like n20_wheel do not pay the measurement on every cold start either. Same
 # switch as the board ($ATECH_BOARD_CACHE), same rule: any failure to read or
 # write is silent and falls back to measuring.
 MODULE_CACHE_FORMAT = 1
@@ -1631,6 +1631,8 @@ def remove(doc, port_n):
     if port_n not in occ:
         raise PortEmpty("port %d is empty" % port_n, kind="empty", port=port_n)
     name = occ[port_n].Name
+    for c in cables_of(doc, occ[port_n]):       # a cabled module's cables go too
+        doc.removeObject(c.Name)
     doc.removeObject(name)
     doc.recompute()
     return name
@@ -1643,6 +1645,399 @@ def slide(obj, travel_out):
     pl = App.Placement(obj.AtechSeatPlacement)
     pl.Base = pl.Base - d * float(travel_out)
     obj.Placement = pl
+
+
+# ------------------------------------------------------------ cables (R222)
+# A module need not sit on its port: a flat 6-way ribbon cable can carry
+# the port to wherever the design wants the module (a car's headlight in
+# its nose, a robot's eye in its head). Nothing about either end is typed
+# in. The BOARD end is the module's own measured header (body + 6 pins)
+# where seated_placement() would put it, so it lands in the port exactly
+# as the module would, and _check_seated() judges it with the same
+# numbers. The MODULE end is the port's own measured housing where it
+# would sit around that header on a seated module, so it takes all 6 pins
+# (each through a clearance hole) and stays clear of the module body
+# exactly as the real housing does. Between them a ribbon CABLE_W x
+# CABLE_T, smooth through the design's waypoints, twisted only as much as
+# keeps pin k on pin k.
+CABLE_W = 14.0          # ribbon width (under the 15.24 mm header row)
+CABLE_T = 0.6           # ribbon thickness: a sheet, but printable/visible
+CABLE_LEAD = 6.0        # straight run out of each connector before it bends
+PLUG_BACK = 6.0         # plug body behind the header front (the grip)
+PIN_HOLE = PIN_SECTION + 2 * 0.15   # socket hole: pin + 0.15 mm a side
+SOCKET_GAP = 0.1        # socket clear of the module's faces, each side
+HEADER_GAP = 0.05       # socket mouth clear of the header front
+CABLE_STEP = 2.5        # ribbon section spacing along the path (mm)
+
+
+def _box_shape(lo, hi):
+    import Part
+    lo, hi = np.minimum(lo, hi), np.maximum(lo, hi)
+    return Part.makeBox(*[float(v) for v in (hi - lo)],
+                        App.Vector(*[float(v) for v in lo]))
+
+
+def _frame_box(r, u, d, r0, r1, u0, u1, d0, d1):
+    """A box given in a module's (r, u, d) frame, as a Part shape in the
+    mesh frame. r, u, d are signed unit axes of the mesh frame
+    (measure_module_mesh), so the box stays axis-aligned there."""
+    R = np.column_stack([r, u, d])           # frame -> mesh
+    C = np.array([[x, y, z] for x in (r0, r1) for y in (u0, u1)
+                  for z in (d0, d1)]) @ R.T
+    return _box_shape(C.min(0), C.max(0))
+
+
+def _placed(shape, M):
+    sh = shape.copy()
+    sh.Placement = _placement_from(M[:3, :3], M[:3, 3]).multiply(sh.Placement)
+    return sh
+
+
+def _plug_shape(feat, g):
+    """The board-end plug of connector group g, in the module MESH frame:
+    the header body lengthened backwards to PLUG_BACK, and its 6 pins from
+    the header body to their measured tips."""
+    r, u, d = feat["r"], feat["u"], feat["d"]
+    f, b, rc = g["header_front"], g["header_bottom"], g["row_centre"]
+    half = HEADER_DIMS[2] / 2.0
+    # off the housing mouth and the PCB by HEADER_GAP (see _socket_shape);
+    # the pins still run the measured depth into the contacts
+    body = _frame_box(r, u, d, rc - half, rc + half, b + HEADER_GAP,
+                      b + HEADER_DIMS[1], f - PLUG_BACK, f - HEADER_GAP)
+    s = PIN_SECTION / 2.0
+    pins = [_frame_box(r, u, d, q["row"] - s, q["row"] + s, q["up"] - s,
+                       q["up"] + s, f - 0.5, q["tip"]) for q in g["pins"]]
+    return body.fuse(pins).removeSplitter()
+
+
+def _socket_shape(feat, g, p, Mseat_rel):
+    """The module-end socket of group g: port p's measured housing, brought
+    into the module mesh frame through the seated placement (relative to
+    the board), with a clearance hole round each pin."""
+    r, u, d = feat["r"], feat["u"], feat["d"]
+    inv = np.linalg.inv(Mseat_rel)
+    C = np.array([[x, y, z] for x in (p.housing_lo[0], p.housing_hi[0])
+                  for y in (p.housing_lo[1], p.housing_hi[1])
+                  for z in (p.housing_lo[2], p.housing_hi[2])])
+    L = _xf(inv, C)
+    lo, hi = L.min(0), L.max(0)
+    # The real housing shares faces with the module (its top under the
+    # module PCB, its mouth on the header front). A solid sharing a face
+    # with a mesh is judged by float noise once rotated (MEASURED: 1-2 of
+    # ~1000 samples "inside" the light at 0.002 mm), so the socket stands
+    # SOCKET_GAP off every module face; the tail face is free.
+    k = int(np.argmax(np.abs(d)))
+    lo, hi = lo + SOCKET_GAP, hi - SOCKET_GAP
+    if d[k] > 0:
+        lo[k] += HEADER_GAP - SOCKET_GAP
+        hi[k] += SOCKET_GAP
+    else:
+        hi[k] -= HEADER_GAP - SOCKET_GAP
+        lo[k] -= SOCKET_GAP
+    housing = _box_shape(lo, hi)
+    h = PIN_HOLE / 2.0
+    f = g["header_front"]
+    holes = [_frame_box(r, u, d, q["row"] - h, q["row"] + h, q["up"] - h,
+                        q["up"] + h, f - 0.5, q["tip"] + 0.3) for q in g["pins"]]
+    return housing.cut(holes), lo, hi
+
+
+def _ribbon(points, t0, t1, w0, w1, width=CABLE_W, thick=CABLE_T):
+    """A flat ribbon from points[0] to points[-1] (world). The first and
+    last legs are STRAIGHT and untwisted - the ribbon leaves each connector
+    the way a real one does, through the opening the housing came in by
+    (MEASURED: a ribbon bending and twisting from the socket face clipped
+    the light's case beside that opening). Between them a smooth curve
+    through the inner points, leaving along t0 and arriving along t1, its
+    width w0 at the start and w1 at the end: parallel transport, plus a
+    twist spread evenly over the curve for whatever turn is left."""
+    import Part
+    first, last = np.array(points[0], float), np.array(points[-1], float)
+    points = points[1:-1]
+    pts = [App.Vector(*[float(c) for c in q]) for q in points]
+    bs = Part.BSplineCurve()
+    bs.interpolate(pts, InitialTangent=App.Vector(*t0.tolist()),
+                   FinalTangent=App.Vector(*t1.tolist()))
+    edge = bs.toShape()
+    n = max(4, int(math.ceil(edge.Length / CABLE_STEP)))
+    # the ends by their own parameters: Length * n / n can land past the
+    # end and getParameterByLength raises (MEASURED, port 11)
+    us = [edge.FirstParameter] + [edge.getParameterByLength(edge.Length * i / n)
+                                  for i in range(1, n)] + [edge.LastParameter]
+    P = [np.array(tuple(edge.valueAt(q))) for q in us]
+    T = []
+    for q in us:
+        t = np.array(tuple(edge.tangentAt(q)))
+        T.append(t / np.linalg.norm(t))
+    W = [w0 - (w0 @ T[0]) * T[0]]
+    for t in T[1:]:
+        w = W[-1] - (W[-1] @ t) * t
+        nw = np.linalg.norm(w)
+        if nw < 1e-6:
+            raise AtechPortError("the cable folds back on itself: give it a "
+                                 "waypoint (via=...) round the bend",
+                                 kind="cable_fold")
+        W.append(w / nw)
+    tgt = w1 - (w1 @ T[-1]) * T[-1]
+    tgt = tgt / np.linalg.norm(tgt)
+    phi = math.atan2(float(np.cross(W[-1], tgt) @ T[-1]), float(W[-1] @ tgt))
+    def section(c, t, w):
+        nrm = np.cross(t, w)
+        cs = [c + sw * w * width / 2 + sn * nrm * thick / 2
+              for sw, sn in ((1, 1), (-1, 1), (-1, -1), (1, -1))]
+        vs = [App.Vector(*q.tolist()) for q in cs]
+        return Part.makePolygon(vs + [vs[0]])
+    wires = [section(first, T[0], W[0])]
+    for i, (c, t, w) in enumerate(zip(P, T, W)):
+        a = phi * i / n
+        w = w * math.cos(a) + np.cross(t, w) * math.sin(a)
+        wires.append(section(c, t, w))
+    wires.append(section(last, T[-1], tgt))
+    sh = Part.makeLoft(wires, True, True)
+    length = edge.Length + float(np.linalg.norm(P[0] - first)
+                                 + np.linalg.norm(P[-1] - last))
+    return sh, length, math.degrees(phi)
+
+
+def _cable_props(o):
+    for typ, prop, doc_ in (
+            ("App::PropertyString", "AtechCableModule", "Name of the module this cable serves"),
+            ("App::PropertyInteger", "AtechCablePort", "board port of the plug"),
+            ("App::PropertyFloat", "AtechCableLength", "ribbon length along its path (mm)"),
+            ("App::PropertyPlacement", "AtechCableBoardAt", "board Placement it was made for"),
+            ("App::PropertyPlacement", "AtechCableModuleAt", "module Placement it was made for")):
+        if prop not in o.PropertiesList:
+            o.addProperty(typ, prop, "Atech", doc_)
+
+
+def _axis_vec(word):
+    w = str(word).strip().upper()
+    if len(w) != 2 or w[0] not in "+-" or w[1] not in "XYZ":
+        raise PortSpecError("an axis is '+X', '-X', '+Y', '-Y', '+Z' or '-Z', "
+                            "not %r" % (word,), kind="axis")
+    v = np.zeros(3)
+    v["XYZ".index(w[1])] = 1.0 if w[0] == "+" else -1.0
+    return v
+
+
+def module_placement(module_name, at, face="+Z", cable=None):
+    """World Placement for cable(): the module's measured box centred on
+    `at` (x, y, z), its working face (buttons, LEDs, grille - the side
+    api_card lists as "up") pointing along `face`, and its pins - the side
+    its cable leaves from - pointing along `cable` ('+X' ... '-Z', at right
+    angles to face; default '-Y' for a face along Z, else '-Z')."""
+    f = measure_module(module_name)
+    u_w = _axis_vec(face)
+    if cable is None:
+        cable = "-Y" if abs(u_w[2]) > 0.5 else "-Z"
+    d_w = _axis_vec(cable)
+    if abs(u_w @ d_w) > 1e-9:
+        raise PortSpecError("face %s and cable %s must be at right angles"
+                            % (face, cable), kind="axis")
+    r_w = np.cross(u_w, d_w)
+    R = np.column_stack([r_w, u_w, d_w]) @ np.column_stack(
+        [f["r"], f["u"], f["d"]]).T
+    P = np.concatenate([f["body_tris"], f["pin_tris"]]).reshape(-1, 3)
+    c = (P.min(0) + P.max(0)) / 2.0
+    return _placement_from(R, np.array(at, float) - R @ c)
+
+
+@_few_blas_threads
+def cable(doc, module_name, port_arg, placement, via=(), label=None):
+    """Put module_name ANYWHERE (world `placement` of the module, in its
+    mesh frame - like am.load_module's) and wire it to port_arg with a flat
+    6-way ribbon cable per connector. Returns (module, [cable, ...]).
+
+    The board end of each cable is a plug that seats in the port exactly as
+    the module's own header would (6 pins in the 6 contacts); the module
+    end is a socket on all 6 of the module's pins. Each cable is a
+    Part::Feature (one solid, "<module>_cable_p<n>") the design must route
+    clear of its other parts: `via` = world points the ribbon passes
+    through (a list; for a two-connector module optionally {port: list}).
+    Without via it runs in one smooth curve - route it round a wall with
+    a waypoint. The module object is like seat()'s (AtechRole "module",
+    AtechPorts) with AtechJoint "cable"; check() tests its cable ends and
+    its interference, and it has no slide path.
+
+    IDEMPOTENT like seat(): the same module, ports and placement already
+    cabled returns the existing objects."""
+    import Part
+    b = board_object(doc)
+    ps = _as_ports(port_arg)
+    pl = placement if isinstance(placement, App.Placement) else App.Placement(placement)
+    occ = occupied(doc)
+    taken = [p.number for p in ps if p.number in occ]
+    if taken:
+        o = occ[taken[0]]
+        if (getattr(o, "AtechModule", None) == module_name
+                and getattr(o, "AtechJoint", None) == "cable"
+                and sorted(int(n) for n in o.AtechPorts) == sorted(p.number for p in ps)
+                and o.Placement.isSame(pl, 1e-7)):
+            return o, [q for q in doc.Objects
+                       if getattr(q, "AtechCableModule", None) == o.Name]
+        raise PortOccupied("port(s) %s already hold %s"
+                           % (taken, [occ[n].Label for n in taken]),
+                           kind="occupied", ports=taken,
+                           holders=[getattr(occ[n], "AtechModule", "") or occ[n].Label
+                                    for n in taken])
+    feat = measure_module(module_name)
+    seat_rel, info = seated_placement(module_name, port_arg, None, feat)
+    Bm = _matrix(b.Placement)
+    Ms_rel = _matrix(seat_rel)
+    Ms = Bm @ Ms_rel                         # where the plug(s) go
+    Mm = _matrix(pl)                         # where the module goes
+    ps_sorted = sorted(ps, key=lambda p: p.row_centre)
+    groups = feat["groups"]
+    if isinstance(via, dict):
+        vias = [list(via.get(p.number, ())) for p in ps_sorted]
+    else:
+        vias = [list(via)] * len(groups)
+    if len(groups) > 1 and not isinstance(via, dict) and vias[0]:
+        # one shared route: each ribbon keeps its plug's offset from the
+        # middle, so neighbouring cables run side by side, not through
+        # each other
+        mids = [np.array(_xf(Ms, (feat["r"] * g["row_centre"])[None, :])[0])
+                for g in groups]
+        mid = sum(mids) / len(mids)
+        vias = [[np.array(v, float) + (m - mid) for v in vias[0]] for m in mids]
+    name = label or "%s_%s" % (module_name, "_".join(str(p.number) for p in ps_sorted))
+    mod = _cabled_module(doc, module_name, info["ports"], pl, name, feat)
+    cables = []
+    try:
+        for g, p, v in zip(groups, ps_sorted, vias):
+            cables.append(_make_cable(doc, mod, feat, g, p, v, Ms, Ms_rel, Mm, b))
+    except Exception:
+        for c in cables:
+            doc.removeObject(c.Name)
+        doc.removeObject(mod.Name)
+        raise
+    doc.recompute()
+    return mod, cables
+
+
+def _cabled_module(doc, module_name, port_numbers, pl, name, feat=None):
+    """The module object of a cabled module: seat()'s properties, joint
+    "cable", at world placement pl (no cable made here)."""
+    feat = feat or measure_module(module_name)
+    Mm = _matrix(pl)
+    mod = doc.addObject("Mesh::Feature", name)
+    mod.Mesh = Mesh.Mesh(stl_path(module_name))
+    mod.Placement = pl
+    for typ, prop, doc_ in (
+            ("App::PropertyString", "AtechRole", "board | module"),
+            ("App::PropertyString", "AtechModule", "presets.yaml module name"),
+            ("App::PropertyIntegerList", "AtechPorts", "ports this module occupies"),
+            ("App::PropertyString", "AtechJoint", "joint type to the board"),
+            ("App::PropertyVector", "AtechSlideAxis", "world insertion direction (unit)"),
+            ("App::PropertyFloat", "AtechSlideOut", "travel (mm) from clear-of-board to seated"),
+            ("App::PropertyPlacement", "AtechSeatPlacement", "seated placement = travel limit")):
+        mod.addProperty(typ, prop, "Atech", doc_)
+    mod.AtechRole = "module"
+    mod.AtechModule = module_name
+    mod.AtechPorts = [int(n) for n in port_numbers]
+    mod.AtechJoint = "cable"
+    mod.AtechSlideAxis = App.Vector(*(Mm[:3, :3] @ feat["d"]).tolist())
+    mod.AtechSlideOut = 0.0
+    mod.AtechSeatPlacement = pl
+    return mod
+
+
+def place_cabled(doc, module_name, port_arg, placement, label=None):
+    """Studio's replay of a cabled module (build.py R92/R222): the module
+    object alone at `placement`; its cables arrive as ordinary shapes and
+    are marked with tag_cable()."""
+    ps = sorted(_as_ports(port_arg), key=lambda p: p.row_centre)
+    pl = placement if isinstance(placement, App.Placement) else App.Placement(placement)
+    name = label or "%s_%s" % (module_name, "_".join(str(p.number) for p in ps))
+    return _cabled_module(doc, module_name, [p.number for p in ps], pl, name)
+
+
+def tag_cable(c, module_obj, port_n, length, board_obj):
+    """Mark Part c as module_obj's cable to port_n, made for the board and
+    the module where they stand now (check() tests exactly that)."""
+    _cable_props(c)
+    c.AtechCableModule = module_obj.Name
+    c.AtechCablePort = int(port_n)
+    c.AtechCableLength = float(length)
+    c.AtechCableBoardAt = board_obj.Placement
+    c.AtechCableModuleAt = module_obj.Placement
+
+
+def _make_cable(doc, mod, feat, g, p, v, Ms, Ms_rel, Mm, b):
+    """One connector group's cable: plug + ribbon + socket, one solid."""
+    plug = _placed(_plug_shape(feat, g), Ms)
+    sock, lo, hi = _socket_shape(feat, g, p, Ms_rel)
+    sock = _placed(sock, Mm)
+    r, u, d = feat["r"], feat["u"], feat["d"]
+    up = float(np.mean([q["up"] for q in g["pins"]]))
+    # ribbon ends, in the mesh frame: the plug's back face, the
+    # socket's tail face (the side away from the module)
+    a = r * g["row_centre"] + u * up
+    back_l = a + d * (g["header_front"] - PLUG_BACK + 0.5)
+    # the housing's tail face along d (d is a signed mesh axis)
+    k = int(np.argmax(np.abs(d)))
+    tail_c = hi[k] if d[k] > 0 else lo[k]
+    tail_l = a.copy()
+    tail_l[k] = tail_c - 0.5 * d[k]
+    S0 = _xf(Ms, back_l[None, :])[0]
+    E0 = _xf(Mm, tail_l[None, :])[0]
+    out0 = -(Ms[:3, :3] @ d)               # out of the plug's back
+    out1 = Mm[:3, :3] @ d                  # out of the socket's tail
+    # the straight lead out of the socket runs clear of the
+    # module's own outline (its case closes round the housing)
+    P = np.concatenate([feat["body_tris"], feat["pin_tris"]]).reshape(-1, 3)
+    past = float((P @ d).max() - tail_l @ d)
+    lead1 = max(CABLE_LEAD, past + 2.0)
+    pts = [S0, S0 + out0 * CABLE_LEAD] + [np.array(q, float) for q in v] + \
+          [E0 + out1 * lead1, E0]
+    rib, length, twist = _ribbon(pts, out0, -out1, Ms[:3, :3] @ r,
+                                 Mm[:3, :3] @ r)
+    sh = plug.fuse([rib, sock]).removeSplitter()
+    if len(sh.Solids) != 1 or not sh.isValid():
+        raise AtechPortError("cable to port %d is not one valid solid "
+                             "(%d solids): move the module or add a "
+                             "waypoint" % (p.number, len(sh.Solids)),
+                             kind="cable_shape", port=p.number)
+    c = doc.addObject("Part::Feature", "%s_cable_p%d" % (mod.Name, p.number))
+    c.Shape = sh.Solids[0]
+    tag_cable(c, mod, p.number, length, b)
+    try:
+        c.ViewObject.ShapeColor = (0.85, 0.85, 0.82)
+    except Exception:                            # noqa: BLE001
+        pass
+    return c
+
+
+def cables_of(doc, module_obj):
+    """The cable objects cable() made for module_obj ([] for a seated one)."""
+    return [q for q in doc.Objects
+            if getattr(q, "AtechCableModule", None) == module_obj.Name]
+
+
+def _check_cabled(o, feat, ps, b, cables):
+    """seated -> 'connected' for a cabled module: each cable present, made
+    for the board and module where they are now, and its plug's pins in
+    the port contacts (the module's header at the seated placement, judged
+    by _check_seated with the seat's own numbers)."""
+    by_port = {int(getattr(c, "AtechCablePort", -1)): c for c in cables}
+    missing = [p.number for p in ps if p.number not in by_port]
+    if missing:
+        return {"verdict": FAIL, "why": "no cable to port(s) %s" % missing,
+                "ports": []}
+    moved = [c.Label for c in by_port.values()
+             if not c.AtechCableBoardAt.isSame(b.Placement, 1e-6)
+             or not c.AtechCableModuleAt.isSame(o.Placement, 1e-6)]
+    if moved:
+        return {"verdict": FAIL, "why": "the board or the module moved after "
+                "its cable was made (%s): make the cable again" % ", ".join(moved),
+                "ports": []}
+    Bm = _matrix(b.Placement)
+    seat_rel, _ = seated_placement(o.AtechModule, [p.number for p in ps], None, feat)
+    res = _check_seated(Bm @ _matrix(seat_rel), feat, ps, np.linalg.inv(Bm))
+    res = dict(res)
+    res["cable"] = {c.Label: round(float(c.AtechCableLength), 1)
+                    for c in by_port.values()}
+    return res
 
 
 # ------------------------------------------------------------ checking
@@ -2478,6 +2873,7 @@ def _hits(T, col, lo_box, hi_box, s_out):
 # case of 31 faces colliding with a module cost 5.8 s of isInside with the
 # old threshold of 256 (review, round 4).
 CLASSIFY_FACES = 8
+GRID_ENTRIES = 12          # R250: _RayGrid cell entries per triangle, at most
 _RAY = np.array([0.5773502, 0.5773519, 0.5773486])
 _RAY = _RAY / np.linalg.norm(_RAY)
 _SOLID_INFO = {}
@@ -2540,11 +2936,19 @@ class _RayGrid(object):
         self.o = lo2.min(0)
         span = np.maximum(hi2.max(0) - self.o, 1e-9)
         self.n = max(1, int(np.sqrt(len(good))))                    # cells per axis
-        self.h = span / self.n
-        c0 = np.clip(((lo2 - self.o) / self.h).astype(np.int64), 0, self.n - 1)
-        c1 = np.clip(((hi2 - self.o) / self.h).astype(np.int64), 0, self.n - 1)
-        ni, nj = c1[:, 0] - c0[:, 0] + 1, c1[:, 1] - c0[:, 1] + 1
-        cnt = ni * nj
+        # R250: long sliver triangles (a spline body's tessellation) cross
+        # hundreds of cells each - 20 M (cell, triangle) entries and 1 s of
+        # argsort for ONE toy-car body. Coarser cells until the entries are
+        # at most GRID_ENTRIES x the triangles (parity is the same at any n)
+        while True:
+            self.h = span / self.n
+            c0 = np.clip(((lo2 - self.o) / self.h).astype(np.int64), 0, self.n - 1)
+            c1 = np.clip(((hi2 - self.o) / self.h).astype(np.int64), 0, self.n - 1)
+            ni, nj = c1[:, 0] - c0[:, 0] + 1, c1[:, 1] - c0[:, 1] + 1
+            cnt = ni * nj
+            if self.n <= 8 or int(cnt.sum()) <= GRID_ENTRIES * len(good):
+                break
+            self.n = max(8, self.n * 2 // 3)
         t = np.repeat(np.arange(len(good)), cnt)
         off = np.arange(int(cnt.sum())) - np.repeat(np.cumsum(cnt) - cnt, cnt)
         cell = (c0[t, 0] + off // nj[t]) * self.n + (c0[t, 1] + off % nj[t])
@@ -2733,8 +3137,9 @@ def _evaluate(sig, feat, Mw, ps, Bm, s_out, board, obstacles, untested, skip=Non
 
     mkey = (sig, _r6(Mw), s_key, a_key)
     Minv = np.linalg.inv(Mw)
+    skips = skip if isinstance(skip, (list, tuple, set, frozenset)) else (skip,)
     for rec in obstacles:
-        if skip is not None and rec["obj"] is skip:
+        if any(rec["obj"] is q for q in skips if q is not None):
             continue
         # Keyed on the obstacle's Name + geometry (rec["key"]) only; the
         # LABEL is read now, at report time (R100): a relabel must neither
@@ -2884,6 +3289,20 @@ def check(doc, only=None, fitted_after=None):
         if obstacles is None:
             obstacles, untested = _obstacles(doc, b)
         ps = [port(int(n)) for n in o.AtechPorts]
+        if getattr(o, "AtechJoint", None) == "cable":
+            # R222: a cabled module sits where the design put it. Its own
+            # cables hold its pins (they are not obstacles to it); nothing
+            # slides, so the seat test moves to the cable's plug.
+            own = cables_of(doc, o)
+            ev = _evaluate(sig, feat, _matrix(o.Placement), ps, _matrix(b.Placement),
+                           0.0, board, obstacles, untested, skip=[o] + own,
+                           fitted_after=fitted_after)
+            res["seated"] = _check_cabled(o, feat, ps, b, own)
+            res["interference"] = ev["interference"]
+            res["slide_path"] = {"verdict": PASS, "hits": {}, "untested": [],
+                                 "travel_mm": 0.0,
+                                 "why": "cabled: the module does not slide onto a port"}
+            continue
         res.update(_evaluate(sig, feat, _matrix(o.Placement), ps, _matrix(b.Placement),
                              float(o.AtechSlideOut), board, obstacles, untested, skip=o,
                              fitted_after=fitted_after))
@@ -2954,7 +3373,7 @@ def pair_for(doc, module_name, port_n, reserved=None):
 
 
 # ------------------------------------------------------------ API card (S21)
-_CARD_CALLS = ("board_object", "seat", "pair_for", "remove", "occupied", "bbox",
+_CARD_CALLS = ("board_object", "seat", "cable", "module_placement", "cables_of", "pair_for", "remove", "occupied", "bbox",
                "slide", "check", "port_table", "warm")
 
 
@@ -2973,6 +3392,40 @@ def _mouth_plane(p):
     d = p["insert_dir"]
     k = int(np.argmax(np.abs(d)))
     return "%s=%s" % ("xyz"[k], _fmt(p["mouth"] * (1 if d[k] > 0 else -1)))
+
+
+#: presets.yaml categories of parts that plug into no port: a motor wired to a
+#: driver module, a wheel on a module's shaft. They are placed, never seated.
+OFF_BOARD_CATEGORIES = ("motor", "wheel")
+
+
+def _off_board_parts(names):
+    """{name: (category, measured (x, y, z))} for the library's off-board
+    parts among `names`. Empty when presets.yaml cannot be read: the card
+    then lists them as unseatable, which is still true."""
+    try:
+        import atech_modules
+        import Mesh
+        out = {}
+        for n in names:
+            cat = atech_modules.spec(n).get("category")
+            if cat in OFF_BOARD_CATEGORIES:
+                bb = Mesh.Mesh(atech_modules.stl_path(n)).BoundBox
+                out[n] = (cat, (bb.XLength, bb.YLength, bb.ZLength))
+        return out
+    except Exception:                                  # noqa: BLE001
+        return {}
+
+
+def _derived_modules(names):
+    """Names among `names` whose presets.yaml entry is `derived` (no Atech
+    CAD: the simready dataset's module shell + placeholder parts). Empty
+    when presets.yaml cannot be read."""
+    try:
+        import atech_modules
+        return sorted(n for n in names if atech_modules.spec(n).get("derived"))
+    except Exception:                                  # noqa: BLE001
+        return []
 
 
 def api_card():
@@ -3013,7 +3466,10 @@ def api_card():
                  "%s %s" % (k, _axis_word(-_v(table[n0]["insert_dir"])))
                  for k, n0 in (("1-6", 1), ("9-14", 9), ("7", 7), ("8", 8)))))
     unseatable = []
+    off_board = _off_board_parts(names)
     for n in names:
+        if n in off_board:
+            continue
         try:
             f = measure_module(n)
         except UndefinedByLibrary:
@@ -3030,6 +3486,20 @@ def api_card():
     if unseatable:
         L.append("  %s: no pin header: cannot be seated (OPEN)"
                  % ", ".join(unseatable))
+    derived = _derived_modules(names)
+    if derived:
+        L.append("  %s: DERIVED: real case, PCB and pins; the parts on top are "
+                 "placeholders, not Atech CAD (am.spec(name)[\"derived\"])"
+                 % ", ".join(derived))
+    if off_board:
+        L.append("OFF-BOARD PARTS (wired or mechanical, never seated; x y z as "
+                 "the mesh lies at identity)")
+        for n, (cat, dims) in sorted(off_board.items()):
+            L.append("  %-15s %s %s" % (n, cat, "x".join(_fmt(v) for v in dims)))
+        L.append('  import atech_modules as am; obj, _ = am.load_module(doc, '
+                 '"nema17_stepper", placement=Placement(...))')
+        L.append("  a part's own frame and its mounting dimensions: "
+                 "am.spec(name)[\"agent_notes\"]")
     L.append("CALLS (import atech_ports as ap)")
     for c in _CARD_CALLS:
         L.append("  ap.%s%s" % (c, inspect.signature(globals()[c])))
@@ -3040,8 +3510,19 @@ def api_card():
              "case: parts fitted after the modules (caps, lid; Name or Label) do not "
              "block slide_path but still count for interference. Undeclared, "
              "every part blocks the slide path.")
+    L.append("  CABLES: a module does not have to sit on its port. ap.cable() puts it "
+             "where the design needs it and wires each connector to its port with "
+             "a flat %.0f x %.1f mm 6-way ribbon: a plug in the port (all 6 pins in "
+             "the contacts), a socket on all 6 module pins. Each ribbon is its own "
+             "Part::Feature: route it inside the product with via=[(x, y, z), ...] "
+             "and keep every part clear of it (it counts for overlaps). The "
+             "socket stands %.1f mm out past the module's pin side." % (
+                 CABLE_W, CABLE_T, abs(float(_v(table[1]["insert_dir"]) @ (
+                     _v(table[1]["housing_hi"]) - _v(table[1]["housing_lo"]))))))
     L.append("EXAMPLE")
     L.append('  light = ap.seat(doc, "light", 2)')
+    L.append('  head, ribbons = ap.cable(doc, "light", 11, ap.module_placement('
+             '"light", (30, -140, 20), face="-Y", cable="+Z"), via=[(30, -115, 30)])')
     L.append('  screen = ap.seat(doc, "screen", ap.pair_for(doc, "screen", 9))')
     L.append("  bb = ap.bbox(light)  # world App.BoundBox")
     off = []
@@ -3060,3 +3541,223 @@ def api_card():
                  "pairs across them can fail" % ", ".join(off))
     L.append("  retention, contact force, per-pin current")
     return "\n".join(L) + "\n"
+
+
+# ------------------------------------------- moving the board and modules (R300)
+# Seats are stored as ABSOLUTE world placements (AtechSeatPlacement), so a
+# board moved with FreeCAD's own tools leaves every seated module where it
+# was, and a cabled module's cables are made for the board and module where
+# they stood (AtechCableBoardAt / AtechCableModuleAt). These helpers find
+# what no longer matches and put it right. They add nothing to seat(),
+# cable() or check(): those behave exactly as before.
+RESEAT_TOL = 1e-6       # mm / rad, Placement.isSame tolerance
+
+
+def _seat_now(o, b, port_numbers=None, feat=None):
+    """(Placement, info, slide axis, slide out) that seats o's module on
+    port_numbers (default: the ports it holds) of board b where b is NOW."""
+    name = o.AtechModule
+    feat = feat or measure_module(name)
+    ns = [int(n) for n in (port_numbers if port_numbers is not None else o.AtechPorts)]
+    pl, info = seated_placement(name, ns if len(ns) > 1 else ns[0], b.Placement, feat)
+    Bm = _matrix(b.Placement)
+    d_world = Bm[:3, :3] @ _v(port(ns[0]).insert_dir)
+    return pl, info, d_world, _slide_out(feat, _matrix(pl), d_world, Bm)
+
+
+def _row_order(ports_):
+    return sorted((int(n) for n in ports_), key=lambda n: port(n).row_centre)
+
+
+def _default_label(module_name, ports_):
+    """seat()'s default label for module_name on ports_."""
+    return "%s_p%s" % (module_name, "_".join(str(n) for n in _row_order(ports_)))
+
+
+def _cabled_label(module_name, ports_):
+    """cable()'s default label for module_name on ports_."""
+    return "%s_%s" % (module_name, "_".join(str(n) for n in _row_order(ports_)))
+
+
+def stale_modules(doc):
+    """What no longer matches the board where it is now:
+    {"seated": [Name, ...]   seated modules whose seat is not where the
+                             board's port puts it (the board moved),
+     "cabled": [Name, ...]   cabled modules with a cable made for another
+                             board or module placement, or a cable missing,
+     "unknown": {Name: why}  modules that could not be judged}.
+    Empty lists when there is no board."""
+    out = {"seated": [], "cabled": [], "unknown": {}}
+    b = board_object(doc, create=False)
+    if b is None:
+        return out
+    seen = set()
+    for o in occupied(doc).values():
+        if o.Name in seen:
+            continue
+        seen.add(o.Name)
+        if getattr(o, "AtechJoint", None) == "cable":
+            cs = cables_of(doc, o)
+            have = {int(getattr(c, "AtechCablePort", -1)) for c in cs}
+            if (have != {int(n) for n in o.AtechPorts} or any(
+                    not c.AtechCableBoardAt.isSame(b.Placement, RESEAT_TOL)
+                    or not c.AtechCableModuleAt.isSame(o.Placement, RESEAT_TOL)
+                    for c in cs)):
+                out["cabled"].append(o.Name)
+            continue
+        try:
+            ns = [int(n) for n in o.AtechPorts]
+            pl = seated_placement(o.AtechModule, ns if len(ns) > 1 else ns[0],
+                                  b.Placement)[0]
+        except Exception as exc:                       # noqa: BLE001
+            out["unknown"][o.Name] = str(exc)
+            continue
+        if not pl.isSame(o.AtechSeatPlacement, RESEAT_TOL):
+            out["seated"].append(o.Name)
+    return out
+
+
+def board_moved(doc):
+    """True when any module no longer matches the board (stale_modules)."""
+    s = stale_modules(doc)
+    return bool(s["seated"] or s["cabled"])
+
+
+def reseat(doc, o, port_numbers=None):
+    """Seat module object o on port_numbers (default: its own ports) of the
+    board where the board is NOW: placement, slide axis, slide out and seat
+    are all recomputed; the object (Name, colour, everything else) is kept.
+    A seated module only; a cabled one is remake_cable()'s."""
+    if getattr(o, "AtechJoint", None) == "cable":
+        raise PortSpecError("%s is on a cable; remake its cable instead" % o.Label,
+                            kind="cabled", module=getattr(o, "AtechModule", ""))
+    b = board_object(doc)
+    pl, info, d_world, out = _seat_now(o, b, port_numbers)
+    o.AtechPorts = info["ports"]
+    o.AtechSlideAxis = App.Vector(*[float(v) for v in d_world])
+    o.AtechSlideOut = out
+    o.AtechSeatPlacement = pl
+    o.Placement = pl
+    return o
+
+
+def remake_cable(doc, module_obj, via=()):
+    """Make module_obj's cable(s) again for the board and the module where
+    they are NOW (and for the ports it holds now): the old cables are
+    removed, new ones made exactly as cable() makes them. Returns the new
+    cables. The design's waypoints are not stored with a cable, so the new
+    ribbon runs in one smooth curve unless `via` is given (as for cable())."""
+    o = module_obj
+    if getattr(o, "AtechJoint", None) != "cable":
+        raise PortSpecError("%s is seated on its port, not on a cable" % o.Label,
+                            kind="not_cabled", module=getattr(o, "AtechModule", ""))
+    b = board_object(doc)
+    feat = measure_module(o.AtechModule)
+    ns = [int(n) for n in o.AtechPorts]
+    ps = _as_ports(ns)
+    seat_rel, _ = seated_placement(o.AtechModule, ns if len(ns) > 1 else ns[0],
+                                   None, feat)
+    Bm = _matrix(b.Placement)
+    Ms_rel = _matrix(seat_rel)
+    Ms = Bm @ Ms_rel
+    Mm = _matrix(o.Placement)
+    ps_sorted = sorted(ps, key=lambda p: p.row_centre)
+    groups = feat["groups"]
+    if isinstance(via, dict):
+        vias = [list(via.get(p.number, ())) for p in ps_sorted]
+    else:
+        vias = [list(via)] * len(groups)
+    for c in cables_of(doc, o):
+        doc.removeObject(c.Name)
+    made = []
+    for g, p, v in zip(groups, ps_sorted, vias):
+        made.append(_make_cable(doc, o, feat, g, p, v, Ms, Ms_rel, Mm, b))
+    # AtechSeatPlacement of a cabled module is where the module stands
+    o.AtechSeatPlacement = o.Placement
+    doc.recompute()
+    return made
+
+
+def reseat_all(doc):
+    """After the board moved: every seated module follows the board (seated
+    on its own ports where they are now) and every cabled module whose cable
+    no longer matches gets its cable remade (the module stays where the
+    design put it). Returns {"reseated": [Name], "recabled": [Name],
+    "failed": {Name: why}}. Nothing else in the document is touched."""
+    s = stale_modules(doc)
+    rep = {"reseated": [], "recabled": [], "failed": dict(s["unknown"])}
+    for name in s["seated"]:
+        o = doc.getObject(name)
+        try:
+            reseat(doc, o)
+            rep["reseated"].append(name)
+        except Exception as exc:                       # noqa: BLE001
+            rep["failed"][name] = str(exc)
+    for name in s["cabled"]:
+        o = doc.getObject(name)
+        try:
+            remake_cable(doc, o)
+            rep["recabled"].append(name)
+        except Exception as exc:                       # noqa: BLE001
+            rep["failed"][name] = str(exc)
+    doc.recompute()
+    return rep
+
+
+def move(doc, o, port_arg):
+    """Move module object o to port_arg (int, or a tuple for a
+    two-connector module). The new ports must be free (or held by o itself).
+    A seated module is re-seated there; a cabled module stays where it is
+    and its cable is remade to the new port. Its default label follows the
+    ports. Returns o."""
+    ps = _as_ports(port_arg)
+    ns = [p.number for p in ps]
+    occ = occupied(doc)
+    taken = [n for n in ns if n in occ and occ[n].Name != o.Name]
+    if taken:
+        raise PortOccupied("port(s) %s already hold %s"
+                           % (taken, [occ[n].Label for n in taken]),
+                           kind="occupied", ports=taken,
+                           holders=[getattr(occ[n], "AtechModule", "") or occ[n].Label
+                                    for n in taken])
+    old = [int(n) for n in o.AtechPorts]
+    module = o.AtechModule
+    cabled = getattr(o, "AtechJoint", None) == "cable"
+    if cabled:
+        # validate first: seated_placement raises for ports the module
+        # cannot take, before anything is changed
+        seated_placement(module, ns if len(ns) > 1 else ns[0], None)
+        o.AtechPorts = _row_order(ns)
+        remake_cable(doc, o)
+    else:
+        reseat(doc, o, ns)
+    lab = (_cabled_label if cabled else _default_label)
+    if o.Label == lab(module, old):
+        o.Label = lab(module, o.AtechPorts)
+    doc.recompute()
+    return o
+
+
+def swap(doc, a, b_obj):
+    """Swap two modules' ports. Both must take the same number of ports.
+    Each lands as move() would put it; nothing changes when either cannot
+    take the other's ports. Returns (a, b_obj)."""
+    pa = [int(n) for n in a.AtechPorts]
+    pb = [int(n) for n in b_obj.AtechPorts]
+    if len(pa) != len(pb):
+        raise PortSpecError("%s takes %d port(s) and %s takes %d: they cannot "
+                            "swap" % (a.Label, len(pa), b_obj.Label, len(pb)),
+                            kind="swap_count", module=getattr(a, "AtechModule", ""))
+    for o, ns in ((a, pb), (b_obj, pa)):
+        seated_placement(o.AtechModule, ns if len(ns) > 1 else ns[0], None)
+    # free a's ports for a moment, so neither move sees the other in the way
+    a.AtechPorts = []
+    try:
+        move(doc, b_obj, pa if len(pa) > 1 else pa[0])
+    except Exception:
+        a.AtechPorts = pa
+        raise
+    a.AtechPorts = pa
+    # a still believes it holds pa; move() only refuses ports held by OTHERS
+    move(doc, a, pb if len(pb) > 1 else pb[0])
+    return a, b_obj

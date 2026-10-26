@@ -19,6 +19,14 @@ box, lid, motion = cad.pin_hinge(box, lid, knuckles=2, pin_d=PIN,
                                  clearance=0.2, axis="+Y")
 doc.addObject("Part::Feature", "Box").Shape = box
 doc.addObject("Part::Feature", "Lid").Shape = lid
+# The pin itself (R500): pin_hinge leaves the bore empty, and a bore with
+# nothing in it joins nothing (./check: "fastening: Lid meets Box but
+# nothing joins them"). Model the filament pin on the returned axis, the
+# full length of the hinge edge, so the hinge is what holds the lid on.
+import FreeCAD
+(px, py, pz), (dx, dy, dz) = motion["axis"]
+pin = Part.makeCylinder(PIN / 2, L, FreeCAD.Vector(0, py, pz), FreeCAD.Vector(1, 0, 0))
+doc.addObject("Part::Feature", "Hinge_Pin").Shape = pin
 # Put the returned entry in intent.json so ./check sweeps the lid open:
 #   "motion": [{"part": "Lid", "axis": [[30, 40, 25], [-1, 0, 0]],
 #               "range_deg": [0, 90]}]

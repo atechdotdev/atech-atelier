@@ -161,24 +161,8 @@ def register():
     FreeCADGui.addCommand("AcadAgent_FitView", FitView())
     FreeCADGui.addCommand("AcadAgent_Terminal", OpenTerminal())
     FreeCADGui.addCommand("AcadAgent_AskView", AskClaudeAboutView())
-    # One command per project, so each appears in the menu by its real name
-    # rather than behind a chooser dialog.
-    for key in project_command_ids():
-        FreeCADGui.addCommand("AcadAgent_Project_%s" % _safe(key),
-                              NewModuleProject(key))
-
-
-def _safe(key):
-    return "".join(c if c.isalnum() else "_" for c in key)
-
-
-def project_command_ids():
-    """Project keys the library can actually build, or [] when it is absent."""
-    try:
-        from . import projects
-        return projects.project_keys() if projects.library_available() else []
-    except Exception:
-        return []
+    # R456: the per-project "New Project" commands (starter projects built
+    # by projects.py) are gone; see default_projects.py.
 
 
 class OpenTerminal:
@@ -224,30 +208,3 @@ class AskClaudeAboutView:
         # state, like the view bar button this mirrors.
         import FreeCAD
         return FreeCAD.ActiveDocument is not None
-
-
-class NewModuleProject:
-    """Build a project from real Atech modules.
-
-    Geometry and dimensions come from the module library's own presets.yaml
-    ("never guess"), and every placement is measured against it. A module the
-    library does not define is reported, never approximated.
-    """
-
-    def __init__(self, key=None):
-        self._key = key
-
-    def GetResources(self):
-        from . import projects
-        p = projects.project_info(self._key)
-        return {"MenuText": p["title"] if p else "New Module Project…",
-                "ToolTip": p["purpose"] if p else
-                           "Assemble a board and modules from the Atech library"}
-
-    def Activated(self):
-        from . import projects
-        projects.build_and_show(self._key)
-
-    def IsActive(self):
-        from . import projects
-        return projects.library_available()

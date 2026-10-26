@@ -76,6 +76,7 @@ KNOWN_LOCATIONS = (
     "~/.bun/bin/claude",
     "~/.volta/bin/claude",
     "~/.local/share/pnpm/claude",
+    "~/Library/pnpm/claude",               # pnpm on macOS
     "~/.yarn/bin/claude",
     "/usr/local/bin/claude",
     "/opt/homebrew/bin/claude",
@@ -319,6 +320,9 @@ def supported_flags(exe=None, timeout=10):
 #: --strict-mcp-config: MEASURED, --tools alone still loaded the user's MCP
 #: servers (97k tokens for "OK").
 AGENT_TOOLS = "Read,Write,Edit,Bash,Glob,Grep"
+#: R500: the tools of an "Ask about this view" reply: it reads and looks,
+#: it never writes (no Write, Edit or Bash), whatever the permission mode.
+VIEW_TOOLS = "Read,Glob,Grep"
 #: Exactly the self-check command (S09/S10), never bare Bash. MEASURED
 #: 2026-09-25: with these, `./check` ran; `./check 2>&1; echo` and `ls ~`
 #: came back as permission_denials.
@@ -326,30 +330,84 @@ CHECK_ALLOW = ("Bash(./check)", "Bash(./check *)")
 #: --effort choices, from `claude --help` (2.1.232).
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 DEFAULT_BUDGET_USD = 3.00
+#: R230: quality mode's defaults when the user set none (settings
+#: "agent_quality"). The baseline showcase run stopped at $0.47-$1.98 a
+#: turn with plain boxes (r4); a detailed product needs long turns. The
+#: model is never forced: "" stays the CLI's own default.
+QUALITY_BUDGET_USD = 25.00
+QUALITY_EFFORT = "xhigh"
+#: R230: the budget every settings save wrote before R230 (settings.update
+#: merges DEFAULTS, which held 3.00 - MEASURED in the dev machine's
+#: settings.json, "agent_budget_usd": 3.0 with no dialog change). In
+#: quality mode it counts as unset unless the dialog marked it as the
+#: user's own ("agent_budget_user").
+LEGACY_BUDGET_USD = 3.00
+
+
+def _quality(cfg):
+    try:
+        from . import settings
+        return settings.agent_quality(cfg) == settings.QUALITY
+    except Exception:                                  # noqa: BLE001
+        mode = (os.environ.get("ATECH_PROMPT_MODE") or "").strip().lower()
+        return mode == "quality" or (mode != "fast" and "agent_quality" in cfg
+                                     and cfg.get("agent_quality") != "fast")
+
+
+def _mode_effort():
+    """R500: quality mode's default effort: settings.quality_default_effort
+    ($ATECH_AGENT_EFFORT when it names a level, else QUALITY_EFFORT)."""
+    try:
+        from . import settings
+        return settings.quality_default_effort()
+    except Exception:                                  # noqa: BLE001
+        env = (os.environ.get("ATECH_AGENT_EFFORT") or "").strip().lower()
+        return env if env in EFFORTS else QUALITY_EFFORT
 
 
 def agent_settings(cfg=None):
-    """agent_argv() keyword arguments from Agent Settings (S16, S26)."""
+    """agent_argv() keyword arguments from Agent Settings (S16, S26).
+
+    R230: in quality mode an unset budget is QUALITY_BUDGET_USD and an unset
+    effort QUALITY_EFFORT; the user's explicit setting still wins, and a
+    budget of 0 still means no limit. Fast mode keeps DEFAULT_BUDGET_USD
+    and the CLI's own effort."""
     if cfg is None:
         try:
             from . import settings
             cfg = settings.load()
         except Exception:                              # noqa: BLE001
             cfg = {}
+    quality = _quality(cfg)
+    default = QUALITY_BUDGET_USD if quality else DEFAULT_BUDGET_USD
     model = cfg.get("agent_model")
     effort = cfg.get("agent_effort")
-    budget = cfg.get("agent_budget_usd", DEFAULT_BUDGET_USD)
-    try:
-        budget = float(budget) if budget not in (None, "") else None
-    except (TypeError, ValueError):
-        budget = DEFAULT_BUDGET_USD
+    effort = effort.strip() if isinstance(effort, str) else None
+    if quality and not effort:
+        # R500: the mode default honours $ATECH_AGENT_EFFORT (R275), the
+        # same reading as the Settings label and the eval's record.
+        effort = _mode_effort()
+    budget = cfg.get("agent_budget_usd")
+    if budget is None:
+        budget = default
+    elif budget == "":
+        budget = None                  # an empty field: no limit (as before)
+    else:
+        try:
+            budget = float(budget)
+        except (TypeError, ValueError):
+            budget = default
+        if (quality and budget == LEGACY_BUDGET_USD
+                and not cfg.get("agent_budget_user")):
+            budget = default
     return {"model": model.strip() if isinstance(model, str) else None,
-            "effort": effort.strip() if isinstance(effort, str) else None,
+            "effort": effort,
             "budget": budget}
 
 
 def agent_argv(ws, model=None, effort=None, allowed=CHECK_ALLOW,
-               budget=DEFAULT_BUDGET_USD, exe=None, flags=None, dropped=None):
+               budget=DEFAULT_BUDGET_USD, exe=None, flags=None, dropped=None,
+               tools=AGENT_TOOLS):
     """The flags of one chat-agent turn: the ONE place they are assembled
     (S16). The eval harness takes its argv from here too (S15).
 
@@ -360,7 +418,8 @@ def agent_argv(ws, model=None, effort=None, allowed=CHECK_ALLOW,
 
     A flag the installed CLI does not list in --help is dropped, never
     passed (it would fail the run); its name is appended to `dropped` when
-    a list is given. `flags` overrides the probe (tests).
+    a list is given. `flags` overrides the probe (tests). `tools`: the
+    --tools list (R500: VIEW_TOOLS for a read-only view question).
     """
     have = supported_flags(exe) if flags is None else frozenset(flags)
     out = []
@@ -374,7 +433,7 @@ def agent_argv(ws, model=None, effort=None, allowed=CHECK_ALLOW,
         return False
 
     if "--strict-mcp-config" in have and "--tools" in have:
-        out += ["--strict-mcp-config", "--tools", AGENT_TOOLS]
+        out += ["--strict-mcp-config", "--tools", tools or AGENT_TOOLS]
     else:
         want("--strict-mcp-config")
         if dropped is not None and "--tools" not in have:
@@ -443,6 +502,52 @@ def _pdeathsig_fn(sig=15):
     return tie
 
 
+#: macOS has no PR_SET_PDEATHSIG. The guard is a detached /bin/sh that
+#: polls once a second: when Studio (PARENT) is gone it TERMs, then KILLs,
+#: the CLI's process group; when the group is gone first it just exits, so
+#: it never outlives the run by more than a second and cannot hit a reused
+#: group id.
+_ORPHAN_GUARD = (
+    'while kill -0 "$1" 2>/dev/null; do '
+    'kill -0 -- "-$2" 2>/dev/null || exit 0; sleep 1; done; '
+    'kill -TERM -- "-$2" 2>/dev/null; sleep 3; kill -KILL -- "-$2" 2>/dev/null; '
+    'exit 0')
+
+
+def _orphan_guard(pgid):
+    """R215 on macOS: start the watcher for process group `pgid` (the CLI
+    started with start_new_session, so pid == pgid). Returns the guard's
+    Popen, or None where it is not needed (Linux has _pdeathsig_fn) or
+    could not start."""
+    import sys
+    if sys.platform != "darwin":
+        return None
+    try:
+        return subprocess.Popen(
+            ["/bin/sh", "-c", _ORPHAN_GUARD, "atech-orphan-guard",
+             str(os.getpid()), str(int(pgid))],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, start_new_session=True,
+            close_fds=True)
+    except OSError:
+        return None
+
+
+#: R270: the turn clock. The epoch second a chat turn's CLI starts, in the
+#: CLI child's environment; the agent's shell inherits it and ./check
+#: (sandbox.wrapper_script) forwards it to check.py (WS3's TURN CLOCK).
+TURN_T0_ENV = "ATECH_TURN_T0"
+
+
+def turn_env(env=None, t0=None):
+    """R270: `env` (default: _child_env()) with ATECH_TURN_T0 = the integer
+    epoch second `t0` (default: now). A copy; os.environ is not touched."""
+    import time
+    env = dict(_child_env() if env is None else env)
+    env[TURN_T0_ENV] = "%d" % int(time.time() if t0 is None else t0)
+    return env
+
+
 def _child_env():
     env = dict(os.environ)
     # FreeCAD's AppImage sets PYTHONHOME/PYTHONPATH for its own bundled
@@ -450,7 +555,10 @@ def _child_env():
     # import the wrong stdlib. Strip them for the child only.
     for k in ("PYTHONHOME", "PYTHONPATH", "LD_LIBRARY_PATH"):
         env.pop(k, None)
-    return env
+    # macOS: FreeCAD puts the bundle's bin/ (its python, pip) and Mod/
+    # folders in front of PATH; the CLI and its tools must not use them.
+    from . import strip_bundle_paths
+    return strip_bundle_paths(env)
 
 
 # ------------------------------------------------------ failure classes
@@ -891,7 +999,7 @@ class ClaudeRun(QtCore.QThread):
             # R215: and dies with Studio (PR_SET_PDEATHSIG), because that
             # own session also keeps Studio's death from reaching it.
             self._proc = subprocess.Popen(
-                argv, cwd=self._cwd, env=_child_env(),
+                argv, cwd=self._cwd, env=turn_env(),      # R270: turn clock
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=self._errf,
                 text=True, bufsize=1, start_new_session=True,
@@ -899,6 +1007,8 @@ class ClaudeRun(QtCore.QThread):
             )
         except Exception as exc:                       # noqa: BLE001
             return ("failed", "could not start claude: %s" % exc)
+        if self.TIE_TO_PARENT:
+            self._guard = _orphan_guard(self._proc.pid)     # macOS only
         if self._cancelled:             # Stop landed between check and spawn
             self.cancel()
         # The prompt on stdin, then EOF (R35). The CLI reads all of stdin

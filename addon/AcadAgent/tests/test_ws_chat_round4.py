@@ -38,6 +38,20 @@ class TestR110AtechPrompt(twp.Round3):
         # The library probe needs the real meshes and FreeCAD; the prompt
         # choice is what is under test, so the library counts as present.
         self.patch(build, "library_available", lambda *a, **k: True)
+        # R250: R220's board_default (on by default) sends the full Atech
+        # section to EVERY turn; R110 is about the choice with it off
+        saved = os.environ.get("ATECH_PROMPT_OFF")
+        os.environ["ATECH_PROMPT_OFF"] = "board_default"
+        self.addCleanup(lambda: os.environ.__setitem__("ATECH_PROMPT_OFF", saved)
+                        if saved is not None else os.environ.pop("ATECH_PROMPT_OFF", None))
+
+    def test_r250_board_default_sends_the_section_to_a_plain_request(self):
+        os.environ.pop("ATECH_PROMPT_OFF", None)
+        self.assertTrue(build.board_default())
+        doc = self.fc.add(_Doc("Unnamed", "uid-empty4"))
+        sp, _a = self.p._turn_args(build.new_workspace(),
+                                   text="a 20 mm cube with a 5 mm hole", doc=doc)
+        self.assertIn(ATECH_SECTION, sp)
 
     def test_r110_atech_request_in_an_empty_document(self):
         doc = self.fc.add(_Doc("Unnamed", "uid-empty"))

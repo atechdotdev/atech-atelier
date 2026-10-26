@@ -1,0 +1,19 @@
+{
+  "_doc": [
+    "LAUNCH set: three well-written user prompts that mix the Atech board and modules with a designed 3D-printable body, the way a good user writes them (size, which modules, where they sit, what the product is for).",
+    "Run with: run_eval.py --set launch --tag launch --n 1   (outputs launch_launch_1.*). Expectations are minimal; quality is graded by hand from render.png, render_inside.png, model.py and transcript.txt.",
+    "Ids are unique across ALL sets (run_eval.load_expectations), hence the launch_ prefix."
+  ],
+  "prompts": [
+    {"id": "launch_toy_car",
+     "prompt": "Design a toy car for kids, about 18 cm long, built around the Atech board. Put two headlights (light modules) in the front, one on each side, shining forward. Put a distance sensor in the middle of the nose, looking forward, so it can stop before it hits a wall. Put the USB-C charge port at the back where a cable can plug straight in. Give it four chunky wheels with fat tyres, a low sporty body with a cabin on top, and a lid I can take off to reach the electronics. It should be 3D-printable and sturdy enough to be dropped.",
+     "expect": {"min_objects": 1, "atech_check": true, "max_dim": [150, 220]}},
+    {"id": "launch_desk_lamp",
+     "prompt": "Design a desk lamp built around the Atech board. A heavy, round base holds the board, with a dimmer knob on the front of the base and a touch button on top of the base to switch it on and off. An arm about 25 cm tall rises from the back of the base and ends in a shade that points the light module down at the desk, with its cable routed through the arm. Put the USB-C power port at the back of the base. Make it look like a clean, modern Scandinavian lamp and keep everything 3D-printable.",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "launch_weather_station",
+     "prompt": "Design an indoor/outdoor weather station built around the Atech board. The main body sits on a shelf and has the screen on its front face, tilted slightly up so it is easy to read. Next to it, on a short mast, put a small vented hut (a Stevenson screen with louvred slats) that holds the temperature and humidity sensor so it reads the air and not the heat from the electronics, with its cable running down the mast into the body. Put the USB-C power port at the back. Make it 3D-printable, with the louvres printable without supports.",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "launch_simple_car", "prompt": "I want a car", "expect": {"min_objects": 1, "atech_check": true}}
+  ]
+}

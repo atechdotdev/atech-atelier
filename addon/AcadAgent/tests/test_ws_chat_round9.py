@@ -16,6 +16,11 @@ RUN (the interpreter that ships):
 """
 import json
 import os
+
+# R250: these tests pin fast-mode values ($3 budget, 2 fix attempts, the
+# 300 s stall/turn limits); quality mode is the default since R230, so
+# they ask for fast mode unless the caller chose a mode.
+os.environ.setdefault("ATECH_PROMPT_MODE", "fast")
 import sys
 import time
 import unittest

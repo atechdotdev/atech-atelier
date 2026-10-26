@@ -139,7 +139,14 @@ def build_icon(mode):
     # offset too and park the mark in the corner. Two calls, one job each.
     rings = _xform(rings, 0, 0, s)
     x0, y0, x1, y1 = _bbox(rings)
-    rings = [np.column_stack([r[:, 0] + (S - (x1 - x0)) / 2 - x0,
+    # Horizontally the mark is NOT centred as a group (owner, 2026-10-20:
+    # "the black triangle should start in the middle"): the triangle's
+    # vertical edge - its apex - sits on the plate's centre line and the
+    # small star rides to its right. The triangle is the ring reaching
+    # highest (smallest y: its apex is the top of the whole mark).
+    tri = min(rings, key=lambda r: r[:, 1].min())
+    apex_x = tri[:, 0].max()
+    rings = [np.column_stack([r[:, 0] + S / 2 - apex_x,
                               r[:, 1] + (S - (y1 - y0)) / 2 - y0])
              for r in rings]
     body = (f'  <rect x="1" y="1" width="62" height="62" rx="14" '

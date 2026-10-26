@@ -1,0 +1,203 @@
+{
+  "dataset": "huggingface.co/datasets/atechdev/atech-module-simready",
+  "modules": {
+    "button": {
+      "asset": "atech_button",
+      "cells": 1,
+      "derived": false,
+      "glb": "button.glb",
+      "glb_sha256": "60b44e4c8d37397479b7208137f11d03e298dd838719ffcba2cc596f827594eb",
+      "size_mm": [
+        19.5,
+        10.04,
+        19.5
+      ],
+      "stl_sha256": "a81a547e12ddd3574ef4ac796e942dc5f5569b1860fa7a1f98fae04a496304c7",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/button.glb"
+    },
+    "dc_motor": {
+      "asset": "atech_dc_motor",
+      "cells": 1,
+      "derived": false,
+      "glb": "dc-motor.glb",
+      "glb_sha256": "3af9463fc094230e037bf555fa394920def050d70a4d73a06ef1f37b3759e8dd",
+      "size_mm": [
+        19.499,
+        19.14,
+        48.3
+      ],
+      "stl_sha256": "0c256e1416f830e3485dd38be4e02af08653d17155b0c6edd560dab6c52e1442",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/dc-motor.glb"
+    },
+    "distance_sensor": {
+      "asset": "atech_distance_sensor",
+      "cells": 1,
+      "derived": false,
+      "glb": "distance-sensor.glb",
+      "glb_sha256": "7737a764eab8687fb159cabdb67095f174b2d086ebde2466adf76319af3f4f5c",
+      "size_mm": [
+        19.5,
+        9.54,
+        19.5
+      ],
+      "stl_sha256": "fcef625048c57ef548e5204a4b88b2239ea66ee1b48a139aa8b9a3dee14aaca8",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/distance-sensor.glb"
+    },
+    "knob": {
+      "asset": "atech_rotary_encoder",
+      "cells": 2,
+      "derived": false,
+      "glb": "knob.glb",
+      "glb_sha256": "a55efd7f6a4f372ab6f6bd3ef8d7635ef9540f1ec003f35c7f7368b3eee92465",
+      "size_mm": [
+        39.5,
+        38.14,
+        39.5
+      ],
+      "stl_sha256": "1c38a7625eedd4ed180243df37bcae305dc3fb0180b78a6226422e33a6fffb49",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/knob.glb"
+    },
+    "light": {
+      "asset": "atech_neopixel",
+      "cells": 1,
+      "derived": false,
+      "glb": "led-grid.glb",
+      "glb_sha256": "d81b07d5d6526bc37745100b9d3385a8dbcb98c0514589bce767475e8ccb51e2",
+      "size_mm": [
+        19.5,
+        9.54,
+        19.5
+      ],
+      "stl_sha256": "bda48f1caf6c9f1db276b2d88f30744906605bf513dfe54dac6dca660ef11101",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/led-grid.glb"
+    },
+    "microphone": {
+      "asset": "atech_microphone",
+      "cells": 2,
+      "derived": false,
+      "glb": "microphone.glb",
+      "glb_sha256": "c103f5d49ee560e9eb661cfb27aded1733ff64d9da69a3877497741d239a0d5e",
+      "size_mm": [
+        39.5,
+        10.84,
+        19.5
+      ],
+      "stl_sha256": "47e299df376be5f7398e05c2fa78ae1b9aae304efddd7cbc5f474a74a6e3e63e",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/microphone.glb"
+    },
+    "orientation": {
+      "asset": "atech_icm40608",
+      "cells": 1,
+      "derived": false,
+      "glb": "orientation-sensor.glb",
+      "glb_sha256": "07b48452eaf04d300934397aaac0e785eed26ea07d5e390b5b9318c1cf9a2f9a",
+      "size_mm": [
+        19.5,
+        9.54,
+        19.5
+      ],
+      "stl_sha256": "e8e2f5bc7f2799063f673ea7962e4c695413de4b8992b82771bd15c2434f0623",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/orientation-sensor.glb"
+    },
+    "pir": {
+      "asset": "atech_pir",
+      "cells": 1,
+      "derived": true,
+      "glb": "pir.glb",
+      "glb_sha256": "8ad0a61817f322b06bffa4ca83320e27b7e41039f8b0c518a3f1f2c67dfb8d71",
+      "size_mm": [
+        19.5,
+        14.195,
+        19.5
+      ],
+      "stl_sha256": "b8d0c00386638a4aa1ec7c51bbcdf5fb94c44113539d0dadd789d95abb7eff5c",
+      "visual_source": "derived: shell of button.glb (Atech CAD) + sim.yaml parts (lens_collar, lens_dome, passive_1, passive_2); not Atech CAD of this module"
+    },
+    "robot_arm": {
+      "asset": "atech_robot_arm_integrator",
+      "cells": 2,
+      "derived": true,
+      "glb": "robot-arm.glb",
+      "glb_sha256": "5f29b1f4c40a7a10caf52ad70a3c48ccbeac03fd6622e6216dab4ca0dc48dd8e",
+      "size_mm": [
+        39.5,
+        9.64,
+        19.5
+      ],
+      "stl_sha256": "c8eced623f1a4235bc1d4a5d84032aa237856eb518e9f861edbf5131b7f3f924",
+      "visual_source": "derived: shell of screen.glb (Atech CAD) + sim.yaml parts (capacitor_base, capacitor, servo_connector_base, servo_connector_back, servo_connector_side_a, servo_connector_side_b, servo_pin_1, servo_pin_2, servo_pin_3, passive_1, passive_2); not Atech CAD of this module"
+    },
+    "scd40_air_quality": {
+      "asset": "atech_scd40_air_quality",
+      "cells": 1,
+      "derived": true,
+      "glb": "scd40-air-quality.glb",
+      "glb_sha256": "85f178918b4fba9c12aed8762cd84ec5d321c07aad585acc07c51ba53c280057",
+      "size_mm": [
+        19.5,
+        10.64,
+        19.5
+      ],
+      "stl_sha256": "9b4ea66f40304ac5f908e94eb601467789e7fb8b7b17e9001bbd29f72b8f8ab4",
+      "visual_source": "derived: shell of button.glb (Atech CAD) + sim.yaml parts (sensor_base, sensor_can, passive_1, passive_2, passive_3); not Atech CAD of this module"
+    },
+    "screen": {
+      "asset": "atech_st7735_tft",
+      "cells": 2,
+      "derived": false,
+      "glb": "screen.glb",
+      "glb_sha256": "3367736208e89cfb758b657b02c47242efb4a487c07937e94b6ebdefa1446f02",
+      "size_mm": [
+        39.5,
+        9.639,
+        19.5
+      ],
+      "stl_sha256": "7bea0dd66be3ce5e07251fef3039fd3f6c47d5589e4628adde6f32ec684da9fa",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/screen.glb"
+    },
+    "speaker": {
+      "asset": "atech_speaker",
+      "cells": 2,
+      "derived": false,
+      "glb": "speaker.glb",
+      "glb_sha256": "ed97612474860e9671b7a2dfff6f6bc6b43f208d8c82344dde986d15310b3f16",
+      "size_mm": [
+        40.0,
+        20.199,
+        40.0
+      ],
+      "stl_sha256": "2ccc4838a512f8e693c194448cf08a899727368871f0b990cdce33e8d1b42013",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/speaker.glb"
+    },
+    "stepper_motor": {
+      "asset": "atech_stepper_motor",
+      "cells": 2,
+      "derived": true,
+      "glb": "stepper-motor.glb",
+      "glb_sha256": "c359260cc4f0292d37ba1211a48b3f72ee103ad44f16d0f41626edf2c9741f5a",
+      "size_mm": [
+        39.5,
+        15.0,
+        19.5
+      ],
+      "stl_sha256": "34228e742eaee8c122774faf15a17129858ee17855c70b194a869e92c670b048",
+      "visual_source": "derived: shell of screen.glb (Atech CAD) + sim.yaml parts (driver_chip, motor_terminal); not Atech CAD of this module"
+    },
+    "temp_humidity": {
+      "asset": "atech_aht20",
+      "cells": 1,
+      "derived": false,
+      "glb": "temp-sensor.glb",
+      "glb_sha256": "69b50e4a16b2ba28c8f4a21132b88381521ef26d9d2d02907a4f2da38b0cd56c",
+      "size_mm": [
+        19.5,
+        9.54,
+        19.5
+      ],
+      "stl_sha256": "d87bfb643e78dd6e7dd233eb871f83e2714614c297ff38e0d38e2060cd047783",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/temp-sensor.glb"
+    }
+  },
+  "renders": "atechdotdev/atech-module-renders@v1.7",
+  "revision": "020ea47813ef1f965718c71e0d7ef73cf42d1c4e"
+}

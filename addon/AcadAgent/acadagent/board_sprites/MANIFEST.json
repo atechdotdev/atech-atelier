@@ -1,0 +1,334 @@
+{
+ "generated_by": "p2p.vendor_board_sprites",
+ "generated_at": "2026-10-08",
+ "px_per_mm": 8,
+ "view": "plan view looking down -y; image right = +x, image up = -z (the outer face)",
+ "palette_colours": 256,
+ "models_manifest": "ui/hw/models.json",
+ "sprites": {
+  "button": {
+   "file": "button.png",
+   "sha256": "5c6e4fad65cfb6c5af0e817c737da6a73e253695afe848c8b5063c96120f4575",
+   "bytes": 2279,
+   "px": [
+    156,
+    156
+   ],
+   "bbox_mm": {
+    "min": [
+     -9.9,
+     0.0,
+     -9.75
+    ],
+    "max": [
+     9.6,
+     10.04,
+     9.75
+    ]
+   },
+   "origin_px": [
+    79.2,
+    78.0
+   ],
+   "measured_bbox_drift_mm": 0.0,
+   "glb_sha256": "416864b44aca8597e8c83fc998b3e8dd95a4d755c9458af3e349026f59255fe6"
+  },
+  "dc-motor": {
+   "file": "dc-motor.png",
+   "sha256": "bab15ae87553e3e9087c5fed290257770676ffe398e252fb9217be6c2649a383",
+   "bytes": 2044,
+   "px": [
+    156,
+    386
+   ],
+   "bbox_mm": {
+    "min": [
+     -9.9,
+     0.0,
+     -38.65
+    ],
+    "max": [
+     9.6,
+     19.14,
+     9.65
+    ]
+   },
+   "origin_px": [
+    79.2,
+    309.2
+   ],
+   "measured_bbox_drift_mm": 0.001,
+   "glb_sha256": "4ce086ee27ea341a704a38bfcace34dd2ea45b4cf5044f6a062ce13ae323e69a"
+  },
+  "distance-sensor": {
+   "file": "distance-sensor.png",
+   "sha256": "12bb34844d6d235d5c09eefd954bb72fa7267f2a4f098dbbfbedd78ac1e5c077",
+   "bytes": 1600,
+   "px": [
+    156,
+    156
+   ],
+   "bbox_mm": {
+    "min": [
+     -9.9,
+     0.0,
+     -9.75
+    ],
+    "max": [
+     9.6,
+     9.54,
+     9.75
+    ]
+   },
+   "origin_px": [
+    79.2,
+    78.0
+   ],
+   "measured_bbox_drift_mm": 0.0,
+   "glb_sha256": "a8ecc3aa811a4f9787532bc4ce8bb1a8d002af808df39183890c96bcac1c2d11"
+  },
+  "frame-2": {
+   "file": "frame-2.png",
+   "sha256": "0390bcd621cf115e63907b0babdde1d77354a77c0be1191017c5a33f90c696f2",
+   "bytes": 6605,
+   "px": [
+    480,
+    960
+   ],
+   "bbox_mm": {
+    "min": [
+     -29.99,
+     0.0,
+     -59.99
+    ],
+    "max": [
+     29.99,
+     7.0,
+     59.99
+    ]
+   },
+   "origin_px": [
+    239.92,
+    479.92
+   ],
+   "measured_bbox_drift_mm": 0.003,
+   "glb_sha256": "43aca2140dc23a68c15d2956a00aa49dfe9307fb5cdd70ffe89204780e2b94ca"
+  },
+  "knob": {
+   "file": "knob.png",
+   "sha256": "590a54998afb5f18868ac17833f54fbcd4e372b97c7833fd82a4cd2b38326bd3",
+   "bytes": 6795,
+   "px": [
+    316,
+    316
+   ],
+   "bbox_mm": {
+    "min": [
+     -19.9,
+     0.0,
+     -29.85
+    ],
+    "max": [
+     19.6,
+     38.14,
+     9.65
+    ]
+   },
+   "origin_px": [
+    159.2,
+    238.8
+   ],
+   "measured_bbox_drift_mm": 0.0,
+   "glb_sha256": "0af2240981e910f9ee654ffa04be9eba867bbe5411e470f808704faf36ddfbba"
+  },
+  "led-grid": {
+   "file": "led-grid.png",
+   "sha256": "a68843441c701e23c46e90e89bd4029cace6fc285933b6e7818c47afd2aa3754",
+   "bytes": 1424,
+   "px": [
+    156,
+    156
+   ],
+   "bbox_mm": {
+    "min": [
+     -9.9,
+     0.0,
+     -9.75
+    ],
+    "max": [
+     9.6,
+     9.54,
+     9.75
+    ]
+   },
+   "origin_px": [
+    79.2,
+    78.0
+   ],
+   "measured_bbox_drift_mm": 0.0,
+   "glb_sha256": "844a5be7413c3446f63d73578bd618eb1846e05fd63a652d337379f1e5c72cf0"
+  },
+  "microphone": {
+   "file": "microphone.png",
+   "sha256": "6a5e81bb642596e4378b7f6dcb33647854781a3f19f8b9679bb6ee79dd51517f",
+   "bytes": 1504,
+   "px": [
+    316,
+    156
+   ],
+   "bbox_mm": {
+    "min": [
+     -19.9,
+     0.0,
+     -9.75
+    ],
+    "max": [
+     19.6,
+     10.84,
+     9.75
+    ]
+   },
+   "origin_px": [
+    159.2,
+    78.0
+   ],
+   "measured_bbox_drift_mm": 0.0,
+   "glb_sha256": "5877df900c7e21d6453ac763db6ae36aae784b69a217a6c52004ed0b761e9f81"
+  },
+  "orientation-sensor": {
+   "file": "orientation-sensor.png",
+   "sha256": "26965c73bc5f83db510527f5ffebf9360e2a32fdee2984b88327bda5035bdfce",
+   "bytes": 1515,
+   "px": [
+    156,
+    156
+   ],
+   "bbox_mm": {
+    "min": [
+     -9.9,
+     0.0,
+     -9.75
+    ],
+    "max": [
+     9.6,
+     9.54,
+     9.75
+    ]
+   },
+   "origin_px": [
+    79.2,
+    78.0
+   ],
+   "measured_bbox_drift_mm": 0.0,
+   "glb_sha256": "df9bf718a9c7ceca851ada9b850193300b1d0f1c963652fd9eb6da542c629022"
+  },
+  "screen": {
+   "file": "screen.png",
+   "sha256": "43495c33b3ce66202d9a5e89d5a8cac0150d79d012e47403c5bf7852a262dd1d",
+   "bytes": 2773,
+   "px": [
+    316,
+    156
+   ],
+   "bbox_mm": {
+    "min": [
+     -19.9,
+     0.0,
+     -9.75
+    ],
+    "max": [
+     19.6,
+     9.64,
+     9.75
+    ]
+   },
+   "origin_px": [
+    159.2,
+    78.0
+   ],
+   "measured_bbox_drift_mm": 0.001,
+   "glb_sha256": "4d14fe1f07e75d99e36d894caa5328ae864afd8f1b1332a4ef474cf88d673671"
+  },
+  "speaker": {
+   "file": "speaker.png",
+   "sha256": "297f304f6c6f6ddd5f943e8e4f1e1d0bfca39c4b37ddc426aae138da4a59c915",
+   "bytes": 3341,
+   "px": [
+    320,
+    320
+   ],
+   "bbox_mm": {
+    "min": [
+     -20.15,
+     0.0,
+     -30.1
+    ],
+    "max": [
+     19.85,
+     20.2,
+     9.9
+    ]
+   },
+   "origin_px": [
+    161.2,
+    240.8
+   ],
+   "measured_bbox_drift_mm": 0.001,
+   "glb_sha256": "49731764c3e12c83c7acbc32df30a5672e3bddbda9e940e17f949ea77b113b11"
+  },
+  "temp-sensor": {
+   "file": "temp-sensor.png",
+   "sha256": "0cab58ea0e9532b90aa1c20b0ca372865a4273a25e212d0f3e08050c4fb50f3f",
+   "bytes": 1689,
+   "px": [
+    156,
+    156
+   ],
+   "bbox_mm": {
+    "min": [
+     -9.9,
+     0.0,
+     -9.75
+    ],
+    "max": [
+     9.6,
+     9.54,
+     9.75
+    ]
+   },
+   "origin_px": [
+    79.2,
+    78.0
+   ],
+   "measured_bbox_drift_mm": 0.0,
+   "glb_sha256": "20ea03580bed5d00924a539a6bbcbd349026515e330f9b4ea3941af6eaf00e11"
+  },
+  "usb-c": {
+   "file": "usb-c.png",
+   "sha256": "0bc5db41eed7edd6eb318d4e3422a3a413dd357f841d6a7bc21f4f27f8afc169",
+   "bytes": 1444,
+   "px": [
+    156,
+    158
+   ],
+   "bbox_mm": {
+    "min": [
+     -9.9,
+     0.0,
+     -9.88
+    ],
+    "max": [
+     9.6,
+     10.2,
+     9.88
+    ]
+   },
+   "origin_px": [
+    79.2,
+    79.04
+   ],
+   "measured_bbox_drift_mm": 0.005,
+   "glb_sha256": "bfc4d1cc159ec8f985fe05cc944cb2901580cf3d54e5a129e8f167c239d70854"
+  }
+ }
+}

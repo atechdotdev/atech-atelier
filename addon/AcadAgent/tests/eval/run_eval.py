@@ -30,7 +30,9 @@ WHAT IS PRODUCTION AND WHAT IS NOT
         build whose build.failures() is non-empty sends "Atech Atelier built it,
         but the measurement check failed: <bad>. Each body must be one valid
         solid." - each + "\\nFix model.py and write it again." - on the same
-        session (--resume), at most MAX_FIX_ATTEMPTS = 2 times. A turn that
+        session (--resume), at most MAX_FIX_ATTEMPTS times (the panel's
+        AgentPanel.MAX_FIX_ATTEMPTS, read from panel.py's source so no Qt
+        is imported; 5 when it cannot be read - R243). A turn that
         writes nothing is "nothing to build" and ends the request.
       - edit turn (R173): an item with "edit": {"prompt", "expect"} sends
         that prompt as the user's NEXT message on the same session once the
@@ -89,6 +91,9 @@ USAGE (system python 3; freecadcmd is found in dist/build)
                                       The report states the run's revision and
                                       the one rescored against.
     run_eval.py --tag round --n 1     write round_1.* instead of baseline_<n>.*
+                                      (a tag is lowercase words joined by
+                                      underscores, each word starting with a
+                                      letter: showcase_base works - R243)
 
 Addon revision (S41): every run records meta.addon = {commit, dirty,
 sha256 of the addon's files, untracked} and, when the addon differs from
@@ -102,8 +107,22 @@ build is pointed at the live atech-artifacts meshes (ATECH_ARTIFACTS, not
 revisioned; the report says so). Runs from R150 on record projects/'s
 uncommitted changes in addon.diff / addon_untracked too.
 
+R450 (design-ladder checkpoints): every design level that ends on a clean
+build (its own, a salvaged timeout, or one left unchanged) is kept as
+<id>/model_level<N>.py, intent_level<N>.json and render_level<N>.png. A
+later level that still fails after MAX_FIX_ATTEMPTS, times out or dies
+restores the last checkpoint into the workspace, rebuilds it (render.png is
+the restored build's) and marks levels[-1] rolled_back; the next level is
+sent from that build (its message starts with rollback_note) unless the
+budget is spent - then the item ends 'built_rolled_back', scored on the
+restored build. R451: ladder turns are killed at LEVEL_TURN_TIMEOUT_S
+(turn_limit), no level starts after ITEM_BUDGET_S (budget_stop), and each
+levels[] entry carries wall_s; the report lists levels reached, per-level
+wall times, rollbacks and budget stops.
+
 Output: docs/verification/eval/<tag>_<n>.md, <tag>_<n>.json and
-<tag>_<n>/<id>/{model.py, render.png, transcript.txt}  (tag defaults to "baseline").
+<tag>_<n>/<id>/{model.py, render.png, render_inside.png, transcript.txt}  (tag defaults
+to "baseline"; R230: render.png is the kit's review sheet, render_inside.png its cutaway).
 
 Recorded per prompt (S15): first_apply_pass (the first model.py built with
 no measurement failure), check_calls (in-turn `./check` Bash calls), init_s
@@ -124,6 +143,20 @@ STALL_GAP_S s or more with no tool activity, split into retries / slow first
 event / stream stall / model / tool / startup / unattributed seconds (see
 stall_segments); reported as a section, a headline row and a per-prompt
 column. Runs saved before S57 say "not measured".
+R270: a turn killed at TURN_TIMEOUT_S (or a CLI that died) that wrote a NEW
+model.py still gets the end-of-turn build with render; the outcome is
+timed_out_built / timed_out_failed (claude_failed_built / _failed for a
+dead CLI), the reason in `claude_failure`, `salvaged` true. A turn with no
+result record has cost_usd / input_tokens / output_tokens None and
+`result_missing`; the prompt's cost_usd is then None ("unknown" in the
+report) with cost_usd_known / cost_unknown_turns beside it - never 0. Each
+turn records `turn_t0` (the ATECH_TURN_T0 epoch the CLI child got) and
+`check_timings` (per ./check: lock_wait_s, run_s from ./check's
+ATECH_CHECK_TIMING line); each build and preview its fc_lock_wait_s; per
+prompt check_lock_wait_s / check_run_s / fc_lock_wait_s. --max-parallel
+(default MAX_PARALLEL = 3) caps --jobs. ATECH_EVAL_EFFORT=<low..max> sets
+--effort on every turn's argv for A/B runs (recorded as `effort`,
+`effort_override`); unset, production's argv is untouched.
 
 transcript.txt (S32) holds, per turn, the message sent, every tool call AND
 its result in stream order (`-> [id] Tool arg` / `<- [id] result`, results
@@ -168,7 +201,8 @@ REPO = os.path.normpath(os.path.join(ADDON, "..", ".."))
 FREECADCMD = os.environ.get(
     "FREECADCMD", os.path.join(REPO, "dist", "build", "squashfs-root", "usr", "bin", "freecadcmd"))
 FC_BUILD = os.path.join(HERE, "fc_build.py")
-PROMPT_SETS = {"core": "prompts.json", "extra": "prompts_extra.json"}
+PROMPT_SETS = {"core": "prompts.json", "extra": "prompts_extra.json",
+               "showcase": "prompts_showcase.json", "launch": "prompts_launch.json"}
 OUT_DIR = os.path.join(REPO, "docs", "verification", "eval")
 # R150: the Atech builders (atech_ports.py, atech_modules.py) live in
 # <repo>/projects, found by acadagent.projects from the addon at ../../projects;
@@ -179,9 +213,80 @@ PROJECTS_REL = "projects"
 LIBRARY_ENV = "ATECH_ARTIFACTS"
 LIBRARY_MARKER = "presets.yaml"
 
-MAX_FIX_ATTEMPTS = 2           # panel.AcadPanel.MAX_FIX_ATTEMPTS
-TURN_TIMEOUT_S = 900
-FC_TIMEOUT_S = 300
+
+
+def _panel_max_fix(default=5, environ=None, path=None):
+    """R243: the panel's own fix-attempt cap, read from acadagent/panel.py's
+    SOURCE (ast): importing panel (and settings) needs PySide6, which the
+    harness's system python may not have. AgentPanel either sets
+    MAX_FIX_ATTEMPTS = <int>, or (R230) FAST_MAX_FIX_ATTEMPTS,
+    QUALITY_MAX_FIX_ATTEMPTS = <int>, <int> with a property choosing by
+    build.quality_mode() - mirrored here by its Qt-free rule: quality unless
+    $ATECH_PROMPT_MODE is "fast". `default` when it cannot be read."""
+    import ast
+    env = os.environ if environ is None else environ
+    path = path or os.path.join(ADDON, "acadagent", "panel.py")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError):
+        return default
+
+    def num(v):
+        ok = isinstance(v, ast.Constant) and isinstance(v.value, int) \
+            and not isinstance(v.value, bool)
+        return v.value if ok else None
+    found = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ClassDef) and node.name == "AgentPanel"):
+            continue
+        for st in node.body:
+            if not isinstance(st, ast.Assign):
+                continue
+            for t in st.targets:
+                if isinstance(t, ast.Name):
+                    found[t.id] = num(st.value)
+                elif isinstance(t, ast.Tuple) and isinstance(st.value, ast.Tuple) \
+                        and len(t.elts) == len(st.value.elts):
+                    for a, b in zip(t.elts, st.value.elts):
+                        if isinstance(a, ast.Name):
+                            found[a.id] = num(b)
+    if found.get("MAX_FIX_ATTEMPTS") is not None:
+        return found["MAX_FIX_ATTEMPTS"]
+    fast = (env.get("ATECH_PROMPT_MODE") or "").strip().lower() == "fast"
+    got = found.get("FAST_MAX_FIX_ATTEMPTS" if fast else "QUALITY_MAX_FIX_ATTEMPTS")
+    return default if got is None else got
+
+
+MAX_FIX_ATTEMPTS = _panel_max_fix()   # panel.AgentPanel.MAX_FIX_ATTEMPTS (R243)
+TURN_TIMEOUT_S = 3600         # R243: long product turns are fine (showcase)
+#: R451: while production's design ladder runs (atech_levels marker in the
+#: workspace), every turn - a level's own and its fix turns - is killed at
+#: LEVEL_TURN_TIMEOUT_S (never more than TURN_TIMEOUT_S), and no new level is
+#: sent once the item has run ITEM_BUDGET_S: it ends on its last passing
+#: level. A turn started near the budget still gets LEVEL_TURN_MIN_S, so an
+#: item's wall time is bounded by ITEM_BUDGET_S + one short turn + builds.
+LEVEL_TURN_TIMEOUT_S = 25 * 60
+ITEM_BUDGET_S = 150 * 60
+LEVEL_TURN_MIN_S = 5 * 60
+#: R451: the kill time of the turn this thread runs (claude_turn reads it;
+#: run_prompt sets it). Thread-local: --jobs runs prompts in threads.
+_TURN_LIMIT = threading.local()
+#: R270: the epoch second a turn's CLI starts, in the CLI child's env (as
+#: claude_cli.turn_env does in the app); ./check forwards it to check.py.
+TURN_T0_ENV = "ATECH_TURN_T0"
+#: R270: an optional --effort override for A/B runs ('high' vs 'xhigh' on
+#: planning-stall time). Unset: production's own argv, untouched. The app's
+#: default (claude_cli.QUALITY_EFFORT) is not changed by this.
+EFFORT_ENV = "ATECH_EVAL_EFFORT"
+EFFORTS = ("low", "medium", "high", "xhigh", "max")     # claude_cli.EFFORTS
+#: R270: prompts run at once. Every end-of-turn build and live preview of
+#: every prompt shares one freecadcmd lock (_FC_LOCK) and the machine's
+#: cores with the agents' own ./check runs; more than 3 showcase prompts at
+#: once turns into lock waits, not agent behaviour (logged per build as
+#: fc_lock_wait_s and per ./check as lock_wait_s / run_s).
+MAX_PARALLEL = 3
+FC_TIMEOUT_S = 600            # R243: a detailed product's build + fitness
 PREVIEW_DEBOUNCE_S = 0.4      # panel.AgentPanel.PREVIEW_DEBOUNCE_MS / 1000
 PREVIEW_POLL_S = 0.05
 _FC_LOCK = threading.Lock()
@@ -214,7 +319,9 @@ def fc_job(job):
         lib = live_library()
         if lib and not (os.environ.get(LIBRARY_ENV) or "").strip():
             env[LIBRARY_ENV] = lib
+    t_ask = time.time()
     with _FC_LOCK:
+        lock_wait = round(time.time() - t_ask, 2)          # R270: contention
         try:
             p = subprocess.run([FREECADCMD, FC_BUILD], env=env, capture_output=True,
                                text=True, timeout=FC_TIMEOUT_S)
@@ -224,7 +331,10 @@ def fc_job(job):
     try:
         if "FC_BUILD_DONE=" in out and os.path.isfile(job["out"]):
             with open(job["out"], encoding="utf-8") as fh:
-                return json.load(fh), ""
+                payload = json.load(fh)
+            if isinstance(payload, dict):
+                payload["fc_lock_wait_s"] = lock_wait       # R270
+            return payload, ""
         m = re.search(r"FC_BUILD_CRASH=(.*)", out)
         return None, (m.group(1) if m else out[-2000:])
     finally:
@@ -347,6 +457,7 @@ class LivePreview(object):
             # S49: failures that are intent.json misses only (Studio: "in
             # progress"); None = not classified (older fc_build or error).
             "intent_only": b.get("intent_only"),
+            "fc_lock_wait_s": b.get("fc_lock_wait_s"),          # R270
             "harness_crash": bool(b.get("harness_crash"))})
 
 
@@ -418,6 +529,61 @@ def render_argv(template, message, session=None):
         else:
             out.append(a)
     return out
+
+
+def eval_effort(environ=None):
+    """R270: the ATECH_EVAL_EFFORT override (one of EFFORTS), or None when
+    unset. A value the CLI does not know is an error, not a silent no-op."""
+    v = ((os.environ if environ is None else environ).get(EFFORT_ENV) or "").strip().lower()
+    if not v:
+        return None
+    if v not in EFFORTS:
+        raise ValueError("%s=%r: not one of %s" % (EFFORT_ENV, v, ", ".join(EFFORTS)))
+    return v
+
+
+def with_effort(argv, effort):
+    """R270: `argv` with its --effort set to `effort` (replaced where
+    production put one, else inserted right after the executable). None:
+    argv unchanged."""
+    if not effort:
+        return list(argv)
+    out, i, done = [], 0, False
+    while i < len(argv):
+        a = argv[i]
+        if a == "--effort" and i + 1 < len(argv):
+            out += ["--effort", effort]
+            i, done = i + 2, True
+            continue
+        if a.startswith("--effort="):
+            out.append("--effort=" + effort)
+            i, done = i + 1, True
+            continue
+        out.append(a)
+        i += 1
+    if not done:
+        out[1:1] = ["--effort", effort]
+    return out
+
+
+def effort_of(argv):
+    """The --effort an argv carries, or None."""
+    for i, a in enumerate(argv or []):
+        if a == "--effort" and i + 1 < len(argv):
+            return argv[i + 1]
+        if a.startswith("--effort="):
+            return a.split("=", 1)[1]
+    return None
+
+
+_CHECK_TIMING = re.compile(r"ATECH_CHECK_TIMING lock_wait_s=(-?\d+) run_s=(-?\d+)")
+
+
+def check_timing(text):
+    """R270: (lock_wait_s, run_s) from a ./check output (sandbox.wrapper_script
+    prints them), or None when the line is missing (an older ./check)."""
+    m = _CHECK_TIMING.search(text or "")
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
 def flags_of(argv):
@@ -500,9 +666,24 @@ def _clip(text, n=TOOL_RESULT_CHARS):
     return "%s\n... [%d more chars]" % (text[:n], len(text) - n)
 
 
+# R243: a command runs ./check when one of its segments (split on && ; ||
+# |) starts with it - the agent's usual "cd <ws> && ./check 2>&1 | tail"
+# counted 0 before (showcase baseline: dozens of checks reported as none).
+# An absolute or relative path to the workspace's check counts too.
+_CHECK_SEG = re.compile(r"(?:^|&&|\|\||;|\|)\s*(?:\S*/)?check(?=\s|$|[;&|])")
+
+
 def _is_check_call(name, inp):
     cmd = str((inp or {}).get("command") or "").strip()
-    return name == "Bash" and (cmd == "./check" or cmd.startswith("./check "))
+    if name != "Bash" or not cmd:
+        return False
+    for m in _CHECK_SEG.finditer(cmd):
+        word = cmd[m.start():m.end()].lstrip("&|; \t")
+        if word == "check" or word.endswith("/check"):
+            if word == "check":
+                continue            # a bare `check` is some other program
+            return True
+    return False
 
 
 def denial_records(result, calls):
@@ -683,12 +864,14 @@ def claude_turn(argv, ws, stdin_text=None):
     for k in ("PYTHONHOME", "PYTHONPATH", "LD_LIBRARY_PATH"):
         env.pop(k, None)
     t0 = time.time()
+    env[TURN_T0_ENV] = "%d" % int(t0)                    # R270: the turn clock
     errf = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
     proc = subprocess.Popen(argv, cwd=ws, env=env, stdout=subprocess.PIPE,
                             stderr=errf, text=True, bufsize=1,
                             stdin=subprocess.PIPE if stdin_text is not None
                             else subprocess.DEVNULL)
-    timer = threading.Timer(TURN_TIMEOUT_S, proc.terminate)   # our own child only
+    limit = getattr(_TURN_LIMIT, "s", None) or TURN_TIMEOUT_S   # R451
+    timer = threading.Timer(limit, proc.terminate)   # our own child only
     timer.start()
     if stdin_text is not None:
         try:
@@ -700,9 +883,12 @@ def claude_turn(argv, ws, stdin_text=None):
            "model": None, "timed_out": False, "first_write_s": None,
            "init_s": None, "first_text_s": None, "check_calls": 0,
            "first_event_s": None, "api_retries": [],
+           "turn_t0": int(t0),
+           "check_timings": [],   # R270: per ./check: lock wait and build seconds
            "timeline": [],     # S57: [t, kind, info] - see stall_segments
            "log": []}          # S32: tool calls AND their results, in stream order
     calls = {}                 # tool_use id -> input (S46 denials)
+    check_ids = set()          # R270: tool_use ids of ./check calls
     tl = rec["timeline"]
     last_stream = [None]       # time of the previous stream_event (S57 quiet)
     msg_tokens = [None]        # output tokens of the message streaming now
@@ -763,12 +949,20 @@ def claude_turn(argv, ws, stdin_text=None):
                             rec["first_write_s"] = round(time.time() - t0, 1)
                         if _is_check_call(b.get("name"), inp):
                             rec["check_calls"] += 1
+                            if b.get("id"):
+                                check_ids.add(b["id"])
             elif kind == "user":
                 # the CLI echoes each tool's result back as a user message
                 content = (msg.get("message") or {}).get("content")
                 for b in content if isinstance(content, list) else []:
                     if isinstance(b, dict) and b.get("type") == "tool_result":
                         tl.append([now(), "tool_result", b.get("tool_use_id")])
+                        if b.get("tool_use_id") in check_ids:
+                            ct = check_timing(tool_result_text(b.get("content")))
+                            rec["check_timings"].append({
+                                "at_s": now(),
+                                "lock_wait_s": ct[0] if ct else None,
+                                "run_s": ct[1] if ct else None})
                         rec["log"].append("<- [%s]%s %s" % (
                             b.get("tool_use_id") or "?",
                             " ERROR" if b.get("is_error") else "",
@@ -826,7 +1020,10 @@ def claude_turn(argv, ws, stdin_text=None):
     r = rec["result"] or {}
     rec["ok"] = bool(rec["result"]) and not r.get("is_error")
     rec["final"] = r.get("result") or ""
+    # R270: a CLI killed before its result record (timeout, crash) reports
+    # no cost or usage: None ("unknown"), never 0
     rec["cost_usd"] = r.get("total_cost_usd")
+    rec["result_missing"] = rec["result"] is None
     rec["duration_api_ms"] = r.get("duration_api_ms")
     rec["num_turns"] = r.get("num_turns")
     rec["usage"] = r.get("usage")
@@ -936,6 +1133,235 @@ def request_record(res, build):
             "failed_checks": [c["check"] for c in checks + fit if not c["pass"]]}
 
 
+def _salvage_build(res, script, dest, phase, attempt, expect, request, seed, render):
+    """R270: the end-of-turn build (with render.png + render_inside.png) of
+    a model.py a killed turn left behind. Appended to res["builds"]."""
+    with open(script, encoding="utf-8", errors="replace") as fh:
+        code = fh.read()
+    shutil.copy(script, os.path.join(dest, ATTEMPT_FILE[phase] % (attempt + 1)))
+    log("[%s] turn ended without a result; salvage build of model.py" % res["id"])
+    b, crash = fc_job({"mode": "build", "workspace": os.path.dirname(script),
+                       "expect": expect, "prompt": request, "seed": seed,
+                       "render": os.path.join(dest, "render.png") if render else None})
+    if b is None:
+        b = {"ok": False, "error": "HARNESS CRASH: %s" % crash, "harness_crash": True}
+    b["code_quality"] = code_quality(code)
+    b["salvaged"] = True
+    res["builds"].append(b)
+    return b
+
+
+def cost_record(turns):
+    """R270: a prompt's cost from its turns. cost_usd is None ("unknown")
+    when any turn has no cost (its CLI was killed before the result record),
+    never a silent 0; cost_usd_known is the sum of the turns that reported."""
+    costs = [t.get("cost_usd") for t in turns or []]
+    known = [c for c in costs if c is not None]
+    return {"cost_usd": round(sum(known), 4) if len(known) == len(costs) else None,
+            "cost_usd_known": round(sum(known), 4),
+            "cost_unknown_turns": len(costs) - len(known)}
+
+
+def fmt_cost(v):
+    """'$0.42', or 'unknown' for a cost the CLI never reported (R270)."""
+    return "unknown" if v is None else "$%.2f" % v
+
+
+def lock_waits(res):
+    """R270: contention, apart from the agent: seconds ./check calls waited
+    for .check.lock and built, and seconds end-of-turn builds and previews
+    waited for the harness's freecadcmd lock."""
+    cts = [c for t in res.get("turns") or [] for c in t.get("check_timings") or []]
+    fc = [b.get("fc_lock_wait_s") for b in (res.get("builds") or []) + (res.get("previews") or [])
+          if b.get("fc_lock_wait_s") is not None]
+    lw = [c["lock_wait_s"] for c in cts if c.get("lock_wait_s") is not None]
+    rs = [c["run_s"] for c in cts if c.get("run_s") is not None]
+    return {"check_lock_wait_s": sum(lw) if lw else None,
+            "check_run_s": sum(rs) if rs else None,
+            "checks_timed": len(lw),
+            "fc_lock_wait_s": round(sum(fc), 2) if fc else None}
+
+
+def _levels_mod():
+    """R400: agent_kit/atech_levels (pure python) of the live addon, or None
+    for a tree that predates it."""
+    kit = os.path.join(ADDON, "acadagent", "agent_kit")
+    if kit not in sys.path:
+        sys.path.append(kit)
+    try:
+        import atech_levels
+        return atech_levels
+    except ImportError:
+        return None
+
+
+def next_level_message(ws, levels=None):
+    """R400: after a level built cleanly, (level number, its message) when
+    production's design ladder runs in `ws` (the marker build.start_levels
+    wrote), else (None, None). Advances the marker as panel._reply does."""
+    lv = levels if levels is not None else _levels_mod()
+    if lv is None:
+        return None, None
+    msg = lv.advance(ws)
+    state = lv.read(ws)
+    return (state["level"] if msg and state else None), msg
+
+
+def level_count():
+    """atech_levels.COUNT - the report's denominator."""
+    lv = _levels_mod()
+    return lv.COUNT if lv is not None else 0
+
+
+def levels_reached(res):
+    """R400: the highest design level that ended on a clean build (None when
+    no ladder ran)."""
+    done = [l["level"] for l in res.get("levels") or [] if l.get("built_s") is not None]
+    if done:
+        return max(done)
+    return None
+
+
+# ------------------------------------------------- R450/R451: checkpoints
+LEVEL_MODEL_FILE = "model_level%d.py"       # R450: dest/ checkpoint per level
+LEVEL_INTENT_FILE = "intent_level%d.json"
+LEVEL_RENDER_FILE = "render_level%d.png"
+LEVEL_RENDER_DIR = "levels"
+
+
+def publish_level_renders(dest):
+    """R450: at the item's end, dest/levels/render_level<N>.png beside
+    render.png as dest/render_level<N>.png (no render follows to delete
+    them)."""
+    d = os.path.join(dest, LEVEL_RENDER_DIR)
+    if os.path.isdir(d):
+        for nm in sorted(os.listdir(d)):
+            if re.match(r"render_level\d+\.png$", nm):
+                shutil.copyfile(os.path.join(d, nm), os.path.join(dest, nm))
+
+
+def ladder_level(ws, levels=None):
+    """R450: the design level running in `ws` (the atech_levels marker), or
+    None when no ladder runs."""
+    lv = levels if levels is not None else _levels_mod()
+    state = lv.read(ws) if lv is not None else None
+    return state["level"] if state else None
+
+
+def turn_limit(ladder, elapsed):
+    """R451: the kill time of the next turn. A ladder turn gets
+    LEVEL_TURN_TIMEOUT_S, cut to what is left of ITEM_BUDGET_S but never
+    under LEVEL_TURN_MIN_S, and never over TURN_TIMEOUT_S; any other turn
+    TURN_TIMEOUT_S."""
+    if not ladder:
+        return TURN_TIMEOUT_S
+    left = ITEM_BUDGET_S - elapsed
+    return min(TURN_TIMEOUT_S, LEVEL_TURN_TIMEOUT_S, max(LEVEL_TURN_MIN_S, left))
+
+
+def over_budget(t_start):
+    """R451: the item has run longer than ITEM_BUDGET_S."""
+    return time.time() - t_start > ITEM_BUDGET_S
+
+
+def level_checkpoint(ws, dest, level):
+    """R450: keep the model.py and intent.json of LEVEL `level`, which just
+    built cleanly, as dest/model_level<N>.py and dest/intent_level<N>.json
+    (and its render.png as render_level<N>.png). Returns the checkpoint."""
+    script = os.path.join(ws, "model.py")
+    model = os.path.join(dest, LEVEL_MODEL_FILE % level)
+    shutil.copyfile(script, model)
+    src = os.path.join(ws, "intent.json")
+    intent = os.path.join(dest, LEVEL_INTENT_FILE % level)
+    if os.path.isfile(src) and not os.path.islink(src):
+        shutil.copyfile(src, intent)
+    else:
+        intent = None
+        stale = os.path.join(dest, LEVEL_INTENT_FILE % level)
+        if os.path.lexists(stale):
+            os.unlink(stale)
+    render = os.path.join(dest, "render.png")
+    if os.path.isfile(render):
+        # fc_build's next render deletes every render_*.png beside render.png
+        # (R230), so the level renders wait in levels/ (publish_level_renders)
+        os.makedirs(os.path.join(dest, LEVEL_RENDER_DIR), exist_ok=True)
+        shutil.copyfile(render, os.path.join(dest, LEVEL_RENDER_DIR, LEVEL_RENDER_FILE % level))
+    return {"level": level, "model": model, "intent": intent,
+            "sha1": _sha1(_read_bytes(model))}
+
+
+def restore_checkpoint(ws, ck):
+    """R450: put a checkpoint's model.py and intent.json back into the
+    workspace (an intent.json the failed level added goes: the restored
+    build is measured against its own level's targets). A link the agent
+    planted at either name is removed, never followed."""
+    for name, src in (("model.py", ck["model"]), ("intent.json", ck.get("intent"))):
+        p = os.path.join(ws, name)
+        if os.path.islink(p) or (src is None and os.path.lexists(p)):
+            os.unlink(p)
+        if src is not None:
+            shutil.copyfile(src, p)
+
+
+def rollback_note(ck, failed, why):
+    """R450: the line that starts the level after a rollback, so the agent
+    knows model.py is not what it left."""
+    return ("Atelier restored model.py and intent.json to the passing build "
+            "of LEVEL %d: LEVEL %d did not end on a passing build (%s). "
+            "Start this level from that build." % (ck["level"], failed, why))
+
+
+def _rollback(res, ck, ws, dest, expect, request, seed, render, t_start, why):
+    """R450: a level that failed after MAX_FIX_ATTEMPTS, timed out or died:
+    restore the last passing level's model.py / intent.json and build it
+    again (render.png is the restored build's). Marks res["levels"][-1]
+    rolled_back. Returns (the build is clean, the build)."""
+    restore_checkpoint(ws, ck)
+    lvl = res["levels"][-1]
+    log("[%s] level %s failed (%s); rolling back to level %d" % (
+        res["id"], lvl.get("level"), why, ck["level"]))
+    b, crash = fc_job({"mode": "build", "workspace": ws, "expect": expect,
+                       "prompt": request, "seed": seed,
+                       "render": os.path.join(dest, "render.png") if render else None})
+    if b is None:
+        b = {"ok": False, "error": "HARNESS CRASH: %s" % crash, "harness_crash": True}
+    with open(ck["model"], encoding="utf-8", errors="replace") as fh:
+        b["code_quality"] = code_quality(fh.read())
+    b["rolled_back"] = True
+    b["restored_level"] = ck["level"]
+    res["builds"].append(b)
+    lvl.update({"rolled_back": True, "restored_level": ck["level"], "why": why,
+                "failed_s": round(time.time() - t_start, 1)})
+    res.setdefault("rolled_back_levels", []).append(lvl.get("level"))
+    return bool(b.get("ok") and not b.get("failures")), b
+
+
+def level_walls(res):
+    """R451: per level, its wall seconds (start to clean build, to failure,
+    or to the item's end) - the report's per-level column."""
+    lv = res.get("levels") or []
+    out = []
+    for i, l in enumerate(lv):
+        end = l.get("built_s")
+        if end is None:
+            end = l.get("failed_s")
+        if end is None:
+            end = lv[i + 1]["started_s"] if i + 1 < len(lv) else res.get("wall_s")
+        out.append(None if end is None or l.get("started_s") is None
+                   else round(end - l["started_s"], 1))
+    return out
+
+
+def level_walls_text(res):
+    """R451: 'L1 120, L2 300 RB, L3 -' for the report."""
+    walls = [l.get("wall_s") for l in res.get("levels") or []]
+    if not any(w is not None for w in walls):
+        walls = level_walls(res)
+    return ", ".join("L%s %s%s" % (l.get("level"), "-" if w is None else "%.0f" % w,
+                                    " RB" if l.get("rolled_back") else "")
+                     for l, w in zip(res.get("levels") or [], walls))
+
+
 def run_prompt(item, out_root, render=True):
     pid = item["id"]
     root = tempfile.mkdtemp(prefix="atech-eval-%s-" % pid)
@@ -958,6 +1384,13 @@ def run_prompt(item, out_root, render=True):
            "seed": item.get("seed"), "atech": is_atech_item(item),
            "system_prompt_chars": len(sp_first) if sp_first is not None else None,
            "atech_reference": "ATECH_ASSEMBLY.md" in (prod.get("workspace_files") or [])}
+    # R270: the A/B effort override (ATECH_EVAL_EFFORT), on every turn's argv
+    override = eval_effort()
+    if override:
+        for key in ("first", "resume"):
+            prod[key] = with_effort(prod[key], override)
+    res["effort"] = effort_of(prod["first"])
+    res["effort_override"] = override
     message = "%s\n\n---\n%s" % (item["prompt"], brief)
     session, attempt, last_mtime = None, 0, None
     transcript = []
@@ -968,17 +1401,71 @@ def run_prompt(item, out_root, render=True):
     expect, request = item.get("expect"), item["prompt"]
     if edit:
         res["edit_prompt"] = edit["prompt"]
+    ckpt = None          # R450: the last level that ended on a clean build
+
+    def next_level():
+        """R451: (n, message) of the next design level - none once the item
+        has run ITEM_BUDGET_S (it ends on its last passing level)."""
+        if over_budget(t_start):
+            cur = ladder_level(ws)
+            if cur is not None and cur < level_count():
+                res["budget_stop"] = True
+                log("[%s] item budget %d s spent; no level %d" % (pid, ITEM_BUDGET_S, cur + 1))
+            return None, None
+        return next_level_message(ws)
+
+    def level_passed(lvl):
+        """R450: LEVEL lvl ended on a clean build - checkpoint it."""
+        nonlocal ckpt
+        if not res.get("levels"):
+            res["levels"] = [{"level": lvl, "started_s": 0.0}]
+        res["levels"][-1]["built_s"] = round(time.time() - t_start, 1)
+        ckpt = level_checkpoint(ws, dest, lvl)
+
+    def start_level(n, msg, doc_brief=None, note=None):
+        res["levels"].append({"level": n, "started_s": round(time.time() - t_start, 1)})
+        return "%s%s\n\n---\n%s" % (note + "\n\n" if note else "", msg, doc_brief or brief)
+
+    def rollable():
+        """R450: a level after a checkpoint is running (so it can fail
+        back to it)."""
+        return bool(phase == 0 and not edit and ckpt is not None and res.get("levels")
+                    and res["levels"][-1]["level"] > ckpt["level"])
+
+    def roll_back(why):
+        """R450: restore + rebuild the checkpoint; the next level's message,
+        or None when the item ends here (outcome set)."""
+        good, b = _rollback(res, ckpt, ws, dest, expect, request, seed, render, t_start, why)
+        failed = res["levels"][-1]["level"]
+        res["built"] = good
+        if not good:
+            res["outcome"] = "rolled_back_failed"
+            return None
+        n, msg = next_level()
+        if msg:
+            log("[%s] sending level %d from level %d's build" % (pid, n, ckpt["level"]))
+            return start_level(n, msg, b.get("document_brief"),
+                               note=rollback_note(ckpt, failed, why))
+        res["outcome"] = "built_rolled_back"
+        return None
+
     while True:
         log("[%s] claude turn %d" % (pid, len(res["turns"]) + 1))
         t_turn = time.time()
         key = "resume" if session else "first"
         argv = render_argv(prod[key], message, session)
+        h_before = _sha1(_read_bytes(script))   # R270: did this turn change model.py?
+        # R451: a ladder turn has its own, shorter kill time
+        limit = turn_limit(phase == 0 and not edit and ladder_level(ws) is not None,
+                           t_turn - t_start)
         live = LivePreview(ws, {"mode": "build", "expect": expect,
                                 "prompt": request, "seed": seed},
                            t_start, turn=len(res["turns"]) + 1).start()
+        _TURN_LIMIT.s = limit
         try:
             turn = claude_turn(argv, ws, render_stdin(prod.get("stdin_" + key), message))
         finally:
+            _TURN_LIMIT.s = None
             res["previews"] += live.stop()          # S46: a build in flight finishes
             res["preview_skipped"] += live.skipped
             res["preview_wait_s"] = round(res["preview_wait_s"] + live.stop_wait_s, 2)
@@ -992,16 +1479,91 @@ def run_prompt(item, out_root, render=True):
             "output_tokens", "permission_denials", "denials", "usage")}
         # Stall diagnostics (round 8): absent from turns recorded by an older
         # run_claude or a test double, so missing stays missing (None).
-        for k in ("first_event_s", "api_retries", "duration_api_ms", "timeline", "stalls"):
+        for k in ("first_event_s", "api_retries", "duration_api_ms", "timeline", "stalls",
+                  "turn_t0", "check_timings", "result_missing"):        # R270
             rec_turn[k] = turn.get(k)
         rec_turn["started_s"] = round(t_turn - t_start, 1)      # S57
+        rec_turn["timeout_s"] = limit                           # R451
         res["turns"].append(rec_turn)
         transcript.append(transcript_turn(message, turn))
         if not turn["ok"]:
-            res["outcome"] = PHASE_PREFIX[phase] + "claude_failed: %s" % (
-                (turn["final"] or turn["stderr_tail"] or "no result")[:300])
+            why = (turn.get("final") or turn.get("stderr_tail") or "no result")[:300]
+            h_now = _sha1(_read_bytes(script))
+            lvl_now = ladder_level(ws) if phase == 0 and not edit else None
+            changed = h_now is not None and h_now != h_before
+            if lvl_now is not None and (changed or rollable()):
+                # R450: a level turn timed out or its CLI died. A new model.py
+                # that builds cleanly is this level's result; anything else
+                # falls back to the last passing level - the ladder goes on.
+                cause = "timed_out" if turn.get("timed_out") else "claude_failed"
+                res["claude_failure"] = "%s: %s" % (cause, why)
+                if changed:
+                    b = _salvage_build(res, script, dest, phase, attempt, expect, request,
+                                       seed, render)
+                    res["salvaged"] = True
+                    good = bool(b.get("ok") and not b.get("failures"))
+                    if good and res["first_ok_build_s"] is None:
+                        res["first_ok_build_s"] = round(time.time() - t_start, 1)
+                    if good:
+                        level_passed(lvl_now)
+                        res["levels"][-1]["salvaged"] = True
+                        res["built"] = True
+                        last_mtime = os.path.getmtime(script)
+                        n, msg = next_level()
+                        if msg:
+                            attempt = 0
+                            message = start_level(n, msg, b.get("document_brief"))
+                            continue
+                        res["outcome"] = cause + "_built"
+                        break
+                if not rollable():          # level 1: nothing to fall back to
+                    res["built"] = False
+                    res["outcome"] = cause + "_failed"
+                    break
+                message = roll_back(cause)
+                if message is None:
+                    break
+                attempt, last_mtime = 0, os.path.getmtime(script)
+                continue
+            if h_now is None or h_now == h_before:
+                res["outcome"] = PHASE_PREFIX[phase] + "claude_failed: %s" % why
+                break
+            # R270: the turn was killed (TURN_TIMEOUT_S) or the CLI died, but
+            # it wrote a new model.py: build and render it as the end of the
+            # turn would have, so a passing model is scored and judged, not
+            # discarded. No fix message follows - the session is gone.
+            cause = "timed_out" if turn.get("timed_out") else "claude_failed"
+            res["claude_failure"] = PHASE_PREFIX[phase] + "%s: %s" % (cause, why)
+            b = _salvage_build(res, script, dest, phase, attempt, expect, request,
+                               seed, render)
+            good = bool(b.get("ok") and not b.get("failures"))
+            if good and res["first_ok_build_s"] is None:
+                res["first_ok_build_s"] = round(time.time() - t_start, 1)
+            # an edit item's score is the edit's: a request salvaged before
+            # the edit was sent is first_request only (below), not `built`
+            res["built"] = good and not (phase == 0 and edit)
+            res["salvaged"] = True
+            res["outcome"] = PHASE_PREFIX[phase] + cause + ("_built" if good else "_failed")
             break
         mtime = os.path.getmtime(script) if os.path.isfile(script) else None
+        if mtime is not None and mtime == last_mtime and res.get("levels") \
+                and res["builds"] and res["builds"][-1].get("ok") \
+                and not res["builds"][-1].get("failures"):
+            # R400: a level that left the passing model.py as it was (its gate
+            # already met) passes as it stands - the ladder goes on.
+            lvl = ladder_level(ws)
+            if lvl is not None:
+                level_passed(lvl)                    # R450: still a checkpoint
+            n, msg = next_level()
+            if msg:
+                res["levels"].append({"level": n, "started_s": round(time.time() - t_start, 1),
+                                      "unchanged_before": True})
+                attempt = 0
+                message = "%s\n\n---\n%s" % (msg, brief)
+                continue
+            res["built"] = True
+            res["outcome"] = PHASE_PREFIX[phase] + "built"
+            break
         if mtime is None or mtime == last_mtime:
             res["outcome"] = PHASE_PREFIX[phase] + (
                 "nothing_to_build" if mtime is None else "not_rewritten")
@@ -1041,10 +1603,34 @@ def run_prompt(item, out_root, render=True):
                 message = "%s\n\n---\n%s" % (edit["prompt"], b.get("document_brief") or brief)
                 log("[%s] request built; sending the edit turn" % pid)
                 continue
+            if phase == 0 and not edit:
+                # R400: the design ladder - send the next level as
+                # panel._reply does after a clean build. R450: first keep
+                # this level's model.py / intent.json / render as its
+                # checkpoint, the floor a later level can fall back to.
+                lvl = ladder_level(ws)
+                if lvl is not None:
+                    level_passed(lvl)
+                    n, msg = next_level()
+                    if msg:
+                        res["built"] = True         # every level ends on a clean build
+                        attempt = 0
+                        message = start_level(n, msg, b.get("document_brief"))
+                        log("[%s] level %d built; sending level %d" % (pid, lvl, n))
+                        continue
             res["built"] = True
             res["outcome"] = PHASE_PREFIX[phase] + "built"
             break
         attempt += 1
+        if rollable() and (attempt > MAX_FIX_ATTEMPTS or over_budget(t_start)):
+            # R450/R451: the level is out of fixes (or the item out of time):
+            # fall back to the last passing level instead of ending on this.
+            message = roll_back("still_fails_after_%d_fixes" % MAX_FIX_ATTEMPTS
+                                if attempt > MAX_FIX_ATTEMPTS else "over_budget")
+            if message is None:
+                break
+            attempt, last_mtime = 0, os.path.getmtime(script)
+            continue
         if attempt > MAX_FIX_ATTEMPTS:
             res["outcome"] = PHASE_PREFIX[phase] + "still_fails_after_%d_fixes" % MAX_FIX_ATTEMPTS
             break
@@ -1053,7 +1639,10 @@ def run_prompt(item, out_root, render=True):
             fix, b.get("document_brief") or brief)
         # panel._send_fix -> _send_claude(message) -> message + brief
     res["wall_s"] = round(time.time() - t_start, 1)
-    res["cost_usd"] = round(sum(t["cost_usd"] or 0 for t in res["turns"]), 4)
+    res["levels_reached"] = levels_reached(res)          # R400
+    for l, w in zip(res.get("levels") or [], level_walls(res)):
+        l["wall_s"] = w                                  # R451
+    res.update(cost_record(res["turns"]))                # R270: None = unknown
     t1 = res["turns"][0] if res["turns"] else {}
     res["init_s"] = t1.get("init_s")
     res["first_text_s"] = t1.get("first_text_s")
@@ -1063,6 +1652,7 @@ def run_prompt(item, out_root, render=True):
     res["input_tokens"] = sum(toks) if toks and all(x is not None for x in toks) else None
     res["output_tokens"] = turns_output_tokens(res["turns"])
     res["stalls"] = request_stalls(res)                  # S57
+    res.update(lock_waits(res))                          # R270
     if edit and phase == 0:
         res["first_request"] = request_record(res, res["builds"][-1] if res["builds"] else {})
     good = first_good_preview(res["previews"])
@@ -1072,6 +1662,7 @@ def run_prompt(item, out_root, render=True):
     score_final(res, res["builds"][-1] if res["builds"] else {})
     if os.path.isfile(script):
         shutil.copy(script, os.path.join(dest, "model.py"))
+    publish_level_renders(dest)                          # R450
     intent = os.path.join(ws, "intent.json")
     if os.path.isfile(intent) and not os.path.islink(intent):
         # the final build read it (fitted_after); --rescore needs it too
@@ -1080,10 +1671,10 @@ def run_prompt(item, out_root, render=True):
         shutil.rmtree(d, ignore_errors=True)            # ClaudeRun's system-prompt files
     with open(os.path.join(dest, "transcript.txt"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(transcript))
-    log("[%s] %s  built=%s pass=%s checks=%d/%d attempts=%d previews=%d %.0fs $%.2f" % (
+    log("[%s] %s  built=%s pass=%s checks=%d/%d attempts=%d previews=%d levels=%s %.0fs %s" % (
         pid, res["outcome"], res["built"], res["pass"], res["checks_passed"],
-        res["checks_total"], len(res["builds"]), len(res["previews"]), res["wall_s"],
-        res["cost_usd"]))
+        res["checks_total"], len(res["builds"]), len(res["previews"]),
+        res["levels_reached"], res["wall_s"], fmt_cost(res["cost_usd"])))
     return res
 
 
@@ -1283,7 +1874,16 @@ def report(results, n, meta, tag="baseline"):
 
     def _s(v, fmt="%.0f s"):
         return fmt % v if v is not None else "not measured"
-    cost = sum(r["cost_usd"] for r in results)
+    # R270: a prompt whose CLI was killed before its result has no cost
+    cost = sum(r["cost_usd"] for r in results if r.get("cost_usd") is not None)
+    cost_unknown = sum(1 for r in results if r.get("cost_usd") is None)
+    cwait = [r.get("check_lock_wait_s") for r in results if r.get("check_lock_wait_s") is not None]
+    crun = [r.get("check_run_s") for r in results if r.get("check_run_s") is not None]
+    fwait = [r.get("fc_lock_wait_s") for r in results if r.get("fc_lock_wait_s") is not None]
+    salvaged = sum(1 for r in results if r.get("salvaged"))
+    n_unk = sum(1 for r in results if any(t.get("result_missing") for t in r.get("turns") or []))
+    tok_unknown = ("; unknown for %d prompt%s (CLI killed before its result, R270)" % (
+        n_unk, "" if n_unk == 1 else "s")) if n_unk else ""
     ck_p = sum(r["checks_passed"] for r in results)
     ck_t = sum(r["checks_total"] for r in results)
     name = "%s_%d" % (tag, n)
@@ -1311,6 +1911,21 @@ def report(results, n, meta, tag="baseline"):
          "| expectation checks passed (all prompts) | %d/%d (%.0f%%) |" % (
              ck_p, ck_t, 100.0 * ck_p / ck_t if ck_t else 0),
          "| median wall time per request (time to final) | %.0f s |" % med,
+         *(["| design levels reached (R400; per prompt) | %s |" % ", ".join(
+             "%s %s/%d" % (r["id"], r["levels_reached"], level_count())
+             for r in results if r.get("levels_reached") is not None)]
+           if any(r.get("levels_reached") is not None for r in results) else []),
+         *(["| design level wall times (R451; per prompt, s; RB = rolled back to "
+             "the last passing level) | %s |" % "; ".join(
+                 "%s %s" % (r["id"], level_walls_text(r))
+                 for r in results if r.get("levels")),
+             "| levels rolled back / items ended on a rolled-back level / items "
+             "stopped by the %d min budget (R450, R451) | %d / %d / %d |" % (
+                 ITEM_BUDGET_S // 60,
+                 sum(len(r.get("rolled_back_levels") or []) for r in results),
+                 sum(1 for r in results if r.get("outcome") == "built_rolled_back"),
+                 sum(1 for r in results if r.get("budget_stop")))]
+           if any(r.get("levels") for r in results) else []),
          "| median time to first model.py write (preview lower bound) | %s (n=%d) |" % (
              _s(_median(fw)), len(fw)),
          "| median time to first successful build (preview upper bound) | %s (n=%d) |" % (
@@ -1332,7 +1947,15 @@ def report(results, n, meta, tag="baseline"):
          "| mean fix rounds per request | %.2f (n=%d) |" % (
              (sum(fixes) / float(len(fixes))) if fixes else 0, len(fixes)),
          "| wall time range | %.0f - %.0f s |" % (walls[0], walls[-1]) if walls else "| - | - |",
-         "| total cost | $%.2f |" % cost,
+         "| total cost | %s |" % (
+             "$%.2f" % cost if not cost_unknown else
+             "unknown (%d prompt%s killed before the CLI's result; $%.2f known)" % (
+                 cost_unknown, "" if cost_unknown == 1 else "s", cost)),
+         "| turns killed with a new model.py, built at the end anyway (R270) | %d |" % salvaged,
+         "| ./check lock wait / build time, all prompts (R270) | %s |" % (
+             "%d s / %d s" % (sum(cwait), sum(crun)) if cwait else "not measured"),
+         "| end-of-turn builds and previews waiting for the freecadcmd lock (R270) | %s |" % (
+             "%.0f s" % sum(fwait) if fwait else "not measured"),
          "| median init_s (spawn -> init record, turn 1) | %s (n=%d) |" % (
              _s(_median(inits), "%.2f s"), len(inits)),
          "| median first_text_s (spawn -> first text, turn 1) | %s (n=%d) |" % (
@@ -1340,10 +1963,11 @@ def report(results, n, meta, tag="baseline"):
          "| in-turn ./check calls (total, all prompts) | %s |" % (
              sum(checks_n) if checks_n else "not measured"),
          "| input tokens incl. cache (total / median per prompt) | %s |" % (
-             "%d / %d" % (sum(toks), _median(toks)) if toks else "not measured"),
+             ("%d / %d" % (sum(toks), _median(toks)) if toks else "not measured")
+             + tok_unknown),
          "| output tokens (total / median per prompt) | %s |" % (
-             "%d / %d (n=%d)" % (sum(otoks), _median(otoks), len(otoks)) if otoks
-             else "not measured"),
+             ("%d / %d (n=%d)" % (sum(otoks), _median(otoks), len(otoks)) if otoks
+              else "not measured") + tok_unknown),
          "| permission denials (total) | %d |" % denials,
          "| gaps >= %.0f s with no tool activity (S57; causes below) | %s |" % (
              STALL_GAP_S, stall_headline(results)),
@@ -1377,8 +2001,18 @@ def report(results, n, meta, tag="baseline"):
         wd = b.get("whole_dims_sorted_mm")
         img = "%s/%s/render.png" % (name, r["id"])
         has_img = os.path.isfile(os.path.join(OUT_DIR, img)) and r["built"]
+        # R230: render.png is the kit's six-view review sheet (fc_build._render),
+        # render_inside.png its cutaway at the board's plane
+        inside = "%s/%s/render_inside.png" % (name, r["id"])
+        has_inside = has_img and os.path.isfile(os.path.join(OUT_DIR, inside))
         def _f(k, fmt="%.0f"):
             return "-" if r.get(k) is None else fmt % r[k]
+
+        def _tok(k):
+            # R270: a turn killed before its result reported no usage
+            if r.get(k) is None and any(t.get("result_missing") for t in r.get("turns") or []):
+                return "unknown"
+            return _f(k, "%d")
         fa = r.get("first_apply_pass")
         if fa is None and r.get("builds"):
             fa = first_apply_pass(r["builds"][0])
@@ -1388,12 +2022,13 @@ def report(results, n, meta, tag="baseline"):
             prev = "none (%d built)" % len(r.get("previews") or [])
         else:
             prev = "%.0f (%s)" % (r["first_preview_s"], _f("first_preview_prod_s"))
-        L.append("| %s | %s | %s | %d | %s | %s | %s | %s | %s | %s | %.0f | %.2f | %s | %s | %s | %s | %s | %d/%d | %s | %s | %s | %s |" % (
+        L.append("| %s | %s | %s | %d | %s | %s | %s | %s | %s | %s | %.0f | %s | %s | %s | %s | %s | %s | %d/%d | %s | %s | %s | %s |" % (
             r["id"], r["prompt"], r["outcome"], len(r["builds"]),
             "-" if fa is None else ("yes" if fa else "no"),
             _f("first_write_s"), prev, _f("first_ok_build_s"),
             _f("init_s", "%.2f"), _f("first_text_s", "%.2f"),
-            r["wall_s"], r["cost_usd"], _f("input_tokens", "%d"), _f("output_tokens", "%d"),
+            r["wall_s"], ("unknown" if r.get("cost_usd") is None else "%.2f" % r["cost_usd"]),
+            _tok("input_tokens"), _tok("output_tokens"),
             _f("check_calls", "%d"),
             "%d/%d" % (len(objs), sol) if objs else "-",
             " x ".join("%g" % d for d in wd) if wd else "-",
@@ -1401,7 +2036,8 @@ def report(results, n, meta, tag="baseline"):
             ("%d/%d" % (r.get("fitness_passed", 0), r["fitness_total"])
              if r.get("fitness_total") else "-"),
             stall_cell(r),
-            "[png](%s)" % img if has_img else "-"))
+            ("[png](%s)" % img + (" [inside](%s)" % inside if has_inside else ""))
+            if has_img else "-"))
     L += ["", "## Permission denials by command", ""]
     dn = [(r["id"], d) for r in results for d in r.get("denials") or []]
     if dn:
@@ -1650,13 +2286,19 @@ def describe_addon(a):
         if a.get("dirty") else "", (a.get("sha256") or "?")[:12])
 
 
+# R243 (showcase baseline: --tag showcase_base was refused): underscores
+# join words; each word starts with a letter, so "<tag>_<n>" still splits
+# at the last "_<digits>".
+TAG_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*$")
+
+
 def resolve_run(spec, tag="baseline"):
     """'baseline_1' / 'round_1' / 'baseline_extra_1' -> (name, tag, n);
     a bare number means <tag>_<n>."""
     spec = str(spec)
     if re.match(r"^\d+$", spec):
         return "%s_%d" % (tag, int(spec)), tag, int(spec)
-    m = re.match(r"^([a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)?)_(\d+)$", spec)
+    m = re.match(r"^([a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*)_(\d+)$", spec)   # R243
     if not m:
         raise ValueError("--rescore wants a run name like baseline_1 (got %r)" % spec)
     return spec, m.group(1), int(m.group(2))
@@ -1795,6 +2437,15 @@ def _write_rescore(data, name, n, rtag):
     return data
 
 
+def parallel_jobs(jobs, max_parallel=MAX_PARALLEL):
+    """R270: --jobs capped by --max-parallel (each at least 1)."""
+    cap = max(1, int(max_parallel or MAX_PARALLEL))
+    n = max(1, int(jobs or 1))
+    if n > cap:
+        log("--jobs %d capped to --max-parallel %d (shared freecadcmd lock)" % (n, cap))
+    return min(n, cap)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rescore", default=None,
@@ -1803,19 +2454,32 @@ def main():
                     help="with --rescore: run (the run's recorded addon), current, "
                          "or a git revision (S41)")
     ap.add_argument("--set", default="core", choices=sorted(PROMPT_SETS),
-                    help="prompt set: core (the comparable 12) or extra")
+                    help="prompt set: core (the comparable 12), extra or showcase")
     ap.add_argument("--only", default="")
     ap.add_argument("--jobs", type=int, default=2)
+    ap.add_argument("--max-parallel", type=int, default=MAX_PARALLEL,
+                    help="R270: cap on prompts run at once (default %d); they share "
+                         "one freecadcmd lock and the CPU with every ./check, so more "
+                         "turns into lock waits (logged per build and per ./check)"
+                         % MAX_PARALLEL)
     ap.add_argument("--no-render", action="store_true")
     ap.add_argument("--n", type=int, default=None, help="run number (default: next free)")
-    ap.add_argument("--tag", default="baseline", help="output name prefix: baseline | round")
+    ap.add_argument("--tag", default="baseline",
+                    help="output name prefix: baseline | round | any lowercase "
+                         "words joined by underscores (showcase_base)")
     args = ap.parse_args()
-    if not re.match(r"^[a-z][a-z0-9]*$", args.tag):
-        sys.exit("--tag must be lowercase letters/digits")
+    if not TAG_RE.match(args.tag):
+        sys.exit("--tag must be lowercase words of letters/digits joined by "
+                 "underscores, each starting with a letter (got %r)" % args.tag)
     if not os.path.isfile(FREECADCMD):
         sys.exit("freecadcmd not found at %s (set FREECADCMD)" % FREECADCMD)
     if args.rescore is not None:
         return rescore(args.rescore, args.tag, args.addon_rev)
+    jobs = parallel_jobs(args.jobs, args.max_parallel)
+    try:
+        effort = eval_effort()                         # R270: fail before any turn
+    except ValueError as exc:
+        sys.exit(str(exc))
     with open(os.path.join(HERE, PROMPT_SETS[args.set]), encoding="utf-8") as fh:
         items = json.load(fh)["prompts"]
     if args.set != "core":
@@ -1847,11 +2511,11 @@ def main():
         for d in (locals().get("prod") or {}).get("private_dirs") or []:
             shutil.rmtree(d, ignore_errors=True)
     cli = subprocess.run([first[0], "--version"], capture_output=True, text=True).stdout.strip()
-    log("%s: %d prompts, jobs=%d, claude %s, argv from %s: %s" % (
-        name, len(items), args.jobs, cli, prod["source"],
+    log("%s: %d prompts, jobs=%d, effort %s, claude %s, argv from %s: %s" % (
+        name, len(items), jobs, effort or "production's", cli, prod["source"],
         " ".join(flags_of(first)).replace(prod["workspace"], "<ws>")))
     results = {}
-    with cf.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as ex:
+    with cf.ThreadPoolExecutor(max_workers=jobs) as ex:
         futs = {ex.submit(run_prompt, it, out_root, not args.no_render): it for it in items}
         for f in cf.as_completed(futs):
             it = futs[f]
@@ -1864,11 +2528,12 @@ def main():
                                      "harness_error: %s" % exc, "built": False, "pass": False,
                                      "builds": [], "turns": [], "final_build": {},
                                      "checks_passed": 0, "checks_total": 0,
-                                     "wall_s": 0, "cost_usd": 0, "fix_rounds": 0}
+                                     "wall_s": 0, "cost_usd": None, "fix_rounds": 0}
     ordered = [results[i["id"]] for i in items]
     model = next((t.get("model") for r in ordered for t in r["turns"] if t.get("model")), None)
     meta = {"date": time.strftime("%Y-%m-%d %H:%M"), "model": model, "cli": cli,
             "prompt_set": args.set, "addon": addon,
+            "jobs": jobs, "effort_override": effort,               # R270
             "argv_source": sorted({r.get("argv_source") for r in ordered if r.get("argv_source")})}
     with open(os.path.join(OUT_DIR, "%s.json" % name), "w", encoding="utf-8") as fh:
         json.dump({"meta": meta, "results": ordered}, fh, indent=1, default=str)

@@ -310,6 +310,15 @@ elif [[ "$DEV_UNLICENSED" != 1 ]]; then
   fail "root LICENSE-models.md missing"
 fi
 install -m 0644 "$BOARD_GLB" "$AA/data/models/glb/frame-2.glb"
+# The board and module GLBs the 3D view draws them from (the studio.atech.dev
+# look, acadagent/board_look.py; display only, the STLs still measure).
+n_glb=0
+for g in "$ARTIFACTS"/models/glb/*.glb; do
+  install -m 0644 "$g" "$AA/data/models/glb/$(basename "$g")"
+  n_glb=$((n_glb + 1))
+done
+[[ -f "$ARTIFACTS/models/glb/SOURCE.md" ]] \
+  && install -m 0644 "$ARTIFACTS/models/glb/SOURCE.md" "$AA/data/models/glb/SOURCE.md"
 install -m 0644 "$ASSEMBLY_MD" "$AA/docs/ATECH_ASSEMBLY.md"
 # Every mesh presets.yaml names must be present — a module the library lists
 # but cannot load is the failure the Modules page shows as a broken card.
@@ -323,7 +332,7 @@ while IFS= read -r f; do
 done < <(sed -n 's/^[[:space:]]*file:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$PRESETS" | sort -u)
 [[ "$n_stl" -gt 0 ]] || fail "presets.yaml names no meshes ($PRESETS)"
 ART_REV="$(git -C "$ARTIFACTS" rev-parse HEAD 2>/dev/null || echo "not a git checkout")"
-say "module library" "2 modules, $n_stl meshes + frame-2.glb, $(du -sh "$AA/data" | cut -f1)"
+say "module library" "2 modules, $n_stl meshes + $n_glb GLBs, $(du -sh "$AA/data" | cut -f1)"
 say "assembly doc" "usr/Mod/AcadAgent/docs/ATECH_ASSEMBLY.md"
 
 # ------------------------------------------------- 3b. the reference model
@@ -351,6 +360,22 @@ else
   say "reference model" "regenerated: ${CRANE_RES#FCRESULT }"
 fi
 say "reference model" "$(ls "$CRANE_DST"/*.brep | wc -l) parts -> usr/Mod/AcadAgent/fixtures/"
+
+# R450: the default projects the app comes with (see build_macos.sh): each
+# showcase example built by the production build of the BUNDLED addon and
+# library into usr/Mod/AcadAgent/default_projects/ + manifest.json.
+DP_DST="$AA/default_projects"
+rm -rf "$DP_DST"; mkdir -p "$DP_DST"
+DP_LOG="$(cd "$SCRATCH_HOME" && fc_clean QT_QPA_PLATFORM=offscreen "$ROOT/usr/bin/freecadcmd" \
+            "$HERE/make_default_projects.py" --pass "$AA/acadagent/agent_kit/examples" \
+            "$DP_DST" 2>&1 || true)"
+prune_pyc
+DP_RES="$(grep -a -o 'DEFAULT_PROJECTS=[0-9]*/[0-9]*' <<<"$DP_LOG" | tail -1 || true)"
+[[ -n "$DP_RES" ]] || { tail -20 <<<"$DP_LOG" >&2; fail "default projects: no DEFAULT_PROJECTS line"; }
+grep -a -o '\[defaults\] SKIP.*' <<<"$DP_LOG" >&2 || true
+DP_OK="${DP_RES#DEFAULT_PROJECTS=}"; DP_OK="${DP_OK%%/*}"
+[[ "$DP_OK" -ge 6 ]] || fail "default projects: only ${DP_RES#DEFAULT_PROJECTS=} built (6 needed)"
+say "default projects" "${DP_RES#DEFAULT_PROJECTS=} -> usr/Mod/AcadAgent/default_projects/ ($(du -sh "$DP_DST" | cut -f1))"
 
 # ------------------------------------------------- 3c. FreeCADMCP (vendored)
 # Pinned pristine copy + patch series (vendor/freecad-mcp/UPSTREAM). A patch

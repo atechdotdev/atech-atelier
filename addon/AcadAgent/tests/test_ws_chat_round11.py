@@ -20,6 +20,11 @@ RUN (the interpreter that ships):
 """
 import json
 import os
+
+# R250: these tests pin fast-mode values ($3 budget, 2 fix attempts, the
+# 300 s stall/turn limits); quality mode is the default since R230, so
+# they ask for fast mode unless the caller chose a mode.
+os.environ.setdefault("ATECH_PROMPT_MODE", "fast")
 import signal
 import stat
 import subprocess
@@ -371,35 +376,52 @@ class TestR216Panel(tcr.PanelBase):
         self.assertNotIn(" · refused: ", rows[-1])
         self.assertTrue(rows[-1].startswith("Read"), rows)
 
-    def test_r216_one_add_dir_and_the_kit_copies_listed(self):
+    def test_r216_one_add_dir_and_no_checker_copies(self):
+        """R600 (the user, 2026-10-26: "it overfits too much to be a box
+        now"): the checker's source is never in reach - no reference/kit
+        copies of check.py / atech_geom.py (a stale one from an earlier
+        turn is removed), still exactly one --add-dir, and a traceback
+        that names the kit's installed folder is explained without making
+        it readable."""
+        stale_dir = None
         _script([INIT, RESULT])
         self.send("make a box")
         self.assertTrue(self.idle())
         t = self.turns()[-1]
         argv = t["argv"]
         dirs = [argv[i + 1] for i, a in enumerate(argv) if a == "--add-dir"]
-        self.assertEqual(dirs, [t["cwd"]], argv)
+        # realpath: macOS's /var is /private/var
+        self.assertEqual([os.path.realpath(d) for d in dirs],
+                         [os.path.realpath(t["cwd"])], argv)
+        self.assertEqual(tuple(self.p.KIT_REFERENCE), ())
         for name in ("atech_geom.py", "check.py"):
             copy = os.path.join(t["cwd"], "reference", "kit", name)
-            self.assertTrue(os.path.isfile(copy), copy)
-            self.assertEqual(stat.S_IMODE(os.stat(copy).st_mode), 0o444)
-            with open(copy, "rb") as a, \
-                    open(os.path.join(build.KIT_DIR, name), "rb") as b:
-                self.assertEqual(a.read(), b.read())
-            self.assertIn(copy, t["sp"])
-        self.assertIn("you cannot read that folder", t["sp"])
-        print("\n  [R216] --add-dir %s; kit copies in the prompt: %s"
-              % (dirs, [ln.strip() for ln in t["sp"].split("\n")
-                        if "/reference/kit/" in ln]))
+            self.assertFalse(os.path.exists(copy), copy)
+            self.assertNotIn("reference/kit/" + name, t["sp"])
+        self.assertIn("that folder is not readable and you never need it",
+                      t["sp"])
+        self.assertIn(build.KIT_DIR, t["sp"])
+        # a stale copy an earlier turn left is removed on the next turn
+        stale_dir = os.path.join(t["cwd"], "reference", "kit")
+        os.makedirs(stale_dir, exist_ok=True)
+        stale = os.path.join(stale_dir, "check.py")
+        with open(stale, "w") as fh:
+            fh.write("# old copy\n")
+        os.chmod(stale, 0o444)
+        _script([INIT, RESULT])
+        self.send("make it taller")
+        self.assertTrue(self.idle())
+        self.assertFalse(os.path.exists(stale))
+        print("\n  [R216/R600] --add-dir %s; no kit copies" % dirs)
 
-    def test_r216_sabotage_without_the_kit_copy(self):
-        self.p.KIT_REFERENCE = ()
+    def test_r216_sabotage_with_the_kit_copy_back(self):
+        self.p.KIT_REFERENCE = ("atech_geom.py", "check.py")
         _script([INIT, RESULT])
         self.send("make a box")
         self.assertTrue(self.idle())
         t = self.turns()[-1]
-        self.assertNotIn("reference/kit/atech_geom.py", t["sp"])
-        self.assertFalse(os.path.exists(os.path.join(
+        self.assertIn("reference/kit/atech_geom.py", t["sp"])
+        self.assertTrue(os.path.exists(os.path.join(
             t["cwd"], "reference", "kit", "atech_geom.py")))
 
 
@@ -745,6 +767,171 @@ class TestR210NewChatDraft(twp.Round3):
         on_b, on_a = self.scenario()
         self.assertEqual(on_b, "a lid for the box")
         self.assertEqual(on_a, "")
+
+
+# ------------------------------------------------------------ R250 vision
+class TestR250ViewSettings(unittest.TestCase):
+    """R250: "Ask about this view" is a quick read-only question: it runs at
+    the CLI's own effort and a $3 budget (vision.VIEW_BUDGET_USD) unless the
+    user set effort or budget themselves - never quality mode's design
+    turn defaults (xhigh, $25), which claude_cli.agent_settings gives."""
+
+    FLAGS = ("--model", "--effort", "--max-budget-usd", "--add-dir",
+             "--allowedTools", "--tools", "--strict-mcp-config")
+
+    def setUp(self):
+        from acadagent import settings as cfgmod
+        self.cfgmod = cfgmod
+        self.saved_cfg = cfgmod.load()
+        self.saved_mode = os.environ.get("ATECH_PROMPT_MODE")
+        os.environ["ATECH_PROMPT_MODE"] = "quality"    # the default mode
+
+    def tearDown(self):
+        self.cfgmod.save(self.saved_cfg)
+        if self.saved_mode is None:
+            os.environ.pop("ATECH_PROMPT_MODE", None)
+        else:
+            os.environ["ATECH_PROMPT_MODE"] = self.saved_mode
+
+    def set_cfg(self, **kw):
+        cfg = dict(self.saved_cfg)
+        for k in ("agent_model", "agent_effort", "agent_budget_usd",
+                  "agent_budget_user"):
+            cfg.pop(k, None)
+        cfg.update(kw)
+        self.cfgmod.save(cfg)
+
+    def ask(self):
+        """argv of a real vision.ask_about_view run (capture faked)."""
+        from acadagent import capture, vision
+        ws = tempfile.mkdtemp(prefix="ws-r250-", dir=tcr._TMP)
+        fake_panel = types.SimpleNamespace(
+            capture_path=lambda: os.path.join(ws, "view.png"))
+        saved = (vision._chat_panel, capture.capture, claude_cli.available)
+
+        def fake_capture(path=None, **_k):
+            with open(path, "wb") as fh:
+                fh.write(b"\x89PNG\r\n\x1a\n")
+            return path
+        vision._chat_panel = lambda: fake_panel
+        capture.capture = fake_capture
+        claude_cli.available = lambda: True
+        try:
+            run = vision.ask_about_view("what is this?")
+            claude_cli.ClaudeRun._LIVE.discard(run)
+        finally:
+            vision._chat_panel, capture.capture, claude_cli.available = saved
+        return claude_cli.agent_argv(flags=self.FLAGS, **run._agent)
+
+    def test_r250_unset_effort_and_budget_are_modest(self):
+        self.set_cfg(agent_quality="quality")
+        # the design turn really is at xhigh / $25 here (the premise)
+        design = claude_cli.agent_settings()
+        self.assertEqual((design["effort"], design["budget"]),
+                         (claude_cli.QUALITY_EFFORT, claude_cli.QUALITY_BUDGET_USD))
+        a = self.ask()
+        self.assertNotIn("--effort", a)
+        self.assertEqual(a[a.index("--max-budget-usd") + 1], "3.00")
+        self.assertNotIn("--model", a)
+
+    def test_r250_the_users_own_settings_win(self):
+        self.set_cfg(agent_quality="quality", agent_model="sonnet",
+                     agent_effort="high", agent_budget_usd=7.5,
+                     agent_budget_user=True)
+        a = self.ask()
+        self.assertEqual(a[a.index("--effort") + 1], "high")
+        self.assertEqual(a[a.index("--max-budget-usd") + 1], "7.50")
+        self.assertEqual(a[a.index("--model") + 1], "sonnet")
+
+    def test_r250_no_limit_stays_no_limit(self):
+        from acadagent import vision
+        self.set_cfg(agent_quality="quality", agent_budget_usd="")
+        self.assertNotIn("--max-budget-usd", self.ask())
+        self.assertEqual(vision.view_settings({"agent_budget_usd": 0})["budget"], 0.0)
+        self.assertEqual(vision.view_settings({"agent_budget_usd": "x"})["budget"],
+                         vision.VIEW_BUDGET_USD)
+
+    def test_r250_sabotage_design_settings_fail(self):
+        """Sabotage: with vision back on claude_cli.agent_settings (the
+        pre-R250 code), the unset case runs at xhigh / $25 and the test's
+        check catches it."""
+        from acadagent import vision
+        self.set_cfg(agent_quality="quality")
+        orig = vision.view_settings
+        vision.view_settings = lambda cfg=None: claude_cli.agent_settings(cfg)
+        try:
+            a = self.ask()
+        finally:
+            vision.view_settings = orig
+        self.assertIn("--effort", a)
+        self.assertEqual(a[a.index("--max-budget-usd") + 1], "25.00")
+        with self.assertRaises(AssertionError):
+            self.assertNotIn("--effort", a)
+
+
+# ------------------------------------------------------------ R250 layout
+class TestR250LayoutCheckModuleMeta(unittest.TestCase):
+    """R250: Studio's in-process layout path (build.layout_check) hands
+    atech_geom each module's library name ("module") and world X, Y, Z
+    ("axes"), the same fields check.py's items carry, so the enclosure /
+    working-face verdicts of Studio and ./check cannot disagree."""
+
+    class _Rot(object):
+        def multVec(self, v):            # a 90 deg turn about Z
+            return (-v[1], v[0], v[2])
+
+    def run_check(self, axes_fn=None):
+        got = {}
+
+        class _Mesh(object):
+            def copy(self):
+                return "mesh"
+
+        def mesh_obj(name, role, module=None):
+            return types.SimpleNamespace(
+                TypeId="Mesh::Feature", AtechRole=role, AtechModule=module or "",
+                Label=name, Name=name, Mesh=_Mesh(),
+                Placement=types.SimpleNamespace(Rotation=self._Rot()))
+        doc = types.SimpleNamespace(Objects=[
+            mesh_obj("Board", "board"),
+            mesh_obj("Speaker", "module", "speaker_p9_10"),
+            mesh_obj("Odd", "module")])
+
+        def layout(parts, board, mods, intent, intended):
+            got["mods"] = mods
+            return [], {}
+        fake_geom = types.SimpleNamespace(
+            read_intent=lambda ws: ({}, []), sanitize_intended=lambda x: (),
+            atech_layout=layout)
+        fake_fc = types.ModuleType("FreeCAD")
+        fake_fc.Vector = lambda *e: e
+        saved = (build._geom, sys.modules.get("FreeCAD"), build._module_axes)
+        build._geom = lambda: fake_geom
+        sys.modules["FreeCAD"] = fake_fc
+        if axes_fn is not None:
+            build._module_axes = axes_fn
+        try:
+            build.layout_check(doc, [], tempfile.mkdtemp(dir=tcr._TMP))
+        finally:
+            build._geom, fc, build._module_axes = saved
+            if fc is None:
+                sys.modules.pop("FreeCAD", None)
+            else:
+                sys.modules["FreeCAD"] = fc
+        return got["mods"]
+
+    def test_r250_module_and_axes_reach_atech_geom(self):
+        mods = self.run_check()
+        self.assertEqual([m["label"] for m in mods], ["Speaker", "Odd"])
+        sp, odd = mods
+        self.assertEqual(sp["module"], "speaker_p9_10")
+        self.assertEqual(sp["axes"], [[0, 1, 0], [-1, 0, 0], [0, 0, 1]])
+        self.assertIsNone(odd["module"])          # no AtechModule: None, as check.py
+
+    def test_r250_sabotage_without_axes_is_caught(self):
+        mods = self.run_check(axes_fn=lambda o: None)
+        with self.assertRaises(AssertionError):
+            self.assertEqual(mods[0]["axes"], [[0, 1, 0], [-1, 0, 0], [0, 0, 1]])
 
 
 if __name__ == "__main__":

@@ -75,6 +75,32 @@ def run_check(code, extra_env=None):
         shutil.rmtree(ws, ignore_errors=True)
 
 
+# R250: the showcase examples need the library and their intent; they are
+# test_kit_examples' (which builds them under the quality-mode timeout)
+# R270: + the round-1 handheld and lamp examples (test_kit_examples_r270
+# builds all five with the library and their intent)
+# R500: every product seed placing Atech hardware (atech_ports) is a
+# showcase - test_kit_examples_r270 / test_check_gates_r280
+# (ExamplesWithRequests) build them with the library, their intent and
+# their request; atech_case.py stays here (the S38 library example)
+SHOWCASE = tuple(sorted(
+    n for n in os.listdir(os.path.join(KIT, "examples"))
+    if n.endswith(".py") and not n.startswith("atech_")
+    and "import atech_ports" in open(os.path.join(KIT, "examples", n), encoding="utf-8").read()))
+
+
+def example_intent(path):
+    """R250: an example's INTENT = {...} literal (its intent.json), or None."""
+    import ast
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "INTENT"
+                                                for t in node.targets):
+            return ast.literal_eval(node.value)
+    return None
+
+
 def workspace(code):
     ws = tempfile.mkdtemp(prefix="atech-sbx-test-")
     with open(os.path.join(ws, "model.py"), "w", encoding="utf-8") as fh:
@@ -143,9 +169,22 @@ class Check(unittest.TestCase):
         png_dir = tempfile.mkdtemp(prefix="atech-kit-png-")
         try:
             for ex in EXAMPLES:
+                if ex in SHOWCASE:
+                    continue        # R250: test_kit_examples (library + intent)
                 with self.subTest(example=ex):
                     png = os.path.join(png_dir, ex + ".png")
-                    env = {"ATECH_CHECK_SCRIPT": os.path.join(KIT, "examples", ex),
+                    # R250: built as the agent's workspace builds it - the
+                    # example as model.py beside its INTENT as intent.json
+                    # (atech_case.py's end caps are "fitted_after")
+                    ws = os.path.join(png_dir, ex[:-3])
+                    os.makedirs(ws)
+                    shutil.copy(os.path.join(KIT, "examples", ex),
+                                os.path.join(ws, "model.py"))
+                    intent = example_intent(os.path.join(KIT, "examples", ex))
+                    if intent is not None:
+                        with open(os.path.join(ws, "intent.json"), "w") as fh:
+                            json.dump(intent, fh)
+                    env = {"ATECH_CHECK_SCRIPT": os.path.join(ws, "model.py"),
                            "ATECH_CHECK_PNG": png}
                     if ex.startswith("atech_"):
                         # S38: the Atech example needs the module library
@@ -158,6 +197,8 @@ class Check(unittest.TestCase):
                         continue            # library code without its data here
                     TIMINGS["check " + ex] = round(time.time() - t0, 2)
                     self.assertTrue(r["ok"], r.get("error"))
+                    # R250: "it passes ./check as it is" (the fast prompt)
+                    self.assertEqual(r.get("problems") or [], [], r.get("problems"))
                     self.assertEqual(r["warnings"], [])
                     self.assertTrue(r["objects"])
                     for o in r["objects"]:
@@ -614,12 +655,18 @@ class Round5Kit(unittest.TestCase):
                               {"board": "upright", "fitted_after": ["End_Cap_L", "End_Cap_R"]})
         self.assertTrue(r["ok"], r.get("error"))
         # R212: the fixture's caps are flat plates on the case ends - they
-        # only touch, and that alone fails now; nothing else does
-        self.assertEqual(sorted(p.split(" - ")[0] for p in r["problems"]),
-                         ["joint: End_Cap_L only touches Case",
-                          "joint: End_Cap_R only touches Case"], r["problems"])
+        # only touch, and that fails; R270 (quality mode): its closed case
+        # also seals the button in and nothing holds the board - nothing
+        # else does
+        self.assertEqual(sorted(p.split(" - ")[0].split(":")[0] if p.startswith("button_p1")
+                                else p.split(" - ")[0] for p in r["problems"]),
+                         ["button_p1 (a button) is sealed in",
+                          "joint: End_Cap_L only touches Case",
+                          "joint: End_Cap_R only touches Case",
+                          "motherboard: nothing holds the board"], r["problems"])
         self.assertEqual(r["fitted_after"], ["End_Cap_L", "End_Cap_R"])
-        self.assertIn("CHECK FAIL: joint: End_Cap_L only touches Case", text[-1500:])
+        self.assertIn("CHECK FAIL: ", text[-3000:])
+        self.assertIn("joint: End_Cap_L only touches Case", text[-3000:])
         for label, v in r["atech_check"].items():
             self.assertEqual(v["slide_path"], "PASS", (label, v))
 
@@ -996,13 +1043,18 @@ class Round6Kit(unittest.TestCase):
         self.assertAlmostEqual(m["mm"], 2.0, delta=0.05)
         self.assertEqual(r["warnings"], [])
         self.assertTrue(r["walls"]["complete"])
-        r = run_check(thin)
+        # R270: the "warning, never a failure" contract is fast mode's; in
+        # quality mode a confirmed wall under 0.6 mm is a PROBLEM
+        r = run_check(thin, {"ATECH_PROMPT_MODE": "fast"})
         m = r["walls"]["min"]
         self.assertTrue(0.3 < m["mm"] < 0.5, m)
         self.assertTrue(any("0.4" in w and "below 0.8 mm" in w for w in r["warnings"]),
                         r["warnings"])
         self.assertEqual(r["problems"], [])                # a warning, never a failure
         TIMINGS["R154 thin ring probe (s)"] = r["walls"]["seconds"]
+        r = run_check(thin)
+        self.assertTrue(any("Ring: a wall only 0.4" in p for p in r["problems"]),
+                        r["problems"])
 
     # ----------------------------------------------------------------- S48
     def test_S48_rounded_box_says_which_side(self):
@@ -1237,10 +1289,16 @@ class Round7Kit(unittest.TestCase):
         self.assertEqual(_not_joint(r), [], r["problems"])
         usb = [f for f in r["face_open"] if f["module"] == "usbc"][0]
         self.assertGreater(usb["open"], 0)
-        # a request that names no USB: reported, not judged
+        # a request that names no USB: reported, not judged - in fast mode;
+        # R270: quality mode judges every placed USB-C, named or not
+        r, last = self._check(NIGHTLIGHT % {"window": "front", "usb": "cover"}, intent,
+                              "A closed nightlight with a window over the light", atech=True,
+                              env={"ATECH_PROMPT_MODE": "fast"})
+        self.assertEqual(_not_joint(r), [], r["problems"])
         r, last = self._check(NIGHTLIGHT % {"window": "front", "usb": "cover"}, intent,
                               "A closed nightlight with a window over the light", atech=True)
-        self.assertEqual(_not_joint(r), [], r["problems"])
+        self.assertTrue(any(p.startswith("usbc_p5 (a USB-C socket) is sealed in")
+                            for p in r["problems"]), r["problems"])
 
     # ---------------------------------------------------------------- R168
     def test_R168_request_size_over_all_parts(self):
@@ -1387,7 +1445,11 @@ class Round7Kit(unittest.TestCase):
 
     # ---------------------------------------------------------------- R154
     def test_R154_jar_lid_flute_breakthrough(self):
+        # R270: fast mode keeps "a warning, never a failure"; quality mode
+        # fails the confirmed 0.15 mm sliver
         r, last = self._check(JAR)
+        self.assertTrue(last.startswith("CHECK FAIL: Jar_Lid: a wall only"), last)
+        r, last = self._check(JAR, env={"ATECH_PROMPT_MODE": "fast"})
         m = r["walls"]["min"]
         self.assertLess(m["mm"], 0.8, m)
         self.assertEqual(last, "CHECK PASS")                 # a warning, never a failure
@@ -1470,9 +1532,24 @@ doc.addObject("Part::Feature", "Rocket").Shape = Part.makeCylinder(15, 120)
 
 
 def _not_joint(r):
-    """The problems other than R212's "only touches" lines."""
+    """The problems other than R212's "only touches" lines (and R270's
+    quality-mode "nothing holds the board": these fixtures' boards float in
+    the case on purpose - test_check_gates_r270 owns that gate)."""
     return [p for p in r["problems"] if not (p.startswith("joint: ")
-                                             and " only touches " in p)]
+                                             and " only touches " in p)
+            and ": nothing holds the board" not in p
+            and not p.startswith(R441_R442)]
+
+
+# R500: the R441 fastening and R442 holder gates (test_check_gates_r280
+# owns them) - older fixtures built for another gate leave their lid
+# unscrewed and their cabled module unheld on purpose
+R441_R442 = ("fastening: ", "holder: ")
+
+
+def _other_gates(r):
+    """The problems other than R441 / R442's."""
+    return [p for p in r.get("problems") or () if not p.startswith(R441_R442)]
 
 
 def _ast_const(path, name):
@@ -2000,8 +2077,11 @@ class Round10Kit(unittest.TestCase):
         self.assertIn("Move the axis ON or OUTSIDE", last)
         # sabotage: the same bad hinge with the sweep not asked for passes
         # every other check - the sweep is what catches it
+        # (R505: with no motion declared the bare pin bore joins nothing -
+        # R441's fastening line is the only other verdict, and not this
+        # test's subject)
         r, last = self._check(HINGE % {"py": "W - KR"}, {})
-        self.assertEqual(last, "CHECK PASS", r["problems"])
+        self.assertEqual(_other_gates(r), [], r["problems"])
         self.assertNotIn("motion", r)
 
     def test_R202_hinge_axis_on_or_outside_the_back_face_opens(self):
@@ -2025,7 +2105,9 @@ class Round10Kit(unittest.TestCase):
 
     def test_R202_declaration_errors(self):
         r, last = self._check(HINGE % {"py": "W"}, hinge_motion(40, part="Door"))
-        self.assertEqual(last, "CHECK PASS", r["problems"])
+        # R505: the Lid is not the declared part, so its bore joins nothing
+        # (R441) - every other gate passes
+        self.assertEqual(_other_gates(r), [], r["problems"])
         self.assertTrue([n for n in r["notes"] if n.startswith(
             "motion: no part labelled Door to sweep (the parts are: Box, Lid)")], r["notes"])
         out = tempfile.mkdtemp(prefix="atech-kit-out-")
@@ -2264,6 +2346,625 @@ class Sandbox(unittest.TestCase):
 def tearDownModule():
     if TIMINGS:
         print("\nAGENT_KIT_TIMINGS=" + json.dumps(TIMINGS))
+
+
+# R222: modules placed where a product needs them, wired to their port by a
+# flat 6-way ribbon cable (atech_ports.cable). SABOTAGE "moved": the module
+# moves after its cable was made; "blocked": a part runs through a ribbon.
+ATECH_CABLED = r"""import Part
+import atech_ports as ap
+import atech_cad as cad
+from FreeCAD import Vector, Placement, Rotation
+W, C, SABOTAGE = 2.0, 1.5, %(sabotage)r
+board = ap.board_object(doc)
+FLAT = Rotation(Vector(1, 0, 0), 90)
+
+
+def build(lift):
+    board.Placement = Placement(Vector(0, 0, lift), FLAT)
+    return [ap.cable(doc, "light", port, ap.module_placement(
+        "light", (x, -138, lift + 14), face="-Y", cable="+Z"))
+        for port, x in ((2, 12), (11, 48))]
+
+
+lights = build(0)
+low = cad.bound_of(board, *[m for m, _ in lights],
+                   *[c for _, r in lights for c in r]).ZMin
+for m, _ in lights:
+    ap.remove(doc, m.AtechPorts[0])
+lights = build(W + C - low)
+bb = cad.bound_of(board, *[m for m, _ in lights], *[c for _, r in lights for c in r])
+body = cad.rounded_box(bb.XLength + 2 * (W + C), bb.YLength + 2 * W,
+                       bb.ZLength + 2 * (W + C), 0,
+                       at=(bb.XMin - W - C, bb.YMin - W, bb.ZMin - W - C))
+body = cad.shell(body, W, cad.faces_at(body, "+Z"))
+win = []
+for m, _ in lights:
+    mb = ap.bbox(m)
+    win.append(Part.makeBox(mb.XLength - 4, W + 2, mb.ZLength - 4,
+                            Vector(mb.XMin + 2, mb.YMin - W - 1.5, mb.ZMin + 2)))
+doc.addObject("Part::Feature", "Body").Shape = cad.cut(body, win)
+# R250: a lid closes the top (the enclosure gate fails an open-top tray):
+# a plate on the rim with a lip 1.2 mm down into the opening, 0.15 mm clear
+# of the walls (the joint gate fails a plate that only touches)
+ob = body.BoundBox
+L, G, T = 1.2, 0.15, 0.8
+ix, iy = ob.XLength - 2 * (W + G), ob.YLength - 2 * (W + G)
+lip = cad.cut(Part.makeBox(ix, iy, L + 0.5, Vector(ob.XMin + W + G, ob.YMin + W + G, ob.ZMax - L)),
+              Part.makeBox(ix - 2 * T, iy - 2 * T, L + 2,
+                           Vector(ob.XMin + W + G + T, ob.YMin + W + G + T, ob.ZMax - L - 1)))
+doc.addObject("Part::Feature", "Lid").Shape = cad.fuse_one(
+    cad.rounded_box(ob.XLength, ob.YLength, W, 0, at=(ob.XMin, ob.YMin, ob.ZMax)), lip)
+if SABOTAGE == "moved":
+    m = lights[0][0]
+    m.Placement = Placement(m.Placement.Base + Vector(0, 0, 5), m.Placement.Rotation)
+if SABOTAGE == "blocked":
+    top = max(lights[0][1][0].Shape.Vertexes, key=lambda v: v.Point.z).Point
+    doc.addObject("Part::Feature", "Strut").Shape = Part.makeBox(
+        4, 4, 4, top - Vector(2, 2, 2))      # on the arch of the p2 ribbon
+"""
+
+FC_CABLE = r"""import json, sys
+sys.path.insert(0, %(projects)r)
+import FreeCAD as App
+from FreeCAD import Vector, Placement
+import atech_ports as ap
+out = {}
+try:
+    doc = App.newDocument("cable_lib")
+    ap.board_object(doc)
+    pl = ap.module_placement("button", (-60, 0, 40), face="-Y", cable="+X")
+    m, cs = ap.cable(doc, "button", 3, pl)
+    again, cs2 = ap.cable(doc, "button", 3, pl)
+    out["idempotent"] = again.Name == m.Name and [c.Name for c in cs2] == [c.Name for c in cs]
+    out["solids"] = [len(c.Shape.Solids) for c in cs]
+    out["valid"] = all(c.Shape.isValid() for c in cs)
+    res = ap.check(doc)[m.Name]
+    out["verdicts"] = {k: v["verdict"] for k, v in res.items()}
+    spk, ribs = ap.cable(doc, "speaker", (9, 10), Placement(Vector(100, 0, 60), App.Rotation()),
+                         via=[(90, 20, 60)])
+    out["speaker_cables"] = sorted(c.AtechCablePort for c in ribs)
+    common = ribs[0].Shape.common(ribs[1].Shape).Volume
+    out["speaker_ribbons_apart"] = common < 1e-6
+    try:
+        ap.module_placement("light", (0, 0, 0), face="-Y", cable="+Y")
+        out["axis_error"] = None
+    except ap.PortSpecError as exc:
+        out["axis_error"] = str(exc)
+    name = m.Name
+    ap.remove(doc, 3)
+    out["left_after_remove"] = [o.Label for o in doc.Objects
+                                if getattr(o, "AtechCableModule", None) == name]
+    out["card"] = "CABLES:" in ap.api_card() and "ap.cable(" in ap.api_card()
+except ap.LibraryMissing as exc:
+    out["missing"] = str(exc)
+print("CABLE_LIB=" + json.dumps(out))
+"""
+
+
+@unittest.skipIf(FC is None, "bundled freecadcmd not found")
+class AtechCables(unittest.TestCase):
+    """R222 against the real kernel: a cabled module checks as connected,
+    its ribbons are real parts, and each check can fail."""
+
+    _ws_check = Round5Kit._ws_check
+    _atech = Round5Kit._atech
+
+    def _cabled(self, sabotage=None):
+        return self._atech(ATECH_CABLED % {"sabotage": sabotage}, {"board": "flat"})
+
+    def test_R222_cabled_headlights_pass(self):
+        r, text = self._cabled()
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertEqual(_other_gates(r), [], r.get("problems"))
+        verdicts = r["atech_check"]
+        self.assertEqual(sorted(verdicts), ["light_11", "light_2"], verdicts)
+        for v in verdicts.values():
+            self.assertEqual(set(v.values()), {"PASS"}, verdicts)
+        mods = {m["label"]: m for m in r["atech"]["modules"]}
+        for label, port in (("light_2", 2), ("light_11", 11)):
+            m = mods[label]
+            self.assertEqual(m["joint"], "cable")
+            self.assertEqual(len(m["placement"]), 7)
+            self.assertEqual([c["port"] for c in m["cables"]], [port])
+            self.assertGreater(m["cables"][0]["length"], 50)
+        # cables are not cases: no margins, wall warnings or floating notes
+        self.assertNotIn("cable_p2's outline", text)
+        self.assertFalse([w for w in r["warnings"] if "cable" in w], r["warnings"])
+        self.assertFalse([f for f in r.get("floating") or () if "cable" in f["label"]])
+
+    def test_R222_sabotage_moved_module_fails(self):
+        r, _ = self._cabled("moved")
+        self.assertTrue(any("seated FAIL" in p and "moved after its cable" in p
+                            for p in r.get("problems") or ()), r.get("problems"))
+
+    def test_R222_sabotage_part_through_ribbon_fails(self):
+        r, _ = self._cabled("blocked")
+        self.assertTrue(any("Strut" in p and "cable_p2" in p
+                            for p in r.get("problems") or ()), r.get("problems"))
+
+    def test_R222_library(self):
+        if not os.path.isfile(os.path.join(PROJECTS, "atech_ports.py")):
+            self.skipTest("no Atech library here")
+        d = tempfile.mkdtemp(prefix="atech-cable-")
+        try:
+            path = os.path.join(d, "fc_cable.py")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(FC_CABLE % {"projects": PROJECTS})
+            text = fc(path)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+        line = [l for l in text.splitlines() if l.startswith("CABLE_LIB=")]
+        self.assertTrue(line, text[-3000:])
+        out = json.loads(line[-1][len("CABLE_LIB="):])
+        if "missing" in out:
+            self.skipTest(out["missing"])
+        self.assertTrue(out["idempotent"], out)
+        self.assertEqual(out["solids"], [1], out)
+        self.assertTrue(out["valid"], out)
+        self.assertEqual(out["verdicts"], {"seated": "PASS", "interference": "PASS",
+                                           "slide_path": "PASS"})
+        self.assertEqual(out["speaker_cables"], [9, 10])
+        self.assertTrue(out["speaker_ribbons_apart"], out)
+        self.assertIn("right angles", out["axis_error"] or "")
+        self.assertEqual(out["left_after_remove"], [])
+        self.assertTrue(out["card"])
+
+
+def _png_size(path):
+    """(width, height) from a PNG's IHDR - system python has no PIL."""
+    import struct
+    with open(path, "rb") as fh:
+        head = fh.read(24)
+    assert head[:8] == b"\x89PNG\r\n\x1a\n", path
+    return struct.unpack(">II", head[16:24])
+
+
+REVIEW_PASS = BOX + ("doc.addObject('Part::Feature', 'Knob').Shape = "
+                     "Part.makeCylinder(4, 10, App.Vector(30, 10, 0))\n")
+
+
+@unittest.skipIf(FC is None, "bundled freecadcmd not found")
+class Round12Review(unittest.TestCase):
+    """R230: every ./check that built something draws review.png (six
+    views, colours, one scale) and review_inside.png - on a pass, on a
+    failed check (FAILED CHECK, guilty parts outlined) and when model.py
+    raised (PARTIAL BUILD); REVIEW_CLOSEUPS adds close-ups; check.png is the
+    hero view of a pass; ATECH_CHECK_PNG='' draws nothing."""
+
+    def _check(self, code, png=True, extra=None, pre=None):
+        ws = workspace(code)
+        self.addCleanup(shutil.rmtree, ws, True)
+        for name, data in (pre or {}).items():
+            with open(os.path.join(ws, name), "wb") as fh:
+                fh.write(data)
+        env = {"ATECH_CHECK_SCRIPT": os.path.join(ws, "model.py"),
+               "ATECH_CHECK_PNG": os.path.join(ws, "check.png") if png else ""}
+        env.update(extra or {})
+        t0 = time.time()
+        text = fc(os.path.join(KIT, "check.py"), env)
+        return check_json(text), text, ws, time.time() - t0
+
+    def _pngs(self, ws):
+        return sorted(f for f in os.listdir(ws) if f.endswith(".png"))
+
+    def test_R230_sheet_on_pass(self):
+        r, text, ws, secs = self._check(REVIEW_PASS)
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertEqual(r["problems"], [])
+        rv = r["review"]
+        sheet = os.path.join(ws, "review.png")
+        self.assertEqual(rv["sheet"], os.path.abspath(sheet))
+        self.assertGreater(os.path.getsize(sheet), 20000)
+        w, h = _png_size(sheet)
+        self.assertEqual(w, 1800)                 # 3 x 600 px panels
+        self.assertGreater(h, 900)                # 2 x 450 + header + legend
+        self.assertIsNone(rv["banner"])
+        self.assertEqual(rv["outlined"], [])
+        # check.png is the hero view now, inside the cutaway
+        self.assertEqual(r["png"], os.path.abspath(os.path.join(ws, "check.png")))
+        self.assertEqual(_png_size(r["png"]), (600, 450))
+        self.assertTrue(os.path.isfile(os.path.join(ws, "review_inside.png")))
+        self.assertIn("REVIEW %s" % rv["sheet"], text)
+        self.assertIn("REVIEW %s" % rv["inside"], text)
+        self.assertEqual(text.strip().splitlines()[-1], "CHECK PASS")
+        TIMINGS["R230 review sheet, 2 boxes (s)"] = rv["seconds"]
+
+    def test_R230_sheet_on_failed_check(self):
+        r, text, ws, _ = self._check(
+            BOX + "doc.addObject('Part::Feature', 'Other').Shape = "
+                  "Part.makeBox(10, 20, 30, App.Vector(5, 0, 0))\n",
+            pre={"check.png": b"stale", "review_old.png": b"stale"})
+        self.assertTrue(r["problems"], r)
+        rv = r["review"]
+        self.assertEqual(rv["banner"], "FAILED CHECK")
+        self.assertEqual(rv["outlined"], ["Block", "Other"])
+        self.assertGreater(os.path.getsize(rv["sheet"]), 20000)
+        self.assertIn("REVIEW %s" % rv["sheet"], text)
+        # S39 kept: check.png stays a passing build's; the stale review
+        # picture of an earlier run is gone
+        self.assertIsNone(r["png"])
+        self.assertIn("render_skipped", r)
+        self.assertNotIn("check.png", self._pngs(ws))
+        self.assertNotIn("review_old.png", self._pngs(ws))
+        self.assertTrue(text.strip().splitlines()[-1].startswith("CHECK FAIL"))
+
+    def test_R230_partial_build_when_model_raises(self):
+        r, text, ws, _ = self._check(BOX + "raise ValueError('wheel radius missing')\n")
+        self.assertFalse(r["ok"])
+        self.assertIn("wheel radius missing", r["error"])
+        rv = r["review"]
+        self.assertEqual(rv["banner"], "PARTIAL BUILD")
+        self.assertTrue(os.path.isfile(rv["sheet"]), rv)
+        self.assertGreater(os.path.getsize(rv["sheet"]), 20000)
+        self.assertIn("REVIEW %s" % rv["sheet"], text)
+        self.assertTrue(text.strip().splitlines()[-1].startswith("CHECK FAIL: ValueError"))
+
+    def test_R230_nothing_built_leaves_no_stale_sheet(self):
+        r, text, ws, _ = self._check("x = (\n", pre={"review.png": b"old"})
+        self.assertFalse(r["ok"])
+        self.assertNotIn("review.png", self._pngs(ws))
+        r, text, ws, _ = self._check("raise ValueError('first line')\n",
+                                     pre={"review.png": b"old"})
+        self.assertFalse(r["ok"])
+        self.assertNotIn("review.png", self._pngs(ws))
+        self.assertIn("nothing to draw", r["review"]["skipped"])
+
+    def test_R230_closeups(self):
+        r, text, ws, _ = self._check(
+            REVIEW_PASS + "REVIEW_CLOSEUPS = ['Knob', 'Nope', 'Knob']\n")
+        self.assertTrue(r["ok"], r.get("error"))
+        rv = r["review"]
+        self.assertEqual(sorted(rv["closeups"]), ["Knob"])
+        p = os.path.join(ws, "review_Knob.png")
+        self.assertEqual(rv["closeups"]["Knob"], os.path.abspath(p))
+        self.assertEqual(_png_size(p), (960, 720))
+        self.assertIn("REVIEW %s" % p, text)
+        self.assertTrue(any("no part labelled 'Nope'" in w for w in r["warnings"]),
+                        r["warnings"])
+        r, _t, ws, _ = self._check(REVIEW_PASS + "REVIEW_CLOSEUPS = 7\n")
+        self.assertTrue(any("REVIEW_CLOSEUPS must be a list" in w for w in r["warnings"]))
+
+    def test_R230_off_switch_and_studio_build(self):
+        out = tempfile.mkdtemp(prefix="atech-review-out-")
+        self.addCleanup(shutil.rmtree, out, True)
+        r, text, ws, _ = self._check(REVIEW_PASS + "REVIEW_CLOSEUPS = ['Knob']\n",
+                                     png=False, extra={"ATECH_CHECK_OUT": out})
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertEqual(self._pngs(ws), [])
+        self.assertEqual([f for f in os.listdir(out) if f.endswith(".png")], [])
+        self.assertNotIn("review", r)
+        self.assertNotIn("REVIEW ", text)
+        self.assertIsNone(r["png"])
+        # Studio's own build (build.py's sandbox.Job, render left False)
+        # passes ATECH_CHECK_PNG='' - the run above
+        self.assertFalse(sandbox.Job(ws, "model.py", freecadcmd=FC).render)
+
+    def test_R230_falls_back_to_the_old_picture(self):
+        r, text, ws, _ = self._check(REVIEW_PASS, extra={"ATECH_REVIEW_SABOTAGE": "nopil"})
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertIn("numpy/PIL missing", r["review"]["skipped"])
+        self.assertEqual(self._pngs(ws), ["check.png"])
+        self.assertEqual(_png_size(r["png"]), (900, 450))     # render(): 2 views
+        self.assertIn("REVIEW not drawn", text)
+
+    def test_R230_atech_cutaway_and_colours(self):
+        if not os.path.isfile(os.path.join(PROJECTS, "atech_ports.py")):
+            self.skipTest("no Atech library here")
+        ws = workspace(ATECH_CABLED % {"sabotage": None})
+        self.addCleanup(shutil.rmtree, ws, True)
+        with open(os.path.join(ws, "intent.json"), "w") as fh:
+            json.dump({"board": "flat"}, fh)
+        env = {"ATECH_CHECK_SCRIPT": os.path.join(ws, "model.py"),
+               "ATECH_CHECK_PNG": os.path.join(ws, "check.png"),
+               "ATECH_CHECK_PATH": PROJECTS}
+        text = fc(os.path.join(KIT, "check.py"), env)
+        r = check_json(text)
+        if "LibraryMissing" in (r.get("error") or ""):
+            self.skipTest("Atech library code without its data here")
+        rv = r["review"]
+        self.assertTrue(os.path.isfile(rv["sheet"]), rv)
+        self.assertTrue(os.path.isfile(rv["inside"]), rv)
+        self.assertNotIn("inside_skipped", rv)
+        self.assertIn("cutaway at the board", text)
+        TIMINGS["R230 review, cabled Atech product (s)"] = rv["seconds"]
+        TIMINGS["R230 review triangles"] = rv["triangles"]
+
+
+# ------------------------------------------------------------------ R250
+def _load_check():
+    """check.py as a module under system Python (not named "check": that
+    name runs its main)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("atech_check_r250",
+                                                  os.path.join(KIT, "check.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+# R250: model.py code that burns CPU on every core for `secs` of wall clock
+# (zlib releases the GIL), then builds a box
+BURN = r"""import threading, time, zlib, os, Part
+data = os.urandom(1 << 20)
+def spin(t_end):
+    while time.time() < t_end:
+        zlib.compress(data, 9)
+t_end = time.time() + %(secs)g
+ts = [threading.Thread(target=spin, args=(t_end,)) for _ in range(%(n)d)]
+for t in ts: t.start()
+for t in ts: t.join()
+doc.addObject("Part::Feature", "Block").Shape = Part.makeBox(10, 10, 10)
+"""
+
+UNSPLIT = r"""import json, Part
+import atech_cad as cad
+V = App.Vector
+out = {}
+a, b = Part.makeBox(10, 10, 10), Part.makeBox(10, 10, 10, V(5, 0, 0))
+raw = a.fuse(b)
+u = cad._unsplit(raw)
+out["merged"] = [len(raw.Faces), len(u.Faces), round(u.Volume, 6)]
+
+
+class Bad(object):
+    # stands in for a shape whose removeSplitter returns a different solid
+    # (the self-intersecting merge on a filleted spline body)
+    def __init__(self, s, other):
+        self.s, self.other = s, other
+    def removeSplitter(self):
+        return self.other
+    def isValid(self):
+        return self.s.isValid()
+    def isNull(self):
+        return self.s.isNull()
+    @property
+    def Solids(self):
+        return self.s.Solids
+    @property
+    def Volume(self):
+        return self.s.Volume
+
+
+bad = Bad(raw, Part.makeBox(10, 10, 12))            # +20 % volume
+out["volume_changed_kept_raw"] = cad._unsplit(bad) is bad
+two = Bad(raw, Part.makeCompound([Part.makeBox(1, 1, 1), Part.makeBox(1, 1, 1, V(5, 0, 0))]))
+out["solids_changed_kept_raw"] = cad._unsplit(two) is two
+noisy = Bad(raw, raw.removeSplitter())
+out["same_volume_taken"] = cad._unsplit(noisy) is not noisy
+out["bounds_reject"] = cad._unsplit(raw, (0.0, 100.0)) is raw
+print("UNSPLIT=" + json.dumps(out))
+doc.addObject("Part::Feature", "B").Shape = cad.fuse_one(a, b)
+"""
+
+MANY = r"""import Part
+V = App.Vector
+# R250: 40 bodies in a row, apart; the last two overlap
+for i in range(38):
+    doc.addObject("Part::Feature", "P%%02d" %% i).Shape = Part.makeBox(5, 5, 5, V(i * 6.0, 0, 0))
+doc.addObject("Part::Feature", "Q1").Shape = Part.makeBox(5, 5, 5, V(0, 0, 20))
+doc.addObject("Part::Feature", "Q2").Shape = Part.makeBox(5, 5, 5, V(%(dx)g, 0, 20))
+"""
+
+
+class R250Unit(unittest.TestCase):
+    """R250 without FreeCAD: the CPU limit, the module fields _layout passes,
+    the kit files the sandbox protects, the death text of a killed child."""
+
+    def test_R250_cpu_limit_counts_every_core(self):
+        chk = _load_check()
+        cores = max(8, os.cpu_count() or 1)
+        self.assertGreaterEqual(chk.cpu_limit(60), 60 * cores + 60)
+        self.assertGreaterEqual(chk.cpu_limit(180), 180 * 8)
+        src = open(os.path.join(KIT, "check.py"), encoding="utf-8").read()
+        self.assertIn("used + cpu_limit(seconds)", src)
+
+    def test_R250_layout_passes_module_and_axes(self):
+        chk = _load_check()
+        seen = {}
+        fake = type(sys)("atech_geom")
+
+        def atech_layout(parts, board, mods, intent, intended):
+            seen["mods"] = mods
+            return [], {}
+        fake.atech_layout = atech_layout
+        fake.read_intent = lambda ws: ({}, None)
+        axes = [[0, 0, 1], [1, 0, 0], [0, 1, 0]]
+        items = [{"label": "Board", "name": "Board", "mesh": object(), "role": "board"},
+                 {"label": "button_p3", "name": "Mod", "mesh": object(),
+                  "role": "module", "module": "button", "axes": axes}]
+        saved = sys.modules.get("atech_geom")
+        sys.modules["atech_geom"] = fake
+        try:
+            res = {"script": os.path.join(tempfile.gettempdir(), "model.py"),
+                   "warnings": []}
+            chk._layout(res, None, [], items)
+        finally:
+            if saved is None:
+                sys.modules.pop("atech_geom", None)
+            else:
+                sys.modules["atech_geom"] = saved
+        self.assertEqual(res["warnings"], [])
+        m = seen["mods"][0]
+        self.assertEqual((m["module"], m["axes"]), ("button", axes))
+
+    def test_R250_face_open_gets_the_recorded_view(self):
+        # check.py hands face_open each part's recorded view props, so a
+        # see-through lens is judged from what model.py set on it
+        # (SABOTAGE: drop "view" from _face_open's parts)
+        chk = _load_check()
+        seen = {}
+        fake = type(sys)("atech_geom")
+
+        def face_open(parts, board, mods):
+            seen["parts"] = parts
+            return []
+        fake.face_open = face_open
+        fake.face_open_problems = lambda rows, request: ([], [])
+        fake.read_turn = lambda ws: None
+
+        class Obj(object):
+            def __init__(self, name, label):
+                self.Name, self.Label, self.Shape = name, label, object()
+        items = [{"label": "Board", "name": "Board", "mesh": object(), "role": "board"},
+                 {"label": "light_6", "name": "Mod", "mesh": object(),
+                  "role": "module", "module": "light", "axes": None}]
+        res = {"warnings": [], "objects": [
+            {"name": "Lens001", "label": "Lens", "view": {"Transparency": 60}},
+            {"name": "Body", "label": "Body"}]}
+        saved = sys.modules.get("atech_geom")
+        sys.modules["atech_geom"] = fake
+        try:
+            chk._face_open(res, [Obj("Lens001", "Lens"), Obj("Body", "Body")], items,
+                           tempfile.gettempdir())
+        finally:
+            if saved is None:
+                sys.modules.pop("atech_geom", None)
+            else:
+                sys.modules["atech_geom"] = saved
+        got = {p["label"]: p.get("view") for p in seen["parts"]}
+        self.assertEqual(got, {"Lens": {"Transparency": 60}, "Body": None})
+        self.assertEqual([p["name"] for p in seen["parts"]], ["Lens001", "Body"])
+
+    def test_R250_kit_helpers_protected(self):
+        for name in ("atech_cad.py", "atech_form.py", "atech_detail.py", "review.py",
+                     "check", "TRAPS.md", "examples"):
+            self.assertIn(name, sandbox.PROTECTED)
+
+    def test_R250_death_text(self):
+        self.assertIn("SIGXCPU", sandbox.death_text(-24, 60))
+        self.assertIn("SIGXCPU", sandbox.death_text(152, shell=True))
+        self.assertIn("wall-clock", sandbox.death_text(124, shell=True))
+        self.assertIn("SIGKILL", sandbox.death_text(-9))
+        self.assertIn("code 3", sandbox.death_text(3))
+
+    def _wrapper(self, body):
+        d = tempfile.mkdtemp(prefix="atech-r250-")
+        self.addCleanup(shutil.rmtree, d, True)
+        fake = os.path.join(d, "freecadcmd")
+        with open(fake, "w") as fh:
+            fh.write("#!/bin/sh\n" + body + "\n")
+        os.chmod(fake, 0o755)
+        ws = os.path.join(d, "ws")
+        os.makedirs(ws)
+        path = os.path.join(ws, "check")
+        with open(path, "w") as fh:
+            fh.write(sandbox.wrapper_script(ws, freecadcmd=fake, mode="none", timeout=20))
+        os.chmod(path, 0o755)
+        p = subprocess.run([path], capture_output=True, text=True, timeout=120)
+        return p.returncode, p.stdout + p.stderr
+
+    def test_R250_wrapper_explains_a_killed_child(self):
+        rc, out = self._wrapper('echo building; kill -XCPU $$')
+        self.assertIn("building", out)
+        self.assertIn("ERROR: model.py produced no result", out)
+        self.assertIn("SIGXCPU", out)
+        self.assertEqual(out.strip().splitlines()[-1][:10], "CHECK FAIL")
+        self.assertNotEqual(rc, 0)
+        rc, out = self._wrapper('exit 0')            # silent and "fine": still an error
+        self.assertIn("ERROR: model.py produced no result", out)
+        self.assertNotEqual(rc, 0)
+
+    def test_R250_wrapper_silent_on_a_result(self):
+        # sabotage partner of the test above: a child that printed its
+        # verdict gets no ERROR line, and keeps its exit code
+        rc, out = self._wrapper('echo "CHECK FAIL: x"; exit 1')
+        self.assertNotIn("ERROR:", out)
+        self.assertEqual(rc, 1)
+        rc, out = self._wrapper('echo "CHECK PASS"; exit 0')
+        self.assertNotIn("ERROR:", out)
+        self.assertEqual(rc, 0)
+
+
+@unittest.skipIf(FC is None, "bundled freecadcmd not found")
+class R250Kit(unittest.TestCase):
+    """R250 against the real kernel."""
+
+    def test_R250_multicore_build_is_not_killed(self):
+        # 4 s on every core is > timeout + 15 CPU-seconds: the old limit
+        # killed this with no output (SABOTAGE: `want = used + seconds + 15`)
+        n = os.cpu_count() or 1
+        if n * 4 <= 10 + 15:
+            self.skipTest("too few cores to exceed the old CPU limit")
+        t0 = time.time()
+        r = run_check(BURN % {"secs": 4, "n": n}, {"ATECH_CHECK_TIMEOUT": "10"})
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertFalse(r.get("timed_out"))
+        TIMINGS["R250 multicore burn (s)"] = round(time.time() - t0, 2)
+
+    @unittest.skipUnless(sys.platform == "darwin", "the spurious SIGXCPU is macOS's")
+    def test_R250_spurious_sigxcpu_is_ignored_on_macos(self):
+        # macOS now and then sends SIGXCPU far below RLIMIT_CPU (a 3 s
+        # check killed with no output). One sent by hand, budget unspent:
+        # the build goes on (SABOTAGE: drop _guard_xcpu's signal.signal)
+        r = run_check("import os, signal, Part\n"
+                      "os.kill(os.getpid(), signal.SIGXCPU)\n"
+                      "doc.addObject('Part::Feature', 'B').Shape = Part.makeBox(5, 5, 5)\n")
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertFalse(r.get("timed_out"))
+        # ...and one sent with the budget spent stops model.py with a line
+        r = run_check("import os, signal\n"
+                      "signal.getsignal(signal.SIGXCPU).__globals__['_CPU_WANT'][0] = 1\n"
+                      "os.kill(os.getpid(), signal.SIGXCPU)\n"
+                      "import time; time.sleep(0.5)\n")
+        self.assertIn("CPU-seconds", r.get("error") or "", r)
+        self.assertTrue(r.get("timed_out"), r)
+
+    def test_R250_unsplit_keeps_the_raw_result_when_unsafe(self):
+        r = run_check(UNSPLIT)
+        self.assertTrue(r["ok"], r.get("error"))
+        line = [l for l in (r.get("stdout") or "").splitlines() if l.startswith("UNSPLIT=")]
+        self.assertTrue(line, r.get("error"))
+        out = json.loads(line[-1][len("UNSPLIT="):])
+        raw_faces, faces, vol = out["merged"]
+        self.assertLess(faces, raw_faces)           # a clean merge is still taken
+        self.assertAlmostEqual(vol, 1500.0, places=4)
+        self.assertTrue(out["volume_changed_kept_raw"], out)
+        self.assertTrue(out["solids_changed_kept_raw"], out)
+        self.assertTrue(out["same_volume_taken"], out)
+        self.assertTrue(out["bounds_reject"], out)
+
+    def test_R250_overlap_checked_past_30_bodies(self):
+        r = run_check(MANY % {"dx": 2.0})
+        self.assertTrue(r["ok"], r.get("error"))
+        self.assertTrue(any("Q1" in p and "Q2" in p for p in r.get("problems") or ()),
+                        r.get("problems"))
+        self.assertFalse([w for w in r["warnings"] if "limited to" in w], r["warnings"])
+        TIMINGS["R250 overlap, 40 bodies (s)"] = r.get("overlap_seconds")
+        r = run_check(MANY % {"dx": 10.0})           # apart: no overlap
+        self.assertFalse([p for p in r.get("problems") or () if "OVERLAP" in p])
+
+    def _case(self, code, intent):
+        if not os.path.isfile(os.path.join(PROJECTS, "atech_ports.py")):
+            self.skipTest("no Atech library here")
+        ws = workspace(code)
+        self.addCleanup(shutil.rmtree, ws, True)
+        with open(os.path.join(ws, "intent.json"), "w") as fh:
+            json.dump(intent, fh)
+        r = check_json(fc(os.path.join(KIT, "check.py"),
+                          {"ATECH_CHECK_SCRIPT": os.path.join(ws, "model.py"),
+                           "ATECH_CHECK_PNG": "", "ATECH_CHECK_PATH": PROJECTS}))
+        if "LibraryMissing" in (r.get("error") or ""):
+            self.skipTest("Atech library code without its data here")
+        return r
+
+    def test_R250_atech_case_caps_are_load_bearing(self):
+        # test_examples_build passes atech_case.py; without its caps the
+        # enclosure gate fails it, without "fitted_after" slide_path does
+        path = os.path.join(KIT, "examples", "atech_case.py")
+        with open(path, encoding="utf-8") as fh:
+            code = fh.read()
+        intent = example_intent(path)
+        self.assertEqual(intent["fitted_after"], ["End_Cap_L", "End_Cap_R"])
+        r = self._case(code, intent)
+        self.assertEqual(r.get("problems"), [], r.get("problems"))
+        open_ends = code[:code.index("cb = case.BoundBox")]
+        r = self._case(open_ends, {"board": "upright"})
+        self.assertTrue(any("not enclosed" in p for p in r.get("problems") or ()),
+                        r.get("problems"))
+        r = self._case(code, {"board": "upright"})
+        self.assertTrue(any("slide_path FAIL" in p for p in r.get("problems") or ()),
+                        r.get("problems"))
 
 
 if __name__ == "__main__":

@@ -119,8 +119,11 @@ class TestAskInChatWithTheRealVision(ShellCase):
             self.shell._ask_view()
         finally:
             capture.capture_to_panel = orig
+        # R500: the camera as the user framed it (no named view, no fit).
+        # This stand-in panel has no composer hook (open_view_question), so
+        # the question is asked at once, as before.
         from acadagent import vision
-        self.assertEqual(order, [("shot", "Isometric"),
+        self.assertEqual(order, [("shot", None),
                                  ("ask", vision.DEFAULT_QUESTION)])
 
 

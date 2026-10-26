@@ -88,6 +88,42 @@ def views_for(doc=None):
     return ("Isometric",)
 
 
+#: R250: the budget of one "Ask about this view" question when the user set
+#: none. A look at a picture is a short read-only answer, not a design turn:
+#: quality mode's design defaults (claude_cli.QUALITY_BUDGET_USD and
+#: QUALITY_EFFORT) never apply here.
+VIEW_BUDGET_USD = 3.00
+
+
+def view_settings(cfg=None):
+    """R250: agent_argv() keyword arguments for a view question - the
+    user's own model, effort and budget when they set them (Agent Settings),
+    else the CLI's own effort (none forced) and VIEW_BUDGET_USD, whatever
+    the design mode. A budget field left empty ("") or 0 means no limit, as
+    for the chat (claude_cli.agent_settings)."""
+    if cfg is None:
+        try:
+            from . import settings
+            cfg = settings.load()
+        except Exception:                                 # noqa: BLE001
+            cfg = {}
+    model = cfg.get("agent_model")
+    model = model.strip() if isinstance(model, str) and model.strip() else None
+    effort = cfg.get("agent_effort")
+    effort = effort.strip() if isinstance(effort, str) and effort.strip() else None
+    raw = cfg.get("agent_budget_usd")
+    if raw is None:
+        budget = VIEW_BUDGET_USD
+    elif raw == "":
+        budget = None                     # an empty field: no limit
+    else:
+        try:
+            budget = float(raw)
+        except (TypeError, ValueError):
+            budget = VIEW_BUDGET_USD
+    return {"model": model, "effort": effort, "budget": budget}
+
+
 def capture_views(views=STANDARD_VIEWS, width=1200, height=900, fit=True,
                   dest=None):
     """Capture several viewpoints. Returns (paths, failures).
@@ -147,7 +183,7 @@ def ask_about_view(question, views=None, cwd=None, session_id=None,
 
     cwd = ws or cwd or os.path.dirname(paths[0])
     prompt = _compose(question, paths, failures)
-    agent = dict(claude_cli.agent_settings(), ws=cwd, allowed=())
+    agent = view_agent(cwd)                               # R250, R500
     run = claude_cli.ClaudeRun(prompt, cwd=cwd, session_id=session_id,
                                images=paths, permission_mode=permission_mode,
                                parent=parent, agent=agent)
@@ -159,29 +195,61 @@ DEFAULT_QUESTION = ("Describe this model: what is it, what are its main "
 
 
 def ask_in_chat(question=None, views=None, panel=None):
-    """Ask about the view IN THE CHAT (R36 target): capture the view into
-    the chat workspace as an inline shot (queued for the turn, R25) and
-    send the question as a normal chat turn. Returns True when the turn
-    started; False with the reason already shown in the chat otherwise.
+    """"Ask about this view" IN THE CHAT (R36 target, R500).
 
-    views None = views_for(the active document) (R145: the module face of
-    an Atech board). The answer is an ordinary chat reply, so it renders
-    Markdown like one (panel.Bubble, R153).
+    R500 (PRD "Agent integration" 2): the view is captured EXACTLY as the
+    user framed it - the current camera, no turn to Isometric or the module
+    face, no fit - into the chat workspace as an inline shot, and the
+    composer opens with it attached (panel.open_view_question): whatever
+    the user had typed stays, nothing is sent until they send it. That
+    reply runs read-only (view_settings: the $3 view budget, VIEW_TOOLS,
+    plan mode), so it never writes to the workspace.
 
-    For the "Ask about this view" button (terminal_dock / shell are
-    WS-SHELL's; switching the button to this is their follow-up)."""
+    `question` given (an old caller, terminal_dock.ask_about_view): the
+    question is sent at once, read-only, with the same capture. `views`
+    given: those named views are captured (fitted) instead of the camera.
+
+    Returns True when the composer is open with the view (or the turn
+    started); False with the reason already shown in the chat otherwise."""
     p = panel or _chat_panel()
     if p is None:
         raise RuntimeError("the chat is not open")
+    paths = []
     if views is None:
-        views = views_for()
-    shots = 0
-    for name in views:
-        path = capture.capture_to_panel(p, view_name=name)
-        shots += 1 if path else 0
-    if not shots:
+        path = capture.capture_to_panel(p, view_name=None, fit=False)
+        if path:
+            paths.append(path)
+    else:
+        for name in views:
+            path = capture.capture_to_panel(p, view_name=name)
+            if path:
+                paths.append(path)
+    if not paths:
         return False            # capture_to_panel put the reason in the chat
-    return bool(p.ask(question or DEFAULT_QUESTION))
+    opener = getattr(p, "open_view_question", None)
+    if question:
+        ask = getattr(p, "ask_view", None)
+        if callable(ask):
+            return bool(ask(question, paths))
+        return bool(p.ask(question))
+    if callable(opener):
+        return bool(opener(paths))
+    return bool(p.ask(DEFAULT_QUESTION))
+
+
+def view_prompt(question, paths, brief=""):
+    """R500: the prompt of a view question asked in the chat: what the
+    images are (_compose) and the document brief after it."""
+    text = _compose(question, list(paths or ()), [])
+    return "%s\n\n---\n%s" % (text, brief) if brief else text
+
+
+def view_agent(ws, cfg=None):
+    """R500: agent_argv() keyword arguments of a view question: the user's
+    own model / effort / budget or the $3 view budget (view_settings), no
+    Bash allowlist and only the read tools (claude_cli.VIEW_TOOLS)."""
+    return dict(view_settings(cfg), ws=ws, allowed=(),
+                tools=claude_cli.VIEW_TOOLS)
 
 
 def _compose(question, paths, failures):

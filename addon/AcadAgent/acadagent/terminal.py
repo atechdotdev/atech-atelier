@@ -36,6 +36,7 @@ import re
 import pty
 import select
 import signal
+import sys
 import tempfile
 import time
 
@@ -141,6 +142,11 @@ def clean_env(env=None):
                 env[k] = os.pathsep.join(keep)
             else:
                 env.pop(k)
+    elif sys.platform == "darwin":
+        # The macOS bundle is not mounted, but FreeCAD puts its bin/ and
+        # Mod/ folders in front of PATH; the user's shell must not get them.
+        from . import strip_bundle_paths
+        strip_bundle_paths(env)
     env["TERM"] = "dumb"          # we are not a full VT100; say so
     return env
 

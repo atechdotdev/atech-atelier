@@ -1,4 +1,4 @@
-"""shell — the Atech Atelier window, laid over FreeCAD's main window.
+"""shell — the Atech AI CAD window, laid over FreeCAD's main window.
 
 What it builds while the agent workbench is active (and takes down again on
 deactivate, so other workbenches get FreeCAD's normal chrome). The sidebar
@@ -9,12 +9,19 @@ worker QThreads with it and aborted FreeCAD.
     top bar     the menu bar restyled as a 44 px app bar: mark + wordmark on
                 the left, the menus, quick actions on the right. The menus
                 stay real FreeCAD menus, so every command and shortcut works.
-    sidebar     ONE left dock with a segmented Chat | Model switch. The Model
-                page is FreeCAD's own tree + property view, re-parented, not
-                re-implemented.
-    view bar    a floating pill over the 3D view: fit, standard views, spin,
-                add-view-to-chat, and ask-about-this-view.
-    empty state centred in the viewport when no document is open.
+                On macOS the menu bar is the native one, which draws no
+                corner widgets: there the wordmark, Terminal and Settings
+                live in the sidebar header instead (R300, sidebar_chrome).
+    sidebar     ONE left dock: brand row (macOS), the project picker with
+                Terminal / Settings, the hardware switch, 3D CAD | Atech
+                modules. 3D CAD is the chat under a collapsible Parts panel
+                (FreeCAD's own tree + property view, re-parented, R301).
+    view bar    a floating pill over the 3D view: fit, fit selection,
+                standard views, perspective, wireframe, a slot for the
+                Measure / Section / Export tools, spin, full-screen 3D,
+                add-view-to-chat, and ask-about-this-view (R303).
+    home        the project grid, examples and drop target shown in the
+                viewport when no document is open (R308, HomeView).
     tasks       FreeCAD's Tasks dock, pinned to the right instead of floating
                 over the model.
 
@@ -27,11 +34,14 @@ changing. A slow safety tick (SAFETY_TICK_MS) backs them up.
 """
 import os
 import sys
+import time
 import traceback
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from . import chrome, style
+# navbar at module level: _hardware_switch() (R280) uses it outside the
+# Sidebar's own local import, and raised NameError there (switch missing).
+from . import chrome, navbar, style
 
 SIDEBAR_NAME = "AtechSidebar"
 SIDEBAR_WIDTH = 380
@@ -139,15 +149,36 @@ QMenu::separator {{ height: 1px; background: {line}; margin: 5px 8px; }}
 
 SIDEBAR_QSS = """
 #SidebarBody {{ background: {panel}; border-right: 1px solid {line}; }}
-#Segment {{ background: {track}; border-radius: 10px; }}
-#SegBtn {{
-    background: transparent; border: none; border-radius: 8px;
-    color: {muted}; font-family: {UI}; font-size: 12px; font-weight: 600;
-    padding: 6px 10px;
+#ProjectPicker {{
+    background: {panel}; border: 1px solid {line}; border-radius: 18px;
+    padding: 7px 14px; min-height: 20px; text-align: left;
+    color: {text}; font-family: {UI}; font-size: 13px; font-weight: 600;
 }}
-#SegBtn:hover {{ color: {text}; }}
-#SegBtn:checked {{ background: {panel}; color: {text}; border: 1px solid {line}; }}
+#ProjectPicker:hover {{ background: {hover}; border-color: {line_strong}; }}
+#ProjectPicker::menu-indicator {{ image: none; width: 0; }}
+#PartsBtn {{
+    background: {track}; border: 1px solid {line}; border-radius: 18px;
+}}
+#PartsBtn:hover {{ background: {hover}; }}
+#PartsBtn:checked {{ background: {btn_bg}; border-color: {btn_bg}; }}
 
+#SideBrand {{ background: transparent; }}
+#SideWordmark {{ color: {text}; font-family: 'Sen', {UI}; font-size: 15px; font-weight: 700; }}
+#SideIconBtn {{
+    background: transparent; border: 1px solid transparent; border-radius: 18px;
+}}
+#SideIconBtn:hover {{ background: {hover}; border-color: {line}; }}
+#SideIconBtn:focus {{ border-color: {accent}; }}
+#SideIconBtn::menu-indicator {{ image: none; width: 0; }}
+#PartsHead {{ background: {panel}; border-top: 1px solid {line}; border-bottom: 1px solid {line}; }}
+#PartsToggle {{
+    background: transparent; border: none; border-radius: 6px; text-align: left;
+    padding: 4px 6px; color: {muted}; font-family: {UI}; font-size: 11px;
+    font-weight: 600; letter-spacing: 0.4px;
+}}
+#PartsToggle:hover {{ color: {text}; background: {hover}; }}
+#PartsToggle:focus {{ color: {text}; }}
+#CadSplit::handle {{ background: {line}; height: 1px; }}
 #ModelPage {{ background: {panel}; }}
 #ModelHint {{ color: {muted}; font-family: {UI}; font-size: 12px; }}
 #ModelPage QTreeView, #ModelPage QTreeWidget {{
@@ -189,6 +220,89 @@ VIEWBAR_QSS = """
     font-family: {UI}; font-size: 12px; font-weight: 600;
 }}
 #VPrimary:hover {{ background: {btn_bg_hover}; }}
+#VBtn::menu-indicator {{ image: none; width: 0; }}
+#VBtn:focus, #VPrimary:focus {{ border: 1px solid {accent}; }}
+"""
+
+HOME_QSS = """
+#HomeView {{ background: transparent; }}
+#HomeView[dropping="true"] {{ border: 2px dashed {accent}; border-radius: 18px; }}
+#HomeScroll, #HomeInner {{ background: transparent; border: none; }}
+#HomeTitle {{ color: {text}; font-family: 'Sen', {UI}; font-size: 22px; font-weight: 700; }}
+#HomeSection {{ color: {muted}; font-family: {UI}; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.5px; }}
+#HomeNote {{ color: {muted}; font-family: {UI}; font-size: 12px; }}
+#HomeSearch {{
+    background: {input_bg}; color: {text}; border: 1px solid {input_border};
+    border-radius: 16px; padding: 6px 12px 6px 4px; min-height: 20px;
+    font-family: {UI}; font-size: 13px;
+}}
+#HomeSearch:focus {{ border-color: {line_strong}; }}
+#HomeBtn {{
+    background: {panel}; color: {text}; border: 1px solid {line}; border-radius: 16px;
+    padding: 0 14px; min-height: 32px; max-height: 32px; font-family: {UI};
+    font-size: 12px; font-weight: 600;
+}}
+#HomeBtn:hover {{ background: {hover}; border-color: {line_strong}; }}
+#HomeBtn:focus {{ border-color: {accent}; }}
+#ProjectCard {{ background: {panel}; border: 1px solid {line}; border-radius: 16px; }}
+#ProjectCard:hover {{ border-color: {line_strong}; background: {card}; }}
+#ProjectCard:focus, #StartCard:focus {{ border: 1px solid {accent}; }}
+#Thumb {{ background: {bubble}; border-radius: 10px; }}
+#Chip {{
+    background: {bubble}; color: {text}; border-radius: 9px; padding: 1px 8px;
+    font-family: {UI}; font-size: 10px; font-weight: 600;
+}}
+#EmptyCredit {{ color: {muted}; font-family: {UI}; font-size: 11px; }}
+#CardTitle {{ color: {text}; font-family: {UI}; font-size: 13px; font-weight: 600; }}
+#CardSub {{ color: {muted}; font-family: {UI}; font-size: 12px; }}
+#CardIcon {{ background: {bubble}; border-radius: 10px; }}
+#StartCard {{ background: {panel}; border: 1px solid {line}; border-radius: 16px; }}
+#StartCard:hover {{ border-color: {line_strong}; background: {card}; }}
+"""
+
+HINT_QSS = """
+#OrbitHint {{ background: {panel}; border: 1px solid {line}; border-radius: 16px; }}
+#HintTitle {{ color: {text}; font-family: {UI}; font-size: 13px; font-weight: 600; }}
+#HintAction {{ color: {text}; font-family: {UI}; font-size: 12px; font-weight: 600; }}
+#HintHow {{ color: {muted}; font-family: {UI}; font-size: 12px; }}
+#HintBtn {{
+    background: {btn_bg}; color: {btn_text}; border: none; border-radius: 14px;
+    padding: 0 14px; min-height: 28px; max-height: 28px; font-family: {UI};
+    font-size: 12px; font-weight: 600;
+}}
+#HintBtn:hover {{ background: {btn_bg_hover}; }}
+#HintLink {{
+    background: transparent; color: {muted}; border: none; padding: 0 8px;
+    min-height: 28px; font-family: {UI}; font-size: 12px;
+}}
+#HintLink:hover {{ color: {text}; }}
+"""
+
+SHEET_QSS = """
+#AtechSheet {{ background: {panel}; }}
+#SheetTitle {{ color: {text}; font-family: {UI}; font-size: 16px; font-weight: 700; }}
+#SheetSection {{ color: {muted}; font-family: {UI}; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.5px; }}
+#SheetText {{ color: {text}; font-family: {UI}; font-size: 13px; }}
+#SheetSub {{ color: {muted}; font-family: {UI}; font-size: 12px; }}
+#KeyCap {{
+    background: {bubble}; color: {text}; border: 1px solid {line}; border-radius: 6px;
+    padding: 2px 8px; font-family: {MONO}; font-size: 12px;
+}}
+#AtechSheet QRadioButton {{ color: {text}; font-family: {UI}; font-size: 13px; spacing: 8px; }}
+#SheetBtn {{
+    background: {btn_bg}; color: {btn_text}; border: none; border-radius: 15px;
+    padding: 0 16px; min-height: 30px; max-height: 30px; font-family: {UI};
+    font-size: 12px; font-weight: 600;
+}}
+#SheetBtn:hover {{ background: {btn_bg_hover}; }}
+#SheetLink {{
+    background: transparent; color: {muted}; border: 1px solid {line}; border-radius: 15px;
+    padding: 0 14px; min-height: 30px; max-height: 30px; font-family: {UI}; font-size: 12px;
+}}
+#SheetLink:hover {{ color: {text}; background: {hover}; }}
+#AtechSheet QScrollArea, #SheetInner {{ background: transparent; border: none; }}
 """
 
 EMPTY_QSS = """
@@ -281,6 +395,10 @@ class ClickCard(QtWidgets.QFrame):
         self.setCursor(QtCore.Qt.PointingHandCursor)
         self.setAttribute(QtCore.Qt.WA_Hover, True)
         self.setFixedSize(210, 150)
+        # Reachable and usable from the keyboard (Tab, then Return / Space).
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self.setAccessibleName(title)
+        self.setAccessibleDescription(sub)
         self._compact = False
         lay = QtWidgets.QVBoxLayout(self)
         lay.setContentsMargins(16, 16, 16, 16)
@@ -323,6 +441,13 @@ class ClickCard(QtWidgets.QFrame):
         if ev.button() == QtCore.Qt.LeftButton and self.rect().contains(ev.pos()):
             self.clicked.emit()
         super().mouseReleaseEvent(ev)
+
+    def keyPressEvent(self, ev):                       # noqa: N802
+        if ev.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter,
+                        QtCore.Qt.Key_Space):
+            self.clicked.emit()
+            return
+        super().keyPressEvent(ev)
 
 
 class EmptyView(QtWidgets.QWidget):
@@ -376,7 +501,7 @@ class EmptyView(QtWidgets.QWidget):
         self.credit = c
         lay.addStretch(2)
         self.cards[0].clicked.connect(_open_reference)
-        self.cards[1].clicked.connect(_new_document)
+        self.cards[1].clicked.connect(lambda: _new_project())   # R383
         self.cards[2].clicked.connect(_open_file)
         self.refresh_cards()
 
@@ -475,7 +600,7 @@ class EmptyView(QtWidgets.QWidget):
         self.refresh_cards()
         self.setStyleSheet(style.qss(EMPTY_QSS))
         self.credit.setText(
-            'Atech Atelier, powered by FreeCAD \u00b7 <a href="credits" '
+            style.PRODUCT + ', powered by FreeCAD \u00b7 <a href="credits" '
             'style="color:%s; text-decoration:none;">Credits</a>'
             % style.tokens()["accent"])
         pm = style.logo_pixmap(40)
@@ -487,33 +612,1070 @@ class EmptyView(QtWidgets.QWidget):
         self._fit_height(self.height())
 
 
+# ------------------------------------------------------------ home (R308)
+HOME_RECENT_MAX = 10           # PRD Opening 3: recents, up to 10
+OPEN_EXT = (".fcstd",)
+#: Opened as a NEW project that imports the file (PRD Opening 4).
+IMPORT_EXT = (".step", ".stp", ".stl", ".3mf", ".iges", ".igs", ".brep", ".brp")
+_PEEK = {}                     # (realpath, mtime, size) -> (thumb bytes, hw)
+
+#: "Start from an example" (PRD Opening 6): agent_kit/examples/<key>.py.
+EXAMPLES = (
+    ("toy_car", "Toy car", "A chunky 4x4 around the Atech board, with "
+     "driven wheels and lights.", "car"),
+    ("desk_robot", "Desk robot", "A little robot whose face is a screen.",
+     "bot"),
+    ("smart_speaker", "Smart speaker", "A round speaker with a light ring "
+     "and buttons.", "speaker"),
+)
+
+
+#: Home's card icon per default project (R456), by example key.
+EXAMPLE_ICONS = {"toy_car": "car", "desk_robot": "bot",
+                 "smart_speaker": "speaker", "bedside_lamp": "sun",
+                 "handheld_console": "keyboard", "alarm_clock": "bell",
+                 "desk_fan": "rotate", "weather_station": "monitor",
+                 "rc_tank": "car"}
+
+
+def example_entries():
+    """Home's "Start from an example" row as [(key, title, subtitle, icon,
+    shipped)]: the default projects this installation ships (R456,
+    default_projects.entries(); a card opens a fresh copy with
+    open_default), else - no default projects here, e.g. a source tree -
+    EXAMPLES, built from agent_kit/examples/ by open_example."""
+    try:
+        from . import default_projects
+        rows = default_projects.entries()
+    except Exception as exc:                           # noqa: BLE001
+        _log("default projects: %r" % (exc,))
+        rows = []
+    if rows:
+        return [(k or t, t, sub or "A ready-made Atech project.",
+                 EXAMPLE_ICONS.get(k, "cube"), True) for t, k, sub in rows]
+    return [(k, t, sub, ico, False) for k, t, sub, ico in EXAMPLES
+            if example_path(k) is not None]
+
+
+def open_default(title):
+    """R456: a fresh copy of the shipped default project `title` (its own
+    project id and starter chat), opened as a new project. Returns the
+    copy's path, or None (said in a notice)."""
+    try:
+        from . import default_projects
+        path = default_projects.new_from_default(title)
+    except Exception as exc:                           # noqa: BLE001
+        _notify("Could not start from the example",
+                "The details are in the Report view.", exc)
+        return None
+    if path is None:
+        _notify("Example not available",
+                "The %s project is not in this installation." % title.lower())
+        return None
+    _refresh_home()
+    return path
+
+
+def _first(row, *keys):
+    for k in keys:
+        v = row.get(k) if isinstance(row, dict) else getattr(row, k, None)
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def _as_time(v):
+    """Seconds since the epoch from a number, a datetime or an ISO string."""
+    if v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    try:
+        import datetime
+        if isinstance(v, datetime.datetime):
+            return v.timestamp()
+        return datetime.datetime.fromisoformat(str(v)).timestamp()
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def normalize_projects(rows, exists=os.path.isfile):
+    """Rows from projects_store.list_projects() (W1) or the recent-files
+    fallback, as [{path, name, mtime, thumb, electronics}]: newest first,
+    one per real path, files that no longer exist dropped. Dicts and
+    objects are both read, under the field names either source may use."""
+    out, seen = [], set()
+    for r in rows or ():
+        path = _first(r, "path", "file", "file_path", "FileName")
+        if not path:
+            continue
+        path = str(path)
+        real = os.path.realpath(path)
+        if real in seen or not exists(path):
+            continue
+        seen.add(real)
+        mtime = _as_time(_first(r, "mtime", "modified", "last_edited",
+                                "edited", "updated"))
+        if mtime is None:
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                mtime = 0.0
+        name = _first(r, "name", "title", "label")
+        hw = _first(r, "electronics", "has_electronics", "hardware", "atech")
+        out.append({"path": path,
+                    "name": str(name) if name else
+                    os.path.splitext(os.path.basename(path))[0],
+                    "mtime": mtime,
+                    "thumb": _first(r, "thumbnail", "thumb", "thumbnail_path"),
+                    "electronics": bool(hw) if hw is not None else None})
+    out.sort(key=lambda d: -d["mtime"])
+    return out
+
+
+def recent_paths(limit=HOME_RECENT_MAX):
+    """FreeCAD's recent files, most recent first: existing files only, one
+    entry per REAL path (/tmp/x and /private/tmp/x are one file)."""
+    out, seen = [], set()
+    try:
+        import FreeCAD
+        grp = FreeCAD.ParamGet(navbar.RECENT_PARAM)
+        n = max(grp.GetInt("RecentFiles", 0) or 0, 10)
+        for i in range(n):
+            p = grp.GetString("MRU%d" % i, "")
+            if not p or not os.path.isfile(p):
+                continue
+            real = os.path.realpath(p)
+            if real not in seen:
+                seen.add(real)
+                out.append(p)
+    except Exception as exc:                           # noqa: BLE001
+        _log("recent files: %r" % (exc,))
+    return out[:limit]
+
+
+def _fcstd_peek(path):
+    """(thumbnail PNG bytes or None, has Atech hardware) of a .FCStd, read
+    from the zip without opening the document; cached per file version."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None, False
+    key = (os.path.realpath(path), st.st_mtime, st.st_size)
+    if key in _PEEK:
+        return _PEEK[key]
+    thumb, hw = None, False
+    if path.lower().endswith(".fcstd"):
+        import zipfile
+        try:
+            with zipfile.ZipFile(path) as z:
+                names = set(z.namelist())
+                if "thumbnails/Thumbnail.png" in names:
+                    thumb = z.read("thumbnails/Thumbnail.png")
+                if "Document.xml" in names:
+                    with z.open("Document.xml") as fh:
+                        hw = b"AtechRole" in fh.read()
+        except (OSError, zipfile.BadZipFile, KeyError, RuntimeError):
+            pass
+    _PEEK[key] = (thumb, hw)
+    return thumb, hw
+
+
+def fallback_projects(limit=HOME_RECENT_MAX):
+    """The Home grid without W1's project store: FreeCAD's recent files."""
+    rows = []
+    for p in recent_paths(limit):
+        _thumb, hw = _fcstd_peek(p)
+        rows.append({"path": p, "electronics": hw})
+    return rows
+
+
+def home_projects():
+    """([project rows], source): source is "store" (projects_store, W1) or
+    "recent" (the fallback). A store that is missing or raises falls back."""
+    try:
+        from . import projects_store                   # W1, built in parallel
+        rows = projects_store.list_projects()
+        return normalize_projects(rows), "store"
+    except Exception as exc:                           # noqa: BLE001
+        if not isinstance(exc, ImportError):
+            _log("projects_store: %r" % (exc,))
+    return normalize_projects(fallback_projects()), "recent"
+
+
+def edited_text(mtime, now=None):
+    """'Edited 5 min ago' and so on, in plain words."""
+    import time
+    if not mtime:
+        return ""
+    now = time.time() if now is None else now
+    d = max(0, now - mtime)
+    if d < 60:
+        return "Edited just now"
+    if d < 3600:
+        return "Edited %d min ago" % (d // 60)
+    if d < 86400:
+        return "Edited %d h ago" % (d // 3600)
+    if d < 2 * 86400:
+        return "Edited yesterday"
+    if d < 7 * 86400:
+        return "Edited %d days ago" % (d // 86400)
+    return "Edited " + time.strftime("%-d %b %Y" if os.name != "nt"
+                                     else "%d %b %Y", time.localtime(mtime))
+
+
+def example_path(key):
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "agent_kit", "examples", key + ".py")
+    return p if os.path.isfile(p) else None
+
+
+def droppable(paths):
+    """The dropped files Atech opens: .FCStd, and STEP/STL/3MF/IGES/BREP
+    as new projects importing them."""
+    return [p for p in paths if p and os.path.isfile(p)
+            and p.lower().endswith(OPEN_EXT + IMPORT_EXT)]
+
+
+def _event_paths(ev):
+    try:
+        md = ev.mimeData()
+        if md is None or not md.hasUrls():
+            return []
+        return [u.toLocalFile() for u in md.urls() if u.isLocalFile()]
+    except Exception:                                  # noqa: BLE001
+        return []
+
+
+class ProjectCard(QtWidgets.QFrame):
+    """One saved project on Home: thumbnail, name, when it was edited, and
+    an Electronics chip when it holds Atech hardware."""
+
+    clicked = QtCore.Signal()
+    W, H = 210, 150
+    THUMB = (186, 72)
+
+    def __init__(self, row, parent=None):
+        super().__init__(parent)
+        self.row = row
+        self.setObjectName("ProjectCard")
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setAttribute(QtCore.Qt.WA_Hover, True)
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        self.setFixedSize(self.W, self.H)
+        self.setToolTip(row["path"])
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(6)
+        self.thumb = QtWidgets.QLabel()
+        self.thumb.setObjectName("Thumb")
+        self.thumb.setFixedSize(*self.THUMB)
+        self.thumb.setAlignment(QtCore.Qt.AlignCenter)
+        lay.addWidget(self.thumb)
+        self.name = QtWidgets.QLabel()
+        self.name.setObjectName("CardTitle")
+        fm = QtGui.QFontMetrics(self.name.font())
+        self.name.setText(fm.elidedText(row["name"], QtCore.Qt.ElideRight,
+                                        self.W - 24))
+        lay.addWidget(self.name)
+        meta = QtWidgets.QHBoxLayout()
+        meta.setContentsMargins(0, 0, 0, 0)
+        meta.setSpacing(6)
+        self.edited = QtWidgets.QLabel(edited_text(row.get("mtime")))
+        self.edited.setObjectName("CardSub")
+        meta.addWidget(self.edited)
+        meta.addStretch(1)
+        self.chip = QtWidgets.QLabel("Electronics")
+        self.chip.setObjectName("Chip")
+        self.chip.setToolTip("Built around the Atech board and modules")
+        self.chip.setVisible(bool(row.get("electronics")))
+        meta.addWidget(self.chip)
+        lay.addLayout(meta)
+        lay.addStretch(1)
+        self.setAccessibleName("Open project %s" % row["name"])
+        self.setContextMenuPolicy(QtCore.Qt.DefaultContextMenu)
+        self.setAccessibleDescription(" ".join(x for x in (
+            self.edited.text(), "Electronics" if row.get("electronics") else "")
+            if x))
+        self._pm = None
+
+    def thumbnail(self):
+        """The project's picture: the store's (path or PNG bytes), else the
+        thumbnail FreeCAD saved inside the .FCStd. None when there is none."""
+        if self._pm is not None:
+            return self._pm
+        src = self.row.get("thumb")
+        pm = QtGui.QPixmap()
+        if isinstance(src, (bytes, bytearray)):
+            pm.loadFromData(bytes(src))
+        elif isinstance(src, str) and os.path.isfile(src):
+            pm.load(src)
+        if pm.isNull():
+            data, _hw = _fcstd_peek(self.row["path"])
+            if data:
+                pm.loadFromData(data)
+        self._pm = None if pm.isNull() else pm
+        return self._pm
+
+    def restyle(self):
+        pm = self.thumbnail()
+        if pm is None:
+            self.thumb.setPixmap(style.icon("cube", style.tokens()["dim"], 26)
+                                 .pixmap(26, 26))
+            return
+        dpr = style.pixel_scale()
+        w, h = self.THUMB
+        sc = pm.scaled(w * dpr, h * dpr, QtCore.Qt.KeepAspectRatio,
+                       QtCore.Qt.SmoothTransformation)
+        sc.setDevicePixelRatio(dpr)
+        self.thumb.setPixmap(sc)
+
+    def mouseReleaseEvent(self, ev):                   # noqa: N802
+        if ev.button() == QtCore.Qt.LeftButton and self.rect().contains(ev.pos()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(ev)
+
+    def keyPressEvent(self, ev):                       # noqa: N802
+        if ev.key() in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter,
+                        QtCore.Qt.Key_Space):
+            self.clicked.emit()
+            return
+        if ev.key() == QtCore.Qt.Key_Menu:
+            self.show_menu(self.mapToGlobal(self.rect().center()))
+            return
+        super().keyPressEvent(ev)
+
+    def menu(self):
+        """R385: the card's own menu: Open, Rename..., Duplicate, Show in
+        Finder, Move to Trash... (the picker's "This project" actions, for
+        a project that is not open)."""
+        m = QtWidgets.QMenu(self)
+        m.setAccessibleName("Project %s" % self.row["name"])
+        for key, text in HOME_CARD_ACTIONS:
+            if key == "-":
+                m.addSeparator()
+                continue
+            a = m.addAction(text)
+            a.setObjectName("home_" + key)
+            a.triggered.connect(
+                lambda _=False, k=key: _safe(
+                    lambda: home_card_action(k, self.row["path"], self)))
+        return m
+
+    def show_menu(self, pos):
+        m = self.menu()
+        self._menu = m
+        m.popup(pos)
+        return m
+
+    def contextMenuEvent(self, ev):                    # noqa: N802
+        self.show_menu(ev.globalPos())
+        ev.accept()
+
+
+#: (key, menu text) of a Home project card's menu (R385); "-" a line.
+HOME_CARD_ACTIONS = (("open", "Open"), ("-", ""), ("rename", "Rename\u2026"),
+                     ("duplicate", "Duplicate"),
+                     ("reveal", "Show in Finder"), ("-", ""),
+                     ("trash", "Move to Trash\u2026"))
+
+
+def home_card_action(key, path, parent=None, ask=None, confirm=None):
+    """Run one Home card action on the project at `path`. `ask(title,
+    label, default)` and `confirm(title, text, ok)` are the prompts (tests
+    pass their own). Returns the action's result; a ProjectError or a file
+    error is shown in plain words and returns None."""
+    from . import projects_store
+    ask = ask or (lambda t, l, d: navbar._ask_name(parent, t, l, d))
+    confirm = confirm or (lambda t, x, ok: navbar._confirm(parent, t, x, ok))
+    stem = os.path.splitext(os.path.basename(path))[0]
+    try:
+        if key == "open":
+            return open_project_path(path)
+        if key == "rename":
+            name = ask("Rename project", "New name:", stem)
+            if name is None or projects_store.clean_name(name) == stem:
+                return None
+            out = projects_store.rename_project(path, name)
+        elif key == "duplicate":
+            out = projects_store.duplicate_project(path)
+        elif key == "reveal":
+            return projects_store.reveal_in_finder(path)
+        elif key == "trash":
+            if not confirm("Move to Trash",
+                           "Move \u201c%s\u201d to the Trash? Its chat is "
+                           "deleted with it. You can get the file back from "
+                           "the Trash." % stem, "Move to Trash"):
+                return None
+            out = projects_store.trash_project(path)
+        else:
+            raise KeyError(key)
+    except projects_store.ProjectError as exc:
+        _notify("That did not work", str(exc))
+        return None
+    except OSError as exc:
+        _notify("That did not work", "The file could not be changed: %s."
+                % (exc.strerror or exc))
+        return None
+    _refresh_home()
+    return out
+
+
+def _refresh_home():
+    ov = _S.get("overlay")
+    home = getattr(ov, "empty", None) if ov is not None else None
+    if isinstance(home, HomeView):
+        try:
+            home.refresh()
+        except RuntimeError:
+            pass
+
+
+class HomeView(QtWidgets.QWidget):
+    """Home: shown in the viewport when no project is open (R308).
+
+    The header (mark, product name, search, Open file), the project grid
+    ("New project" first, then saved projects newest first, from
+    projects_store.list_projects() or FreeCAD's recent files), "Start from
+    an example" cards, and the credit line. Files dropped on it open.
+
+    For the start-card tests of the old EmptyView, `cards` (the action and
+    example cards), columns_for() and _layout_cards() keep their meaning."""
+
+    MAX_COLS = 5
+    GAP = 12
+    MARGIN = 32
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("HomeView")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self.setAcceptDrops(True)
+        self.setAccessibleName("Home")
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        self.scroll = QtWidgets.QScrollArea()
+        self.scroll.setObjectName("HomeScroll")
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.scroll.viewport().setAutoFillBackground(False)
+        inner = QtWidgets.QWidget()
+        inner.setObjectName("HomeInner")
+        v = QtWidgets.QVBoxLayout(inner)
+        m = self.MARGIN
+        v.setContentsMargins(m, 28, m, 24)
+        v.setSpacing(0)
+
+        head = QtWidgets.QHBoxLayout()
+        head.setSpacing(10)
+        self.mark = QtWidgets.QLabel()
+        head.addWidget(self.mark)
+        self.title = QtWidgets.QLabel(style.PRODUCT)
+        self.title.setObjectName("HomeTitle")
+        head.addWidget(self.title)
+        head.addStretch(1)
+        self.search = QtWidgets.QLineEdit()
+        self.search.setObjectName("HomeSearch")
+        self.search.setPlaceholderText("Search projects")
+        self.search.setAccessibleName("Search projects")
+        self.search.setClearButtonEnabled(True)
+        self.search.setFixedWidth(220)
+        self._search_act = None
+        self.search.textChanged.connect(self.apply_filter)
+        head.addWidget(self.search)
+        self.btn_open = QtWidgets.QPushButton("Open file\u2026")
+        self.btn_open.setObjectName("HomeBtn")
+        self.btn_open.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_open.setAccessibleName("Open file")
+        self.btn_open.setToolTip("Open a .FCStd project, or STEP / STL / 3MF "
+                                 "as a new project. You can also drop files here.")
+        self.btn_open.clicked.connect(lambda: _open_file())
+        head.addWidget(self.btn_open)
+        v.addLayout(head)
+        v.addSpacing(22)
+
+        self.sec_projects = QtWidgets.QLabel("YOUR PROJECTS")
+        self.sec_projects.setObjectName("HomeSection")
+        v.addWidget(self.sec_projects)
+        v.addSpacing(10)
+        self.grid = QtWidgets.QGridLayout()
+        self.grid.setSpacing(self.GAP)
+        self.grid.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        v.addLayout(self.grid)
+        v.addSpacing(8)
+        self.note = QtWidgets.QLabel()
+        self.note.setObjectName("HomeNote")
+        self.note.setWordWrap(True)
+        v.addWidget(self.note)
+        v.addSpacing(22)
+        self.sec_examples = QtWidgets.QLabel("START FROM AN EXAMPLE")
+        self.sec_examples.setObjectName("HomeSection")
+        v.addWidget(self.sec_examples)
+        v.addSpacing(10)
+        self.ex_grid = QtWidgets.QGridLayout()
+        self.ex_grid.setSpacing(self.GAP)
+        self.ex_grid.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        v.addLayout(self.ex_grid)
+        v.addSpacing(26)
+        c = QtWidgets.QLabel()
+        c.setObjectName("EmptyCredit")
+        c.setOpenExternalLinks(False)
+        c.linkActivated.connect(_open_credits)
+        v.addWidget(c)
+        self.credit = c
+        v.addStretch(1)
+        self.scroll.setWidget(inner)
+        outer.addWidget(self.scroll)
+
+        self.new_card = ClickCard("file-plus", "New project",
+                                  "An empty design to build into.")
+        self.new_card.clicked.connect(lambda: _new_project())
+        self.example_cards = []
+        for key, title, sub, ico, shipped in example_entries():
+            card = ClickCard(ico, title, sub)
+            card.setAccessibleName("Start from the %s example" % title.lower())
+            card.example_key = key
+            card.default_title = title if shipped else None
+            if shipped:
+                card.clicked.connect(lambda _=False, t=title: open_default(t))
+            else:
+                card.clicked.connect(lambda _=False, k=key: open_example(k))
+            self.example_cards.append(card)
+        self.crane_card = ClickCard("cube", "Sample crane",
+                                    "Open a measured crane assembly.")
+        self.crane_card.clicked.connect(_open_reference)
+        self.cards = [self.new_card] + self.example_cards + [self.crane_card]
+        self.project_cards = []
+        self.rows = []
+        self.source = None
+        self._cols = None
+        self._has_crane = None
+        self._filter = ""
+        self.refresh_cards()
+        self.refresh()
+
+    # -- compatibility with the start-card layout (EmptyView, R34)
+    def shown_cards(self):
+        return [c for c in self.cards
+                if c is not self.crane_card or self._has_crane]
+
+    def columns_for(self, width):
+        """As many 210 px cards as fit beside each other (12 px gaps, the
+        page's margins), 1 to MAX_COLS."""
+        avail = width - 2 * self.MARGIN + self.GAP
+        return max(1, min(self.MAX_COLS, avail // (210 + self.GAP)))
+
+    def refresh_cards(self):
+        """The sample crane card only when this installation has it (R55)."""
+        try:
+            from . import viewport
+            has = bool(viewport.crane_parts())
+        except Exception as exc:                       # noqa: BLE001
+            _log("crane parts: %r" % (exc,))
+            has = False
+        if has == self._has_crane:
+            return
+        self._has_crane = has
+        self._relayout()
+
+    def _layout_cards(self, cols):
+        if cols == self._cols:
+            return
+        self._cols = cols
+        self._relayout()
+
+    def _relayout(self):
+        cols = self._cols or 3
+        for c in self.cards + self.project_cards:
+            self.grid.removeWidget(c)
+            self.ex_grid.removeWidget(c)
+        shown = [self.new_card] + [c for c in self.project_cards
+                                   if self._matches(c)]
+        for i, c in enumerate(shown):
+            self.grid.addWidget(c, i // cols, i % cols)
+            c.setVisible(True)
+        for c in self.project_cards:
+            if c not in shown:
+                c.setVisible(False)
+        ex = list(self.example_cards) + ([self.crane_card] if self._has_crane else [])
+        for i, c in enumerate(ex):
+            self.ex_grid.addWidget(c, i // cols, i % cols)
+            c.setVisible(True)
+        if not self._has_crane:
+            self.crane_card.setVisible(False)
+        self.sec_examples.setVisible(bool(ex))
+        for c in self.cards:
+            c.set_compact(cols < 3)
+        self._sync_note(len(shown) - 1)
+
+    # -- data
+    def _matches(self, card):
+        f = self._filter
+        return not f or f in card.row["name"].casefold()
+
+    def apply_filter(self, text):
+        self._filter = (text or "").strip().casefold()
+        self._relayout()
+
+    def _sync_note(self, n_shown):
+        if self._filter and not n_shown:
+            txt = "No project matches \u201c%s\u201d." % self.search.text().strip()
+        elif not self.rows:
+            txt = ("No saved projects yet. Start a new one, open a file or "
+                   "drop it here, or start from an example below.")
+        else:
+            txt = ""
+        self.note.setText(txt)
+        self.note.setVisible(bool(txt))
+
+    def refresh(self):
+        """Re-read the projects. Cheap enough for 100 projects (the zip
+        peeks are cached per file version)."""
+        try:
+            rows, self.source = home_projects()
+        except Exception as exc:                       # noqa: BLE001
+            _log("home projects: %r" % (exc,))
+            rows, self.source = [], None
+        old = {c.row["path"]: c for c in self.project_cards}
+        keep = []
+        for r in rows:
+            c = old.pop(r["path"], None)
+            if c is not None and c.row == r:
+                keep.append(c)
+                continue
+            if c is not None:
+                old[r["path"]] = c
+            c = ProjectCard(r)
+            c.clicked.connect(lambda _=False, p=r["path"]: open_project_path(p))
+            c.restyle()
+            keep.append(c)
+        for c in old.values():
+            self.grid.removeWidget(c)
+            c.hide()
+            c.deleteLater()
+        self.rows = rows
+        self.project_cards = keep
+        self._relayout()
+        return rows
+
+    # -- events
+    def showEvent(self, ev):                           # noqa: N802
+        super().showEvent(ev)
+        QtCore.QTimer.singleShot(0, self._refresh_if_shown)
+
+    def _refresh_if_shown(self):
+        try:
+            if self.isVisible():
+                self.refresh()
+        except RuntimeError:
+            pass
+
+    def resizeEvent(self, ev):                         # noqa: N802
+        self._layout_cards(self.columns_for(ev.size().width()))
+        super().resizeEvent(ev)
+
+    def _set_dropping(self, on):
+        if bool(self.property("dropping")) != on:
+            self.setProperty("dropping", on)
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+
+    def dragEnterEvent(self, ev):                      # noqa: N802
+        if droppable(_event_paths(ev)):
+            ev.acceptProposedAction()
+            self._set_dropping(True)
+        else:
+            ev.ignore()
+
+    def dragMoveEvent(self, ev):                       # noqa: N802
+        if droppable(_event_paths(ev)):
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+
+    def dragLeaveEvent(self, ev):                      # noqa: N802
+        self._set_dropping(False)
+        super().dragLeaveEvent(ev)
+
+    def dropEvent(self, ev):                           # noqa: N802
+        self._set_dropping(False)
+        paths = droppable(_event_paths(ev))
+        if paths:
+            ev.acceptProposedAction()
+            open_paths(paths)
+        else:
+            ev.ignore()
+
+    def restyle(self):
+        self.refresh_cards()
+        self.setStyleSheet(style.qss(HOME_QSS))
+        t = style.tokens()
+        self.credit.setText(
+            style.PRODUCT + ', powered by FreeCAD \u00b7 <a href="credits" '
+            'style="color:%s; text-decoration:none;">Credits</a>' % t["accent"])
+        pm = style.logo_pixmap(26)
+        if pm is not None:
+            self.mark.setPixmap(pm)
+        if self._search_act is not None:
+            self.search.removeAction(self._search_act)
+        self._search_act = self.search.addAction(
+            style.icon("search", t["dim"], 14),
+            QtWidgets.QLineEdit.LeadingPosition)
+        for c in self.cards + self.project_cards:
+            c.restyle()
+
+
+class OrbitHint(QtWidgets.QFrame):
+    """First-run card over the 3D view (R305): how to orbit, pan and zoom
+    with the navigation style in use. "Got it" hides it for good."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("OrbitHint")
+        self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self.setAccessibleName("How to move around the model")
+        lay = QtWidgets.QVBoxLayout(self)
+        lay.setContentsMargins(16, 14, 16, 14)
+        lay.setSpacing(8)
+        self.title = QtWidgets.QLabel("Move around your model")
+        self.title.setObjectName("HintTitle")
+        lay.addWidget(self.title)
+        self.rows = QtWidgets.QGridLayout()
+        self.rows.setHorizontalSpacing(14)
+        self.rows.setVerticalSpacing(4)
+        lay.addLayout(self.rows)
+        btns = QtWidgets.QHBoxLayout()
+        btns.addStretch(1)
+        self.btn_style = QtWidgets.QPushButton("Change style\u2026")
+        self.btn_style.setObjectName("HintLink")
+        self.btn_style.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_style.clicked.connect(lambda: open_appearance())
+        btns.addWidget(self.btn_style)
+        self.btn_ok = QtWidgets.QPushButton("Got it")
+        self.btn_ok.setObjectName("HintBtn")
+        self.btn_ok.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_ok.clicked.connect(self.dismiss)
+        btns.addWidget(self.btn_ok)
+        lay.addLayout(btns)
+        self.setVisible(False)
+        shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(24)
+        shadow.setOffset(0, 4)
+        shadow.setColor(QtGui.QColor(0, 0, 0, 40))
+        self.setGraphicsEffect(shadow)
+        self.fill()
+
+    def fill(self):
+        from . import viewport
+        while self.rows.count():
+            w = self.rows.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        info = viewport.nav_info()
+        self.title.setText("Move around your model (%s)" % info["label"])
+        for i, (action, how) in enumerate(info["how"]):
+            a = QtWidgets.QLabel(action)
+            a.setObjectName("HintAction")
+            h = QtWidgets.QLabel(how)
+            h.setObjectName("HintHow")
+            self.rows.addWidget(a, i, 0)
+            self.rows.addWidget(h, i, 1)
+        self.adjustSize()
+
+    @staticmethod
+    def wanted():
+        from . import viewport
+        return not viewport.orbit_hint_seen()
+
+    def dismiss(self):
+        from . import viewport
+        viewport.set_orbit_hint_seen(True)
+        self.hide()
+
+    def restyle(self):
+        self.setStyleSheet(style.qss(HINT_QSS))
+        self.adjustSize()
+
+
+#: R303: view-bar slots for tools other workstreams provide. Their buttons
+#: sit between the view toggles and Spin, in this order; a key not listed
+#: here goes after them. See register_view_tool().
+TOOL_ORDER = ("measure", "section", "show", "explode", "dims", "colour",
+              "export", "share")
+_TOOLS = {}
+#: R380: the slot shows two groups, inspect | output, with a thin line
+#: between them. A key in neither group joins the last one.
+#: R701: Show and hide and Exploded view are ways of looking, so they sit
+#: with Measure and Section; Dimensions edits, as Colour does.
+TOOL_GROUPS = (("measure", "section", "show", "explode"),
+               ("dims", "colour", "export", "share"))
+#: R380: the view-bar level (ViewBar.set_level) from which a tool's button
+#: leaves the bar for the "More tools" menu; a key not listed goes at 2.
+#: Measure and Section stay (they also have M and Shift+S).
+TOOL_DROP_LEVEL = {"share": 1, "dims": 1, "explode": 2, "colour": 2,
+                   "export": 2, "measure": 99, "section": 99, "show": 99}
+#: Lucide "ellipsis", for the More tools button (as navbar adds "save").
+style.PATHS.setdefault("more", '<circle cx="12" cy="12" r="1"/>'
+                       '<circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>')
+
+
+def register_view_tool(key, factory=None, run=None, label=None, restyle=None):
+    """Put a tool on the view bar and/or behind its shortcut (R303).
+
+    key      "measure", "section", "export"... (TOOL_ORDER) or another name
+    factory  callable(view_bar) -> QWidget (a callable taking no argument
+             is called without one): the button shown in the bar. A
+             QAbstractButton without an objectName gets the bar's look
+    run      callable(), what the shortcut does (M for measure, Shift+S
+             for section); None leaves the built-in fallback
+    label    the name for the shortcut sheet
+    restyle  callable(widget), run on every light/dark restyle
+
+    Safe to call before or after the shell is installed: a live bar mounts
+    the button at once, the next one on install."""
+    _TOOLS[key] = {"factory": factory, "run": run, "label": label,
+                   "restyle": restyle}
+    ov = _S.get("overlay")
+    if ov is not None:
+        try:
+            ov.bar.mount_tools()
+            ov.place()
+        except RuntimeError:
+            pass
+    return True
+
+
+def unregister_view_tool(key):
+    _TOOLS.pop(key, None)
+    ov = _S.get("overlay")
+    if ov is not None:
+        try:
+            ov.bar.mount_tools()
+        except RuntimeError:
+            pass
+
+
+def run_tool(key, fallback=None):
+    """The registered tool's run(), else `fallback` (a FreeCAD command
+    name). True when something ran."""
+    entry = _TOOLS.get(key) or {}
+    fn = entry.get("run")
+    if fn is not None:
+        _safe(fn)
+        return True
+    if fallback:
+        try:
+            import FreeCADGui
+            FreeCADGui.runCommand(fallback)
+            return True
+        except Exception as exc:                       # noqa: BLE001
+            _log("%s: %r" % (fallback, exc))
+    return False
+
+
+def click_tool(key):
+    """Press the live view bar's `key` tool button (a checkable one, such
+    as Measure, toggles its card). True when there was one to press; the
+    button works from the More tools menu too, hidden or not."""
+    ov = _S.get("overlay")
+    if ov is None:
+        return False
+    try:
+        w = ov.bar._tool_widgets.get(key)
+        if w is None or not _alive(w):
+            return False
+        w.click()
+        return True
+    except RuntimeError:
+        return False
+
+
+def _w4_button(bar, key):
+    """One of W4's view-bar buttons (export_tools.view_bar_buttons builds
+    the four together, sharing their dialogs), made once per bar."""
+    btns = getattr(bar, "_w4", None)
+    if btns is None or not all(_alive(b) for b in btns.values()):
+        from . import export_tools
+        btns = export_tools.view_bar_buttons(bar)
+        bar._w4 = btns
+    return btns[key]
+
+
+def _w4_restyle(w):
+    from . import export_tools
+    export_tools.restyle_buttons({"tool": w})
+
+
+#: (key, label) of the tools Atech itself puts on the view bar (R380).
+BUILTIN_TOOLS = (("measure", "Measure"), ("section", "Section view"),
+                 ("colour", "Colour"), ("explode", "Exploded view"),
+                 ("export", "Export for print"),
+                 ("share", "Save a share image"))
+#: R700/R701: Show and hide (visibility.py) and Dimensions (dimensions.py).
+EDIT_TOOLS = (("show", "Show and hide"), ("dims", "Dimensions"))
+
+
+def _measure_button(bar, key):
+    from . import measure
+    return (measure.make_measure_button if key == "measure"
+            else measure.make_section_button)(bar)
+
+
+_FALLBACK = {"measure": "Std_Measure", "section": "Std_ToggleClipPlane"}
+
+
+def _press(key):
+    """M / Shift+S: press the bar's button; with no bar (or no button)
+    FreeCAD's own command for it, when there is one."""
+    if click_tool(key):
+        return True
+    cmd = _FALLBACK.get(key)
+    if cmd:
+        try:
+            import FreeCADGui
+            FreeCADGui.runCommand(cmd)
+            return True
+        except Exception as exc:                       # noqa: BLE001
+            _log("%s: %r" % (cmd, exc))
+    return False
+
+
+def register_builtin_tools():
+    """R380: Measure and Section (measure.py, W3) and Colour, Exploded
+    view, Export for print and Share image (export_tools.py, W4) on the
+    view bar, M and Shift+S pressing the same buttons. Registered when the
+    shell module loads; nothing is imported until a bar is built, and a
+    factory that fails leaves only its own button out (mount_tools logs
+    it; M / Shift+S then fall back to FreeCAD's Std_Measure /
+    Std_ToggleClipPlane through run_tool)."""
+    for key, label in BUILTIN_TOOLS[:2]:
+        register_view_tool(key, lambda bar, k=key: _measure_button(bar, k),
+                           run=lambda k=key: _press(k), label=label)
+    for key, label in BUILTIN_TOOLS[2:]:
+        register_view_tool(key, lambda bar, k=key: _w4_button(bar, k),
+                           run=lambda k=key: _press(k), label=label,
+                           restyle=_w4_restyle)
+    for key, label in EDIT_TOOLS:
+        register_view_tool(key, lambda bar, k=key: _edit_button(bar, k),
+                           run=lambda k=key: _press(k), label=label)
+    return [k for k, _l in BUILTIN_TOOLS + EDIT_TOOLS]
+
+
+def _edit_button(bar, key):
+    if key == "show":
+        from . import visibility
+        return visibility.view_bar_button(bar)
+    from . import dimensions
+    return dimensions.view_bar_button(bar)
+
+
+def _wants_arg(fn):
+    """True when `fn` has a required positional parameter (the view bar)."""
+    import inspect
+    try:
+        ps = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.default is p.empty and p.kind in (p.POSITIONAL_ONLY,
+                                                   p.POSITIONAL_OR_KEYWORD)
+               for p in ps)
+
+
 class ViewBar(QtWidgets.QFrame):
     """The floating pill over the 3D view."""
+
+    MAX_LEVEL = 3
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("ViewBar")
         self.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self.setAccessibleName("View controls")
         lay = QtWidgets.QHBoxLayout(self)
         lay.setContentsMargins(6, 6, 6, 6)
         lay.setSpacing(2)
         self._icons = []
+        self._wire = {}                 # sub-window -> wireframe on (per view)
 
         from . import viewport
-        self.btn_fit = self._btn("", "fit", "Fit the model to the view", viewport.fit_all)
+        self.btn_fit = self._btn("", "fit", "Fit the model to the view",
+                                 viewport.fit_all, name="Fit all")
         lay.addWidget(self.btn_fit)
+        self.btn_fit_sel = self._btn(
+            "", "focus", "Fit the selection to the view (nothing selected: "
+            "everything)", viewport.fit_selection, name="Fit selection")
+        lay.addWidget(self.btn_fit_sel)
         self._named = [self._sep()]
         for label, fn in (("Iso", viewport.axonometric), ("Front", viewport.view_front),
                           ("Top", viewport.view_top), ("Right", viewport.view_right)):
             self._named.append(self._btn(label, None, "%s view" % label, fn))
         for w in self._named:
             lay.addWidget(w)
+        # Rear / Left / Bottom (R303), and every named view again, so a
+        # narrow bar that drops the named buttons still reaches them all.
+        self.btn_views = self._btn("", "chevron-down",
+                                   "More views: rear, left, bottom", None,
+                                   name="More views")
+        self.views_menu = QtWidgets.QMenu(self.btn_views)
+        self.views_menu.setAccessibleName("Views")
+        for label, fn in (("Isometric", viewport.axonometric),
+                          ("Front", viewport.view_front),
+                          ("Top", viewport.view_top),
+                          ("Right", viewport.view_right),
+                          ("Rear", viewport.view_rear),
+                          ("Left", viewport.view_left),
+                          ("Bottom", viewport.view_bottom)):
+            act = self.views_menu.addAction(label)
+            act.triggered.connect(lambda _=False, f=fn: _safe(f))
+        self.btn_views.setMenu(self.views_menu)
+        lay.addWidget(self.btn_views)
         lay.addWidget(self._sep())
-        self.btn_spin = self._btn("", "rotate", "Spin the model", None)
+        self.btn_persp = self._btn("", "perspective",
+                                   "Perspective camera (off: orthographic)",
+                                   None, name="Perspective")
+        self.btn_persp.setCheckable(True)
+        self.btn_persp.toggled.connect(self._on_persp)
+        lay.addWidget(self.btn_persp)
+        self.btn_wire = self._btn("", "wire", "Wireframe (off: shaded)", None,
+                                  name="Wireframe")
+        self.btn_wire.setCheckable(True)
+        self.btn_wire.toggled.connect(self._on_wire)
+        lay.addWidget(self.btn_wire)
+        # The tool slot (R303): Measure, Section, Export from other modules.
+        self._tool_sep = self._sep()
+        lay.addWidget(self._tool_sep)
+        self.tool_slot = QtWidgets.QHBoxLayout()
+        self.tool_slot.setContentsMargins(0, 0, 0, 0)
+        self.tool_slot.setSpacing(2)
+        lay.addLayout(self.tool_slot)
+        self._tool_widgets = {}
+        self._group_sep = self._sep()
+        self._group_sep.hide()
+        # R380: tools a narrow bar drops are one click away here.
+        self.btn_more_tools = self._btn("", "more", "More tools", None,
+                                        name="More tools")
+        self.more_menu = QtWidgets.QMenu(self.btn_more_tools)
+        self.more_menu.setAccessibleName("More tools")
+        self.more_menu.aboutToShow.connect(self._fill_more_tools)
+        self.btn_more_tools.setMenu(self.more_menu)
+        self.btn_more_tools.hide()
+        lay.addWidget(self.btn_more_tools)
+        lay.addWidget(self._sep())
+        self.btn_spin = self._btn("", "rotate", "Spin the model", None,
+                                  name="Spin")
         self.btn_spin.setCheckable(True)
         self.btn_spin.toggled.connect(self._on_spin)
         lay.addWidget(self.btn_spin)
-        self.btn_shot = self._btn("", "camera", "Add this view to the chat", _add_view)
+        self.btn_full = self._btn("", "maximize",
+                                  "Full-screen 3D: hide the sidebar", None,
+                                  name="Full-screen 3D")
+        self.btn_full.setCheckable(True)
+        self.btn_full.toggled.connect(self._on_full)
+        lay.addWidget(self.btn_full)
+        self.btn_shot = self._btn("", "camera", "Add this view to the chat",
+                                  _add_view, name="Add this view to the chat")
         lay.addWidget(self.btn_shot)
         lay.addSpacing(4)
         self.btn_ask = QtWidgets.QPushButton(icon_label(ASK_TEXT))
@@ -524,7 +1686,11 @@ class ViewBar(QtWidgets.QFrame):
         self.btn_ask.setToolTip("Capture the view and ask the agent about it")
         self.btn_ask.clicked.connect(_ask_view)
         lay.addWidget(self.btn_ask)
+        # Dropped last, at level 3, in a very narrow viewport.
+        self._secondary = [self.btn_fit_sel, self.btn_persp, self.btn_wire,
+                           self.btn_spin]
         self.level = 0
+        self.mount_tools()
 
         shadow = QtWidgets.QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(24)
@@ -532,11 +1698,12 @@ class ViewBar(QtWidgets.QFrame):
         shadow.setColor(QtGui.QColor(0, 0, 0, 40))
         self.setGraphicsEffect(shadow)
 
-    def _btn(self, text, icon_name, tip, fn):
+    def _btn(self, text, icon_name, tip, fn, name=None):
         b = QtWidgets.QPushButton(text)
         b.setObjectName("VBtn")
         b.setCursor(QtCore.Qt.PointingHandCursor)
         b.setToolTip(tip)
+        b.setAccessibleName(name or text or tip)
         b.setIconSize(QtCore.QSize(16, 16))
         if icon_name:
             self._icons.append((b, icon_name))
@@ -555,23 +1722,200 @@ class ViewBar(QtWidgets.QFrame):
         from . import viewport
         _safe(lambda: viewport.spin(on))
 
+    def _on_persp(self, on):
+        from . import viewport
+        _safe(lambda: viewport.set_perspective(on))
+
+    def _on_wire(self, on):
+        from . import viewport
+        _safe(lambda: viewport.set_wireframe(on))
+        sw = self._active_sub()
+        if sw is not None:
+            self._wire[sw] = on
+
+    def _on_full(self, on):
+        set_focus_view(on)
+
+    def _active_sub(self):
+        try:
+            mdi = self.parent()
+            return mdi.activeSubWindow() if isinstance(mdi, QtWidgets.QMdiArea) \
+                else None
+        except RuntimeError:
+            return None
+
+    def sync_view(self):
+        """Show the ACTIVE view's camera and draw style: both are per view,
+        so switching documents must not leave the other view's state lit."""
+        from . import viewport
+        cam = None
+        try:
+            cam = viewport.camera_type()
+        except Exception:                              # noqa: BLE001
+            pass
+        for b, on in ((self.btn_persp, cam == "Perspective" if cam else None),
+                      (self.btn_wire, bool(self._wire.get(self._active_sub())))):
+            if on is None:
+                continue
+            b.blockSignals(True)
+            b.setChecked(on)
+            b.blockSignals(False)
+        live = set()
+        try:
+            mdi = self.parent()
+            live = set(mdi.subWindowList()) if isinstance(mdi, QtWidgets.QMdiArea) else set()
+        except RuntimeError:
+            pass
+        for sw in [k for k in self._wire if k not in live]:
+            self._wire.pop(sw, None)
+
+    def mount_tools(self):
+        """(Re)build the tool slot from the registry, in TOOL_ORDER."""
+        keys = [k for k in TOOL_ORDER if k in _TOOLS] + \
+            sorted(k for k in _TOOLS if k not in TOOL_ORDER)
+        for k in list(self._tool_widgets):
+            if k not in keys or _TOOLS[k].get("factory") is None:
+                w = self._tool_widgets.pop(k)
+                self.tool_slot.removeWidget(w)
+                w.hide()
+                w.deleteLater()
+        for k in keys:
+            fac = _TOOLS[k].get("factory")
+            if fac is None or k in self._tool_widgets:
+                continue
+            try:
+                w = fac(self) if _wants_arg(fac) else fac()
+            except Exception as exc:                   # noqa: BLE001
+                _log("view tool %s: %r" % (k, exc))
+                continue
+            if w is None:
+                continue
+            if isinstance(w, QtWidgets.QAbstractButton) and not w.objectName():
+                w.setObjectName("VBtn")
+                w.setCursor(QtCore.Qt.PointingHandCursor)
+                w.setMinimumHeight(30)
+            if not w.accessibleName():
+                w.setAccessibleName(_TOOLS[k].get("label") or k.title())
+            w.setProperty("atechTool", k)
+            self._tool_widgets[k] = w
+        self.tool_slot.removeWidget(self._group_sep)
+        first = set(TOOL_GROUPS[0])
+        placed_sep = False
+        for k in keys:                                 # in order
+            w = self._tool_widgets.get(k)
+            if w is not None:
+                if not placed_sep and k not in first and any(
+                        j in self._tool_widgets for j in first):
+                    self.tool_slot.addWidget(self._group_sep)
+                    placed_sep = True
+                self.tool_slot.removeWidget(w)
+                self.tool_slot.addWidget(w)
+        self._group_sep.setProperty("atechPlaced", placed_sep)
+        self._tool_sep.setVisible(bool(self._tool_widgets))
+        self._apply_tool_level()
+        self.adjustSize()
+
+    def tool_label(self, key):
+        """The plain name of a tool (its registry label, else its button's
+        accessible name)."""
+        entry = _TOOLS.get(key) or {}
+        w = self._tool_widgets.get(key)
+        return entry.get("label") or (w.accessibleName() if w is not None
+                                      else key.title())
+
+    def dropped_tools(self):
+        """Keys of the tools the current level moved into More tools."""
+        return [k for k in [k for k in TOOL_ORDER if k in self._tool_widgets]
+                + sorted(k for k in self._tool_widgets if k not in TOOL_ORDER)
+                if self.level >= TOOL_DROP_LEVEL.get(k, 2)]
+
+    def _apply_tool_level(self):
+        """R380: at a narrow level the less used tools leave the bar for
+        the More tools menu; the group line shows only between two
+        visible groups."""
+        dropped = set(self.dropped_tools())
+        for k, w in self._tool_widgets.items():
+            w.setVisible(k not in dropped)
+        first = set(TOOL_GROUPS[0])
+        shown = [k for k in self._tool_widgets if k not in dropped]
+        self._group_sep.setVisible(
+            bool(self._group_sep.property("atechPlaced"))
+            and any(k in first for k in shown)
+            and any(k not in first for k in shown))
+        self.btn_more_tools.setVisible(bool(dropped))
+
+    def _fill_more_tools(self):
+        """The More tools menu: one entry per dropped tool, which presses
+        that tool's own button (so a toggle stays in step)."""
+        self.more_menu.clear()
+        for k in self.dropped_tools():
+            w = self._tool_widgets.get(k)
+            if w is None:
+                continue
+            act = self.more_menu.addAction(self.tool_label(k))
+            try:
+                act.setIcon(w.icon())
+            except Exception:                          # noqa: BLE001
+                pass
+            if getattr(w, "isCheckable", lambda: False)():
+                act.setCheckable(True)
+                act.setChecked(w.isChecked())
+            act.triggered.connect(lambda _=False, b=w: b.click())
+        return [a.text() for a in self.more_menu.actions()]
+
+    def tools(self):
+        return [self._tool_widgets[k] for k in
+                [k for k in TOOL_ORDER if k in self._tool_widgets]
+                + sorted(k for k in self._tool_widgets if k not in TOOL_ORDER)]
+
     def set_level(self, level):
-        """0 full; 1 the Ask button shows its icon only; 2 the named views
-        (Iso/Front/Top/Right) go as well. For narrow viewports (R34)."""
+        """0 full; 1 the Ask button shows its icon only, and Exploded view
+        and Share image move into More tools; 2 the named views
+        (Iso/Front/Top/Right) go as well (all stay in More views), and so
+        do Colour and Export; 3 fit selection, perspective, wireframe and
+        spin go too. For narrow viewports (R34, R303, R380)."""
         if level == self.level:
             return
         self.level = level
         self.btn_ask.setText("" if level >= 1 else icon_label(ASK_TEXT))
         for w in self._named:
             w.setVisible(level < 2)
+        for w in self._secondary:
+            w.setVisible(level < 3)
+        self._apply_tool_level()
         self.adjustSize()
+
+    def set_full(self, on):
+        """Reflect the full-screen 3D state without re-triggering it."""
+        self.btn_full.blockSignals(True)
+        self.btn_full.setChecked(bool(on))
+        self.btn_full.blockSignals(False)
+        self.btn_full.setToolTip("Show the sidebar again" if on
+                                 else "Full-screen 3D: hide the sidebar")
+        self._paint_full()
+
+    def _paint_full(self):
+        t = style.tokens()
+        self.btn_full.setIcon(style.icon(
+            "minimize" if self.btn_full.isChecked() else "maximize",
+            t["muted"], 16))
 
     def restyle(self):
         self.setStyleSheet(style.qss(VIEWBAR_QSS))
         t = style.tokens()
         for b, n in self._icons:
             b.setIcon(style.icon(n, t["muted"], 16))
+        self._paint_full()
         self.btn_ask.setIcon(style.icon("sparkles", t["btn_text"], 14))
+        for k, w in list(self._tool_widgets.items()):
+            fn = (_TOOLS.get(k) or {}).get("restyle")
+            try:
+                if fn is not None:
+                    fn(w)
+                elif w.property("atech_icon") in style.PATHS:
+                    w.setIcon(style.icon(w.property("atech_icon"), t["muted"], 16))
+            except Exception as exc:                   # noqa: BLE001
+                _log("view tool restyle %s: %r" % (k, exc))
         self.adjustSize()
 
 
@@ -588,7 +1932,15 @@ class Overlay(QtCore.QObject):
         super().__init__(mdi)
         self.mdi = mdi
         self.bar = ViewBar(mdi)
-        self.empty = EmptyView(mdi)
+        # R308: Home (projects, examples, drop target) replaces the old
+        # three-card start page; that page stays as the fallback should
+        # Home fail to build, so the viewport is never left blank.
+        try:
+            self.empty = HomeView(mdi)
+        except Exception as exc:                       # noqa: BLE001
+            _log("home view: %r" % (exc,))
+            self.empty = EmptyView(mdi)
+        self.hint = OrbitHint(mdi)
         self._queued = False
         self._key = None
         self._dead = False
@@ -597,10 +1949,28 @@ class Overlay(QtCore.QObject):
         mdi.installEventFilter(self)
         mdi.viewport().installEventFilter(self)   # sub-windows live here
         mdi.subWindowActivated.connect(self._queue)
+        mdi.subWindowActivated.connect(self._on_sub)
         self.place()
+
+    def _on_sub(self, *_):
+        try:
+            self.bar.sync_view()
+        except Exception as exc:                       # noqa: BLE001
+            _log("view bar sync: %r" % (exc,))
 
     def eventFilter(self, obj, ev):                    # noqa: N802
         t = ev.type()
+        if t in (QtCore.QEvent.ChildAdded, QtCore.QEvent.ChildRemoved):
+            # Only widgets (sub-windows, panels) move the bar. Qt's style
+            # animations are QObject children of the MDI area too, started
+            # by a repaint: counting them made place() -> repaint ->
+            # animation -> place() spin ~700 times a second (measured).
+            try:
+                ch = ev.child()
+                if ch is not None and not ch.isWidgetType():
+                    return False
+            except RuntimeError:
+                return False
         if t in self._EVENTS or (obj in self._boxes and t in self._BOX_EVENTS):
             self._queue()
         return False
@@ -673,6 +2043,8 @@ class Overlay(QtCore.QObject):
         self._key = key
         self.bar.setVisible(has_doc)
         self.empty.setVisible(not has_doc)
+        show_hint = has_doc and self.hint.wanted()
+        self.hint.setVisible(show_hint)
         if self._on_docs is not None:
             try:
                 self._on_docs()
@@ -683,7 +2055,7 @@ class Overlay(QtCore.QObject):
             # Icons only in a small viewport (R84): the pill spanned the
             # whole view at 900x600 and covered the model.
             first = 2 if vp.width() < PILL_ICONS_PX else 0
-            for level in range(first, 3):
+            for level in range(first, ViewBar.MAX_LEVEL + 1):
                 self.bar.set_level(level)
                 self.bar.adjustSize()
                 if self.bar.sizeHint().width() <= avail:
@@ -694,6 +2066,12 @@ class Overlay(QtCore.QObject):
                                  free.y() + free.height() - sz.height() - 18,
                                  w, sz.height())
             self.bar.raise_()
+            if show_hint:
+                hs = self.hint.sizeHint()
+                hw = min(hs.width(), max(0, free.width() - 24))
+                self.hint.setGeometry(free.x() + (free.width() - hw) // 2,
+                                      free.y() + 16, hw, hs.height())
+                self.hint.raise_()
         else:
             self.empty.setGeometry(vp)
             self.empty.raise_()
@@ -720,18 +2098,31 @@ class Overlay(QtCore.QObject):
                 obj.removeEventFilter(self)
             except RuntimeError:
                 pass
-        try:
-            self.mdi.subWindowActivated.disconnect(self._queue)
-        except (RuntimeError, TypeError):
-            pass
-        for w in (self.bar, self.empty):
+        for slot in (self._queue, self._on_sub):
+            try:
+                self.mdi.subWindowActivated.disconnect(slot)
+            except (RuntimeError, TypeError):
+                pass
+        for w in (self.bar, self.empty, self.hint):
             w.hide()
             w.deleteLater()
         self.deleteLater()
 
 
 class Sidebar(QtWidgets.QWidget):
-    """Segmented Chat | Model switch over a stack."""
+    """The sidebar head - brand row (where the menu bar cannot show it),
+    the project picker with Terminal and Settings, the hardware switch,
+    then 3D CAD | Atech modules - over a stack (studio.atech.dev's navbar
+    and Simple / Advanced control; see navbar.py).
+
+    3D CAD is the chat under a collapsible Parts panel (R301): FreeCAD's
+    own tree + property view, so the parts and the chat are on screen
+    together and a selection in the 3D view lights up in the tree.
+    show_page(idx) keeps its meaning: 0 the chat (Parts as it was), 1 the
+    chat with Parts open, 2 the Atech modules."""
+
+    PAGE_CHAT, PAGE_MODEL, PAGE_MODULES = 0, 1, 2
+    PARTS_SHARE = 0.42          # of the 3D CAD page, when Parts first opens
 
     def __init__(self, chat, model_widget, parent=None):
         super().__init__(parent)
@@ -741,30 +2132,131 @@ class Sidebar(QtWidgets.QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
+        from . import navbar
         head = QtWidgets.QWidget()
-        hl = QtWidgets.QHBoxLayout(head)
-        hl.setContentsMargins(12, 12, 12, 8)
-        seg = QtWidgets.QFrame()
-        seg.setObjectName("Segment")
-        sl = QtWidgets.QHBoxLayout(seg)
-        sl.setContentsMargins(3, 3, 3, 3)
-        sl.setSpacing(2)
-        self.group = QtWidgets.QButtonGroup(self)
-        self.btn_chat = self._seg("Chat", 0)
-        self.btn_model = self._seg("Model", 1)
-        self.btn_modules = self._seg("Modules", 2)
-        sl.addWidget(self.btn_chat)
-        sl.addWidget(self.btn_model)
-        sl.addWidget(self.btn_modules)
-        hl.addWidget(seg, 1)
+        hv = QtWidgets.QVBoxLayout(head)
+        hv.setContentsMargins(12, 12, 12, 8)
+        hv.setSpacing(10)
+        # R300: the wordmark, Terminal and Settings, where the macOS native
+        # menu bar (which draws no corner widgets) would otherwise lose them.
+        self.brand = QtWidgets.QWidget()
+        self.brand.setObjectName("SideBrand")
+        bl = QtWidgets.QHBoxLayout(self.brand)
+        bl.setContentsMargins(2, 0, 0, 0)
+        bl.setSpacing(8)
+        self.brand_mark = QtWidgets.QLabel()
+        bl.addWidget(self.brand_mark)
+        self.brand_word = QtWidgets.QLabel(style.PRODUCT)
+        self.brand_word.setObjectName("SideWordmark")
+        self.brand_word.setAccessibleName(style.PRODUCT)
+        bl.addWidget(self.brand_word)
+        bl.addStretch(1)
+        hv.addWidget(self.brand)
+        prow = QtWidgets.QHBoxLayout()
+        prow.setContentsMargins(0, 0, 0, 0)
+        prow.setSpacing(4)
+        self.picker = navbar.ProjectPicker(
+            on_new=lambda: _new_project(),
+            on_open_file=lambda: _open_file())
+        # W1's picker row (picker + Save) when this build has it.
+        row_fn = getattr(navbar, "picker_row", None)
+        self.picker_row = None
+        if callable(row_fn):
+            try:
+                self.picker_row = row_fn(self.picker)
+            except Exception as exc:                   # noqa: BLE001
+                _log("picker row: %r" % (exc,))
+        prow.addWidget(self.picker_row or self.picker, 1)
+        self.btn_terminal = self._icon_btn("Terminal", "Open a terminal")
+        self.btn_terminal.clicked.connect(lambda: _open_terminal())
+        prow.addWidget(self.btn_terminal)
+        self.btn_settings = self._icon_btn(
+            "Settings", "Settings, appearance and keyboard shortcuts")
+        self.btn_settings.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.btn_settings.setMenu(settings_menu(self.btn_settings))
+        prow.addWidget(self.btn_settings)
+        hv.addLayout(prow)
+        # R280: Only CAD | CAD + electronics, at the top of the sidebar. Not
+        # in the menu bar's corner: on macOS the native menu bar draws no
+        # corner widgets, so it would never show there.
+        self.hw_switch = _hardware_switch()
+        if self.hw_switch is not None:
+            hv.addWidget(self.hw_switch)
+        row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self.tabs = navbar.PillTabs(["3D CAD", "Atech modules"])
+        self.tabs.changed.connect(self._on_tab)
+        row.addWidget(self.tabs, 1)
+        self.btn_parts = QtWidgets.QToolButton()
+        self.btn_parts.setObjectName("PartsBtn")
+        self.btn_parts.setCheckable(True)
+        self.btn_parts.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_parts.setIconSize(QtCore.QSize(16, 16))
+        self.btn_parts.setFixedSize(36, 36)
+        self.btn_parts.setToolTip("Parts: show or hide the part tree above "
+                                  "the chat")
+        self.btn_parts.setAccessibleName("Parts")
+        self.btn_parts.toggled.connect(self._on_parts)
+        row.addWidget(self.btn_parts)
+        hv.addLayout(row)
         lay.addWidget(head)
+        self.header_chrome = None
+        self.set_header_chrome(False)
+        # The picker names the ACTIVE document. It follows FreeCAD's
+        # document events and the MDI area's window changes (R302); the
+        # shell's slow safety tick backs that up - no 800 ms poll.
 
         self.stack = QtWidgets.QStackedWidget()
         self.chat = chat
-        self.stack.addWidget(chat)
+        self.cad_page = QtWidgets.QWidget()
+        cv = QtWidgets.QVBoxLayout(self.cad_page)
+        cv.setContentsMargins(0, 0, 0, 0)
+        cv.setSpacing(0)
+        self.parts_head = QtWidgets.QWidget()
+        self.parts_head.setObjectName("PartsHead")
+        self.parts_head.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        ph = QtWidgets.QHBoxLayout(self.parts_head)
+        ph.setContentsMargins(8, 3, 8, 3)
+        self.parts_toggle = QtWidgets.QToolButton()
+        self.parts_toggle.setObjectName("PartsToggle")
+        self.parts_toggle.setText("PARTS")
+        self.parts_toggle.setCheckable(True)
+        self.parts_toggle.setCursor(QtCore.Qt.PointingHandCursor)
+        self.parts_toggle.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.parts_toggle.setIconSize(QtCore.QSize(12, 12))
+        self.parts_toggle.setAccessibleName("Parts panel")
+        self.parts_toggle.setToolTip("Show or hide the part tree")
+        self.parts_toggle.toggled.connect(self.set_parts_open)
+        ph.addWidget(self.parts_toggle)
+        ph.addStretch(1)
+        # R700/R701: the two hand controls, where the parts are listed.
+        self.parts_links = {}
+        for key, text, tip in (
+                ("show", "Show and hide", "Show, hide, isolate and explode "
+                 "the parts"),
+                ("dims", "Dimensions", "Change the model's numbers by hand "
+                 "(D)")):
+            b = QtWidgets.QToolButton()
+            b.setObjectName("PartsToggle")
+            b.setText(text)
+            b.setToolTip(tip)
+            b.setAccessibleName(text)
+            b.setCursor(QtCore.Qt.PointingHandCursor)
+            b.clicked.connect(lambda _=False, k=key, w=b: _safe(
+                lambda: self._parts_link(k, w)))
+            ph.addWidget(b)
+            self.parts_links[key] = b
+        cv.addWidget(self.parts_head)
+        self.cad_split = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.cad_split.setObjectName("CadSplit")
+        self.cad_split.setChildrenCollapsible(False)
+        self.cad_split.setHandleWidth(1)
+        cv.addWidget(self.cad_split, 1)
         self.model_page = QtWidgets.QWidget()
         self.model_page.setObjectName("ModelPage")
         self.model_page.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+        self.model_page.setMinimumHeight(90)
         self._model_lay = QtWidgets.QVBoxLayout(self.model_page)
         self._model_lay.setContentsMargins(4, 0, 4, 0)
         # R57: with no document the tree is an empty pane; say why.
@@ -780,25 +2272,98 @@ class Sidebar(QtWidgets.QWidget):
         self.model_widget = None
         if model_widget is not None:
             self.set_model_widget(model_widget)
-        self.stack.addWidget(self.model_page)
+        self.cad_split.addWidget(self.model_page)
+        self.cad_split.addWidget(chat)
+        self.cad_split.setStretchFactor(0, 0)
+        self.cad_split.setStretchFactor(1, 1)
+        self._parts_open = False
+        self._parts_sizes = None
+        self.model_page.setVisible(False)
+        self.stack.addWidget(self.cad_page)
         from .modules_page import ModulesPage
         self.modules_page = ModulesPage()
         self.stack.addWidget(self.modules_page)
         lay.addWidget(self.stack, 1)
-        self.btn_chat.setChecked(True)
-        self.group.idClicked.connect(self.stack.setCurrentIndex)
-        self.group.idClicked.connect(lambda _i: self.sync_model_hint())
         self.sync_model_hint()
 
-    def _seg(self, text, idx):
-        b = QtWidgets.QPushButton(icon_label(text))
-        b.setAccessibleName(text)
-        b.setObjectName("SegBtn")
-        b.setCheckable(True)
+    @staticmethod
+    def _parts_link(key, anchor):
+        if key == "show":
+            from . import visibility
+            return visibility.show_popover(anchor)
+        return _open_dimensions()
+
+    def _icon_btn(self, name, tip):
+        b = QtWidgets.QToolButton()
+        b.setObjectName("SideIconBtn")
         b.setCursor(QtCore.Qt.PointingHandCursor)
-        b.setIconSize(QtCore.QSize(14, 14))
-        self.group.addButton(b, idx)
+        b.setIconSize(QtCore.QSize(16, 16))
+        b.setFixedSize(36, 36)
+        b.setToolTip(tip)
+        b.setAccessibleName(name)
+        b.setFocusPolicy(QtCore.Qt.TabFocus)
         return b
+
+    def set_header_chrome(self, on):
+        """Show the brand row and the Terminal / Settings buttons in the
+        sidebar head (R300): on where the menu bar's corners are not drawn
+        (macOS), off where the top bar already carries them (Linux)."""
+        on = bool(on)
+        if on == self.header_chrome:
+            return
+        self.header_chrome = on
+        for w in (self.brand, self.btn_terminal, self.btn_settings):
+            w.setVisible(on)
+
+    def _on_tab(self, i):
+        self.show_page(self.PAGE_MODULES if i == 1 else self.PAGE_CHAT)
+
+    def _on_parts(self, on):
+        self.set_parts_open(on)
+
+    def parts_open(self):
+        return self._parts_open
+
+    def set_parts_open(self, on):
+        """Open or collapse the Parts panel above the chat (R301)."""
+        on = bool(on)
+        for b in (self.btn_parts, self.parts_toggle):
+            b.blockSignals(True)
+            b.setChecked(on)
+            b.blockSignals(False)
+        self._paint_parts_toggle()
+        if on == self._parts_open:
+            return
+        if not on:
+            sizes = self.cad_split.sizes()
+            if len(sizes) == 2 and all(sizes):
+                self._parts_sizes = sizes
+        self._parts_open = on
+        self.model_page.setVisible(on)
+        if on:
+            sizes = self._parts_sizes
+            if not sizes:
+                total = max(self.cad_split.height(), 400)
+                top = int(total * self.PARTS_SHARE)
+                sizes = [top, total - top]
+            self.cad_split.setSizes(sizes)
+        self.sync_model_hint()
+
+    def toggle_parts(self):
+        """Cmd+P: from the Atech modules tab, go to 3D CAD with Parts open."""
+        if self.tabs.index() == 1:
+            self.show_page(self.PAGE_MODEL)
+        else:
+            self.set_parts_open(not self._parts_open)
+
+    def _paint_parts_toggle(self):
+        try:
+            t = style.tokens()
+            self.parts_toggle.setIcon(style.icon(
+                "chevron-down" if self._parts_open or self.parts_toggle.isChecked()
+                else "chevron-right", t["muted"], 12))
+        except AttributeError:          # during __init__, before _parts_open
+            pass
 
     def set_model_widget(self, w):
         """Host FreeCAD's tree + property view on the Model page."""
@@ -863,16 +2428,38 @@ class Sidebar(QtWidgets.QWidget):
             self.model_widget.setVisible(has)
 
     def show_page(self, idx):
-        self.group.button(idx).setChecked(True)
-        self.stack.setCurrentIndex(idx)
+        modules = idx == self.PAGE_MODULES
+        self.tabs.set_index(1 if modules else 0)
+        self.btn_parts.setVisible(not modules)
+        if idx == self.PAGE_MODEL:
+            self.set_parts_open(True)
+        self.stack.setCurrentWidget(self.modules_page if modules
+                                    else self.cad_page)
         self.sync_model_hint()
+
+    def page(self):
+        """The page shown, as show_page() numbers them."""
+        if self.stack.currentWidget() is self.modules_page:
+            return self.PAGE_MODULES
+        return self.PAGE_MODEL if self._parts_open else self.PAGE_CHAT
 
     def restyle(self):
         self.setStyleSheet(style.qss(SIDEBAR_QSS))
         t = style.tokens()
-        self.btn_chat.setIcon(style.icon("chat", t["text"], 14))
-        self.btn_model.setIcon(style.icon("layers", t["text"], 14))
-        self.btn_modules.setIcon(style.icon("cube", t["text"], 14))
+        pm = style.logo_pixmap(18)
+        if pm is not None:
+            self.brand_mark.setPixmap(pm)
+        self.btn_terminal.setIcon(style.icon("terminal", t["muted"], 16))
+        self.btn_settings.setIcon(style.icon("settings", t["muted"], 16))
+        self._paint_parts_toggle()
+        ico = QtGui.QIcon()
+        ico.addPixmap(style.icon("layers", t["text"], 16).pixmap(16, 16),
+                      QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        ico.addPixmap(style.icon("layers", t["btn_text"], 16).pixmap(16, 16),
+                      QtGui.QIcon.Normal, QtGui.QIcon.On)
+        self.btn_parts.setIcon(ico)
+        self.tabs.update()
+        self.picker.refresh()
         self.chat.restyle()
         self.modules_page.restyle()
 
@@ -989,6 +2576,1107 @@ def _open_settings():
                 "The details are in the Report view.", exc)
 
 
+def _new_project():
+    """Home's and the picker's "New project": W1's named-project flow
+    (navbar.new_project_flow: asks a name, saves into the projects folder)
+    when this build has it, else an empty document."""
+    fn = getattr(navbar, "new_project_flow", None)
+    if callable(fn):
+        try:
+            fn(_mw_or_none())
+            return
+        except Exception as exc:                       # noqa: BLE001
+            _notify("Could not create the project",
+                    "The details are in the Report view.", exc)
+            return
+    _new_document()
+
+
+# ------------------------------------------------- open / switch (R302)
+def _norm(path):
+    try:
+        return os.path.normcase(os.path.realpath(path))
+    except (OSError, TypeError, ValueError):
+        return path
+
+
+def _open_doc_named_by_path(path):
+    """The open document saved at `path` (real path compared), or None."""
+    try:
+        import FreeCAD
+        want = _norm(path)
+        for name, d in FreeCAD.listDocuments().items():
+            fn = getattr(d, "FileName", "") or ""
+            if fn and _norm(fn) == want:
+                return name
+    except Exception as exc:                           # noqa: BLE001
+        _log("open docs: %r" % (exc,))
+    return None
+
+
+def pick_subwindow(subs, name, label, doc_of):
+    """The sub-window showing document `name` (R302), or None.
+
+    The old match (navbar.activate_document) took the first window whose
+    TITLE started with the label, so two documents with one label (the
+    same file name in two folders, "Unnamed" twice) switched to the wrong
+    one. Here `doc_of(sw)` reports each window's document Name; windows
+    whose title starts with the label are asked first, so the usual case
+    asks once. A window whose document cannot be told is skipped."""
+    label = label or ""
+
+    def titled(sw):
+        try:
+            t = sw.windowTitle()
+        except RuntimeError:
+            return False
+        return bool(label) and (t.startswith(label + " :")
+                                or t.startswith(label + " ") or t == label)
+    order = [sw for sw in subs if titled(sw)] + \
+        [sw for sw in subs if not titled(sw)]
+    for sw in order:
+        try:
+            if doc_of(sw) == name:
+                return sw
+        except Exception:                              # noqa: BLE001
+            continue
+    return None
+
+
+def activate_document(name):
+    """Bring document `name` (its Name, never its label) to the front: its
+    3D view becomes the active MDI window and the chat follows (R302).
+
+    navbar.activate_document(name) (the picker) calls this (R384).
+    Returns True when a window was found."""
+    import FreeCAD
+    import FreeCADGui
+    doc = FreeCAD.getDocument(name)
+    try:
+        FreeCAD.setActiveDocument(name)
+    except Exception as exc:                           # noqa: BLE001
+        _log("setActiveDocument: %r" % (exc,))
+    mdi = _mw().centralWidget()
+    if not isinstance(mdi, QtWidgets.QMdiArea):
+        return False
+    before = mdi.activeSubWindow()
+
+    def doc_of(sw):
+        # Activating a sub-window makes its document FreeCAD's active GUI
+        # document synchronously (MainWindow::onWindowActivated).
+        if sw is not mdi.activeSubWindow():
+            mdi.setActiveSubWindow(sw)
+        g = FreeCADGui.activeDocument()
+        return g.Document.Name if g is not None else None
+
+    sw = pick_subwindow(mdi.subWindowList(), name,
+                        getattr(doc, "Label", ""), doc_of)
+    if sw is not None:
+        if mdi.activeSubWindow() is not sw:
+            mdi.setActiveSubWindow(sw)
+        return True
+    if before is not None and mdi.activeSubWindow() is not before:
+        mdi.setActiveSubWindow(before)            # nothing found: undo probes
+    return False
+
+
+def open_file(path):
+    """R391: open a file the way the user means it. A .FCStd project opens
+    with FreeCAD.openDocument: FreeCADGui.open() in FreeCAD 1.1.3 does not
+    open .FCStd at all - it only logs "File type 'fcstd' not supported"
+    and raises nothing (MEASURED in the real app: Home cards, Recent
+    entries and dropped projects opened nothing). Anything else (STEP, STL,
+    3MF) is imported by FreeCADGui.open as before."""
+    if str(path).lower().endswith(".fcstd"):
+        import FreeCAD
+        return FreeCAD.openDocument(path)
+    import FreeCADGui
+    return FreeCADGui.open(path)
+
+
+def open_project_path(path):
+    """Open a saved project from Home: switch to it when it is open already."""
+    name = _open_doc_named_by_path(path)
+    try:
+        if name is not None:
+            activate_document(name)
+            return name
+        open_file(path)
+        return True
+    except Exception as exc:                           # noqa: BLE001
+        _notify("Could not open the project",
+                "%s could not be opened. The details are in the Report view."
+                % os.path.basename(path), exc)
+        return None
+
+
+def _doc_name_for(stem):
+    """A FreeCAD document Name from a file stem: letters, digits, _ only,
+    not starting with a digit (FreeCAD rewrites anything else anyway)."""
+    import re
+    n = re.sub(r"[^0-9A-Za-z_]", "_", stem or "") or "Imported"
+    return ("_" + n) if n[0].isdigit() else n
+
+
+def open_path(path):
+    """Open one dropped or chosen file (PRD Opening 4): a .FCStd as itself;
+    STEP / STL / 3MF / IGES / BREP as a NEW project importing it, named
+    after the file. Returns the document Name, or None on failure."""
+    low = path.lower()
+    if low.endswith(OPEN_EXT):
+        r = open_project_path(path)
+        if r is True:
+            try:
+                import FreeCAD
+                d = FreeCAD.ActiveDocument
+                return d.Name if d is not None else None
+            except Exception:                          # noqa: BLE001
+                return None
+        return r
+    if not low.endswith(IMPORT_EXT):
+        return None
+    stem = os.path.splitext(os.path.basename(path))[0]
+    try:
+        import FreeCAD
+        import FreeCADGui
+        doc = FreeCAD.newDocument(_doc_name_for(stem))
+        doc.Label = stem
+        FreeCADGui.insert(path, doc.Name)
+        try:
+            doc.recompute()
+        except Exception:                              # noqa: BLE001
+            pass
+        try:
+            from . import viewport
+            viewport.iso_and_fit()
+        except Exception:                              # noqa: BLE001
+            pass
+        return doc.Name
+    except Exception as exc:                           # noqa: BLE001
+        _notify("Could not import the file",
+                "%s could not be imported. The details are in the Report "
+                "view." % os.path.basename(path), exc)
+        return None
+
+
+def open_paths(paths):
+    """Open every droppable file in `paths`; returns the documents opened."""
+    out = []
+    for p in droppable(paths):
+        r = open_path(p)
+        if r:
+            out.append(r)
+    return out
+
+
+class DropFilter(QtCore.QObject):
+    """Files dropped anywhere on the window that FreeCAD's own 3D view does
+    not take (Home, the sidebar, the empty MDI area) open through
+    open_path(), so STEP / STL / 3MF become new projects (R309)."""
+
+    def eventFilter(self, obj, ev):                    # noqa: N802
+        t = ev.type()
+        if t in (QtCore.QEvent.DragEnter, QtCore.QEvent.DragMove):
+            if droppable(_event_paths(ev)):
+                ev.acceptProposedAction()
+                return True
+        elif t == QtCore.QEvent.Drop:
+            paths = droppable(_event_paths(ev))
+            if paths:
+                ev.acceptProposedAction()
+                QtCore.QTimer.singleShot(0, lambda p=paths: open_paths(p))
+                return True
+        return False
+
+
+# --------------------------------------------------- examples (R310)
+_EXAMPLE_RUNS = []
+
+
+def _example_intent(path):
+    """The example's INTENT = {...} literal (its intent.json), or None."""
+    import ast
+    try:
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read())
+    except (OSError, SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", None) == "INTENT" for t in node.targets):
+            try:
+                return ast.literal_eval(node.value)
+            except ValueError:
+                return None
+    return None
+
+
+def open_example(key):
+    """"Start from an example": a NEW project built from
+    agent_kit/examples/<key>.py, the way the agent's own build runs a
+    model.py (sandboxed, polled from a timer, never blocking the GUI).
+
+    The chat panel may take over (W6): when it has start_from_example(path,
+    title), that is called instead, so the chat's workspace holds the
+    example and the agent resumes from it. Returns the PendingBuild, the
+    panel's result, or None."""
+    title = next((t for k, t, _s, _i in EXAMPLES if k == key), key)
+    path = example_path(key)
+    if path is None:
+        _notify("Example not available",
+                "The %s example is not in this installation." % title.lower())
+        return None
+    p = chat_panel()
+    hook = getattr(p, "start_from_example", None) if p is not None else None
+    if callable(hook):
+        try:
+            return hook(path, title)
+        except Exception as exc:                       # noqa: BLE001
+            _notify("Could not start from the example",
+                    "The details are in the Report view.", exc)
+            return None
+    try:
+        import json
+        import FreeCAD
+        from . import build
+        doc = FreeCAD.newDocument(_doc_name_for(title.replace(" ", "_")))
+        doc.Label = title
+        ws = build.new_workspace()
+        with open(path, encoding="utf-8") as fh:
+            code = fh.read()
+        with open(os.path.join(ws, build.SCRIPT), "w", encoding="utf-8") as fh:
+            fh.write(code)
+        intent = _example_intent(path)
+        if intent is not None:
+            with open(os.path.join(ws, "intent.json"), "w",
+                      encoding="utf-8") as fh:
+                json.dump(intent, fh)
+        try:
+            build.prepare_workspace(ws, reset_intent=False, doc=doc)
+        except Exception as exc:                       # noqa: BLE001
+            _log("example workspace: %r" % (exc,))
+        pending = build.start(ws, [build.SCRIPT],
+                              previous={"uid": build._doc_key(doc)})
+    except Exception as exc:                           # noqa: BLE001
+        _notify("Could not start from the example",
+                "The details are in the Report view.", exc)
+        return None
+    if pending is None:
+        _notify("Could not start from the example",
+                "The example had nothing to build.")
+        return None
+    _watch_example(pending, title)
+    return pending
+
+
+def _watch_example(pending, title, interval=150):
+    timer = QtCore.QTimer()
+    timer.setInterval(interval)
+    _EXAMPLE_RUNS.append(timer)
+
+    def tick():
+        try:
+            res = pending.poll()
+        except Exception as exc:                       # noqa: BLE001
+            timer.stop()
+            _EXAMPLE_RUNS.remove(timer)
+            _notify("The %s example did not build" % title.lower(),
+                    "The details are in the Report view.", exc)
+            return
+        if res is None:
+            return
+        timer.stop()
+        if timer in _EXAMPLE_RUNS:
+            _EXAMPLE_RUNS.remove(timer)
+        if getattr(res, "ok", False):
+            try:
+                from . import viewport
+                viewport.iso_and_fit()
+            except Exception:                          # noqa: BLE001
+                pass
+        else:
+            _notify("The %s example did not build" % title.lower(),
+                    (getattr(res, "error", "") or "The details are in the "
+                     "Report view.")[:400])
+    timer.timeout.connect(tick)
+    timer.start()
+    return timer
+
+
+# --------------------------------------------- full-screen 3D (R303)
+def set_focus_view(on):
+    """Full-screen 3D: hide the sidebar so the model has the window, or
+    bring it back. The view bar's button and Cmd+Shift+F toggle it."""
+    dock = _S.get("dock")
+    if dock is None:
+        return False
+    on = bool(on)
+    _S["focus_view"] = on
+    try:
+        dock.setVisible(not on)
+    except RuntimeError:
+        return False
+    ov = _S.get("overlay")
+    if ov is not None:
+        ov.bar.set_full(on)
+        ov._queue()
+    return True
+
+
+def focus_view():
+    return bool(_S.get("focus_view"))
+
+
+# --------------------------------------------------- shortcuts (R307)
+#: (id, key sequence, what it does, section). Ctrl is Cmd on macOS (Qt maps
+#: it). M and Shift+S do not fire while typing: a text field takes them.
+SHORTCUTS = (
+    ("focus_chat", "Ctrl+L", "Type in the chat", "Atech"),
+    ("tab_cad", "Ctrl+1", "3D CAD tab", "Atech"),
+    ("tab_modules", "Ctrl+2", "Atech modules tab", "Atech"),
+    ("parts", "Ctrl+P", "Show or hide the Parts panel", "Atech"),
+    ("measure", "M", "Measure", "Atech"),
+    ("section", "Shift+S", "Section view", "Atech"),
+    # R701: the view's everyday controls. Single keys, as M: a text field
+    # takes them while typing.
+    ("hide", "H", "Hide the selected parts", "Atech"),
+    ("isolate", "I", "Show only the selected parts", "Atech"),
+    ("show_all", "Shift+H", "Show every part again", "Atech"),
+    ("see_through", "T", "See-through on the selected parts, or solid again",
+     "Atech"),
+    ("explode", "E", "Exploded view, or put the parts back", "Atech"),
+    ("dims", "D", "Change the model's dimensions by hand", "Atech"),
+    ("ask", "Ctrl+Shift+A", "Ask about this view", "Atech"),
+    ("full", "Ctrl+Shift+F", "Full-screen 3D (hide the sidebar)", "Atech"),
+    ("sheet", "Ctrl+/", "Show these shortcuts", "Atech"),
+)
+#: FreeCAD's own, listed on the sheet (they keep working: the menus are
+#: FreeCAD's). Measured in the audit's probe of the menus.
+FREECAD_KEYS = (
+    ("Ctrl+N", "New document"), ("Ctrl+O", "Open"), ("Ctrl+S", "Save"),
+    ("Ctrl+Shift+S", "Save as"), ("Ctrl+Z", "Undo"), ("Ctrl+Y", "Redo"),
+    ("V, F", "Fit all"), ("V, S", "Fit selection"),
+    ("0", "Isometric view"), ("1 / 3 / 2", "Front / Right / Top view"),
+    ("4 / 6 / 5", "Rear / Left / Bottom view"),
+    ("V, O / V, P", "Orthographic / perspective"),
+    ("Space", "Show or hide the selected part"), ("F11", "Full screen"),
+)
+
+
+def _shortcut_fn(sid):
+    def focus_chat():
+        p = show_chat()
+        f = getattr(p, "focus_composer", None)
+        if callable(f):
+            f()
+            return
+        inp = getattr(p, "input", None)
+        (inp or p).setFocus(QtCore.Qt.ShortcutFocusReason)
+
+    def tab(i):
+        body = _S.get("body")
+        if body is not None:
+            if focus_view():
+                set_focus_view(False)
+            body.show_page(body.PAGE_MODULES if i else body.PAGE_CHAT)
+
+    def parts():
+        body = _S.get("body")
+        if body is not None:
+            if focus_view():
+                set_focus_view(False)
+            body.toggle_parts()
+
+    return {
+        "focus_chat": focus_chat,
+        "tab_cad": lambda: tab(0),
+        "tab_modules": lambda: tab(1),
+        "parts": parts,
+        "measure": lambda: run_tool("measure", "Std_Measure"),
+        "section": lambda: run_tool("section", "Std_ToggleClipPlane"),
+        "ask": _ask_view,
+        "full": lambda: set_focus_view(not focus_view()),
+        "sheet": open_shortcut_sheet,
+        "hide": lambda: _visibility_key("key_hide"),
+        "isolate": lambda: _visibility_key("key_isolate"),
+        "show_all": lambda: _visibility_key("key_show_all"),
+        "see_through": lambda: _visibility_key("key_see_through"),
+        "explode": lambda: _visibility_key("key_explode"),
+        "dims": _open_dimensions,
+    }[sid]
+
+
+def _visibility_key(name):
+    from . import visibility
+    return getattr(visibility, name)()
+
+
+def _open_dimensions():
+    from . import dimensions
+    return dimensions.open_dialog(_mw_or_none())
+
+
+def _keys_of(act):
+    try:
+        return list(act.shortcuts())
+    except RuntimeError:
+        return []
+
+
+def _install_shortcuts(mw):
+    """One QShortcut per SHORTCUTS row on the main window. A FreeCAD menu
+    action bound to the same key (Ctrl+P is Print) would make both
+    ambiguous so NEITHER fires: such a key is taken off that action while
+    Atech is active, and given back by _remove_shortcuts()."""
+    taken = []
+    ours = {QtGui.QKeySequence(k) for _i, k, _t, _s in SHORTCUTS}
+    for act in mw.findChildren(QtGui.QAction):
+        keys = _keys_of(act)
+        if not keys:
+            continue
+        keep = [k for k in keys if k not in ours]
+        if len(keep) != len(keys):
+            taken.append((act, keys))
+            act.setShortcuts(keep)
+    scs = {}
+    for sid, key, _text, _sec in SHORTCUTS:
+        sc = QtGui.QShortcut(QtGui.QKeySequence(key), mw)
+        sc.setContext(QtCore.Qt.WindowShortcut)
+        sc.activated.connect(lambda i=sid: _safe(_shortcut_fn(i)))
+        scs[sid] = sc
+    _S["shortcuts"] = scs
+    _S["shortcuts_taken"] = taken
+    return scs
+
+
+def _remove_shortcuts():
+    for sc in (_S.get("shortcuts") or {}).values():
+        try:
+            sc.setEnabled(False)
+            sc.deleteLater()
+        except RuntimeError:
+            pass
+    for act, keys in _S.get("shortcuts_taken") or ():
+        try:
+            act.setShortcuts(keys)
+        except RuntimeError:
+            pass
+    _S.pop("shortcuts", None)
+    _S.pop("shortcuts_taken", None)
+
+
+def key_text(key):
+    """A key sequence as this platform writes it (\u2318L on macOS)."""
+    if ", " in key or " / " in key:
+        return key                       # "V, F" or "1 / 3 / 2": as written
+    return QtGui.QKeySequence(key).toString(QtGui.QKeySequence.NativeText) or key
+
+
+def _sheet_dialog(title, parent=None):
+    dlg = QtWidgets.QDialog(parent or _mw_or_none())
+    dlg.setObjectName("AtechSheet")
+    dlg.setAttribute(QtCore.Qt.WA_StyledBackground, True)
+    dlg.setWindowTitle(title)
+    dlg.setAccessibleName(title)
+    dlg.setStyleSheet(style.qss(SHEET_QSS))
+    lay = QtWidgets.QVBoxLayout(dlg)
+    lay.setContentsMargins(22, 20, 22, 18)
+    lay.setSpacing(12)
+    t = QtWidgets.QLabel(title)
+    t.setObjectName("SheetTitle")
+    lay.addWidget(t)
+    return dlg, lay
+
+
+def _mw_or_none():
+    try:
+        return _mw()
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _sheet_section(lay, title):
+    lbl = QtWidgets.QLabel(title.upper())
+    lbl.setObjectName("SheetSection")
+    lay.addWidget(lbl)
+
+
+def _sheet_rows(lay, rows, caps=True):
+    g = QtWidgets.QGridLayout()
+    g.setHorizontalSpacing(16)
+    g.setVerticalSpacing(6)
+    for i, (key, text) in enumerate(rows):
+        k = QtWidgets.QLabel(key)
+        k.setObjectName("KeyCap" if caps else "SheetSub")
+        k.setAlignment(QtCore.Qt.AlignCenter)
+        d = QtWidgets.QLabel(text)
+        d.setObjectName("SheetText")
+        d.setAccessibleName("%s: %s" % (text, key))
+        g.addWidget(d, i, 0)
+        g.addWidget(k, i, 1, QtCore.Qt.AlignRight)
+    lay.addLayout(g)
+
+
+def shortcut_rows():
+    """[(section, [(key text, what)])] for the shortcut sheet: Atech's own,
+    the mouse in the navigation style in use, then FreeCAD's essentials."""
+    from . import viewport
+    atech = [(key_text(k), (_TOOLS.get(i) or {}).get("label") or t
+              if i in ("measure", "section") else t)
+             for i, k, t, _s in SHORTCUTS]
+    info = viewport.nav_info()
+    mouse = [(how, what) for what, how in info["how"]]
+    fc = [(key_text(k), t) for k, t in FREECAD_KEYS]
+    return [("Atech", atech), ("Mouse (%s)" % info["label"], mouse),
+            ("FreeCAD", fc)]
+
+
+def open_shortcut_sheet(parent=None):
+    """Cmd+/ : every shortcut on one sheet (R307)."""
+    dlg, lay = _sheet_dialog("Keyboard shortcuts", parent)
+    scroll = QtWidgets.QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+    inner = QtWidgets.QWidget()
+    inner.setObjectName("SheetInner")
+    il = QtWidgets.QVBoxLayout(inner)
+    il.setContentsMargins(0, 0, 8, 0)
+    il.setSpacing(10)
+    # The rows' real height is known only once the sheet's QSS has
+    # polished them: without this the scroll area squeezed the last rows
+    # onto each other (seen in an offscreen grab).
+    il.setSizeConstraint(QtWidgets.QLayout.SetMinAndMaxSize)
+    for sec, rows in shortcut_rows():
+        if rows:
+            _sheet_section(il, sec)
+            _sheet_rows(il, rows, caps=not sec.startswith("Mouse"))
+    il.addStretch(1)
+    scroll.setWidget(inner)
+    lay.addWidget(scroll, 1)
+    row = QtWidgets.QHBoxLayout()
+    row.addStretch(1)
+    ok = QtWidgets.QPushButton("Done")
+    ok.setObjectName("SheetBtn")
+    ok.setDefault(True)
+    ok.clicked.connect(dlg.accept)
+    row.addWidget(ok)
+    lay.addLayout(row)
+    dlg.resize(460, 620)
+    _S["sheet"] = dlg
+    dlg.show()
+    return dlg
+
+
+# ------------------------------------- appearance & navigation (R304/306)
+def appearance_panel(parent=None):
+    """The Theme (Light / Dark / System) and Navigation style controls as
+    one widget, for this module's own dialog and for the integrator to
+    embed in settings.py's dialog. Changes apply at once."""
+    from . import viewport
+    w = QtWidgets.QWidget(parent)
+    w.setObjectName("AppearancePanel")
+    lay = QtWidgets.QVBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(10)
+    _sheet_section(lay, "Theme")
+    themes = list(style.THEMES)
+    w.theme = navbar.PillTabs([style.THEME_LABELS[t] for t in themes])
+    w.theme.setAccessibleName("Theme")
+    w.theme.set_icons([style.icon(n, style.tokens()["muted"], 14)
+                       for n in ("sun", "moon", "monitor")])
+    cur = style.theme_choice() or style.mode()
+    w.theme.set_index(themes.index(cur) if cur in themes else 0, animate=False)
+    w.theme.changed.connect(lambda i: _set_theme(themes[i]))
+    lay.addWidget(w.theme)
+    note = QtWidgets.QLabel("System follows your Mac's Light or Dark "
+                            "appearance." if sys.platform == "darwin" else
+                            "System follows your desktop's light or dark "
+                            "setting.")
+    note.setObjectName("SheetSub")
+    note.setWordWrap(True)
+    lay.addWidget(note)
+    lay.addSpacing(6)
+    _sheet_section(lay, "Navigation style")
+    group = QtWidgets.QButtonGroup(w)
+    w.nav_buttons = {}
+    current = viewport.nav_style()
+    styles = list(viewport.NAV_STYLES)
+    if all(s_["cls"] != current for s_ in styles):
+        styles.append(viewport.nav_info(current))      # theirs, from Preferences
+    for s_ in styles:
+        rb = QtWidgets.QRadioButton("%s \u2014 %s" % (s_["label"], s_["blurb"]))
+        rb.setAccessibleName("%s navigation" % s_["label"])
+        rb.setChecked(s_["cls"] == current)
+        rb.toggled.connect(lambda on, c=s_["cls"]: on and _set_nav(c, w))
+        group.addButton(rb)
+        lay.addWidget(rb)
+        w.nav_buttons[s_["cls"]] = rb
+    w.how = QtWidgets.QLabel()
+    w.how.setObjectName("SheetSub")
+    w.how.setWordWrap(True)
+    lay.addWidget(w.how)
+    _fill_how(w)
+    again = QtWidgets.QPushButton("Show the mouse guide again")
+    again.setObjectName("SheetLink")
+    again.setCursor(QtCore.Qt.PointingHandCursor)
+    again.clicked.connect(_show_hint_again)
+    row = QtWidgets.QHBoxLayout()
+    row.addWidget(again)
+    row.addStretch(1)
+    lay.addLayout(row)
+    return w
+
+
+def _fill_how(w):
+    from . import viewport
+    info = viewport.nav_info()
+    w.how.setText("  \u00b7  ".join("%s: %s" % (a, h) for a, h in info["how"]))
+
+
+def _set_theme(choice):
+    try:
+        style.apply_theme_choice(choice)
+    except Exception as exc:                           # noqa: BLE001
+        _log("theme: %r" % (exc,))
+    if _S:
+        restyle()
+
+
+def _set_nav(cls, panel=None):
+    from . import viewport
+    try:
+        viewport.set_nav_style(cls, live=bool(_S))
+    except Exception as exc:                           # noqa: BLE001
+        _log("nav style: %r" % (exc,))
+    if panel is not None:
+        _fill_how(panel)
+    ov = _S.get("overlay")
+    if ov is not None:
+        ov.hint.fill()
+        ov.place()
+
+
+def _show_hint_again():
+    from . import viewport
+    viewport.set_orbit_hint_seen(False)
+    ov = _S.get("overlay")
+    if ov is not None:
+        ov.hint.fill()
+        ov.place()
+
+
+def open_appearance(parent=None):
+    dlg, lay = _sheet_dialog("Appearance & navigation", parent)
+    panel = appearance_panel(dlg)
+    lay.addWidget(panel)
+    lay.addStretch(1)
+    row = QtWidgets.QHBoxLayout()
+    row.addStretch(1)
+    ok = QtWidgets.QPushButton("Done")
+    ok.setObjectName("SheetBtn")
+    ok.setDefault(True)
+    ok.clicked.connect(dlg.accept)
+    row.addWidget(ok)
+    lay.addLayout(row)
+    dlg.resize(520, 440)
+    _S["appearance"] = dlg
+    dlg.show()
+    return dlg
+
+
+def settings_menu(parent=None):
+    """The gear's menu (sidebar head and top bar): agent settings,
+    appearance and navigation, the shortcut sheet, switching workbench
+    (on macOS the top bar's Workbench button is not drawn) and credits."""
+    menu = QtWidgets.QMenu(parent)
+    menu.setAccessibleName("Settings")
+
+    def fill():
+        menu.clear()
+        menu.addAction("Agent settings\u2026", lambda: _open_settings())
+        menu.addAction("Appearance & navigation\u2026",
+                       lambda: open_appearance())
+        a = menu.addAction("Keyboard shortcuts", lambda: open_shortcut_sheet())
+        a.setShortcut(QtGui.QKeySequence("Ctrl+/"))
+        a.setShortcutVisibleInContextMenu(True)
+        menu.addSeparator()
+        wb = menu.addMenu("Switch workbench")
+        wb.aboutToShow.connect(lambda m=wb: _fill_workbench_menu(m))
+        menu.addAction("Credits & open-source licences",
+                       lambda: _open_credits())
+    menu.aboutToShow.connect(fill)
+    fill()
+    return menu
+
+
+def sidebar_chrome(mw=None, env=None):
+    """True when the wordmark, Terminal and Settings belong in the sidebar
+    head (R300): the menu bar is the native one (macOS), which draws no
+    corner widgets. ATECH_SIDEBAR_CHROME=1/0 forces it either way."""
+    env = os.environ if env is None else env
+    v = (env.get("ATECH_SIDEBAR_CHROME") or "").strip()
+    if v in ("0", "1"):
+        return v == "1"
+    try:
+        mw = mw or _mw()
+        return bool(mw.menuBar().isNativeMenuBar())
+    except Exception:                                  # noqa: BLE001
+        return sys.platform == "darwin"
+
+
+# ------------------------------------------- right-click menu (R381)
+#: (command id, menu text, tooltip, action key) of the Atech commands the
+#: 3D view's right-click menu offers next to Hide / Isolate / Show all /
+#: See-through (inspect_tools). EXPORT_COMMANDS go in their own submenu.
+TOOL_COMMANDS = (
+    ("Atech_Colour", "Colour\u2026", "Change the colour or see-through of "
+     "the selected parts", "colour"),
+    ("Atech_Measure", "Measure", "Measure distances, angles, sizes and "
+     "walls (M)", "measure"),
+    ("Atech_Section", "Section view", "Cut the model open to look inside "
+     "(Shift+S)", "section"),
+    ("Atech_Dimensions", "Dimensions\u2026", "Change the model's numbers by "
+     "hand and rebuild (D)", "dims"),
+)
+EXPORT_COMMANDS = (
+    ("Atech_ExportForPrint", "Export for print\u2026", "Save STL, 3MF or "
+     "STEP files for a 3D printer", "export"),
+    ("Atech_ExplodedView", "Exploded view\u2026", "Spread the parts apart "
+     "to see how they fit", "explode"),
+    ("Atech_BillOfMaterials", "Bill of materials\u2026", "Printed parts and "
+     "Atech hardware, with a CSV export", "bom"),
+    ("Atech_ShareImage", "Save a share image", "A 1920 x 1080 picture in "
+     "Pictures, also copied", "share"),
+    ("Atech_ReviewSheet", "Save a review sheet", "Six views of the model "
+     "on one picture", "sheet"),
+)
+EXPORT_MENU = "Export and share"
+_KEEP_DIALOGS = []      # dialogs opened from the menus stay referenced
+
+
+def _keep_dialog(d):
+    _KEEP_DIALOGS[:] = [x for x in _KEEP_DIALOGS if _alive(x)][-7:] + [d]
+    return d
+
+
+def _active_doc():
+    try:
+        import FreeCAD
+        return FreeCAD.ActiveDocument
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _say_at_cursor(text):
+    try:
+        QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), text)
+    except Exception:                                  # noqa: BLE001
+        pass
+    _log(text)
+
+
+def run_command_action(key):
+    """What one TOOL_COMMANDS / EXPORT_COMMANDS entry does. The view bar's
+    own button is pressed when it is there, so the card, the dialog and
+    the button's checked state stay one thing."""
+    from . import export_tools
+    parent = _mw_or_none()
+    if key in ("measure", "section"):
+        _press(key)
+        return key
+    if key == "colour":
+        m = _keep_dialog(export_tools.ColourMenu(parent))
+        m.popup(QtGui.QCursor.pos())
+        return m
+    if key == "export" and click_tool(key):
+        return key
+    if key == "dims":
+        return _open_dimensions()
+    if key == "export":
+        return _keep_dialog(export_tools.ExportDialog(parent)).show()
+    if key == "explode":
+        return _keep_dialog(export_tools.ExplodeDialog(parent)).show()
+    if key == "bom":
+        return _keep_dialog(export_tools.BomDialog(parent)).show()
+    if key == "share":
+        path, msg = export_tools.share_now(parent)
+        _say_at_cursor(msg)
+        return path
+    if key == "sheet":
+        from . import capture
+        path = capture.share_sheet(_active_doc())
+        _say_at_cursor("Review sheet saved to %s" % path)
+        return path
+    raise KeyError(key)
+
+
+def command_enabled(key, doc=None, selection=None):
+    """Pure (tests pass doc / selection): whether an Atech menu command
+    makes sense now. Every one needs an open document; Colour also needs
+    a selected part."""
+    if doc is None:
+        return False
+    if key == "colour":
+        return bool(selection)
+    return True
+
+
+class _AtechCommand(object):
+    def __init__(self, text, tip, key):
+        self.text, self.tip, self.key = text, tip, key
+
+    def GetResources(self):                            # noqa: N802
+        return {"MenuText": self.text, "ToolTip": self.tip}
+
+    def Activated(self):                               # noqa: N802
+        _safe(lambda: run_command_action(self.key))
+
+    def IsActive(self):                                # noqa: N802
+        try:
+            sel = []
+            if self.key == "colour":
+                import FreeCADGui
+                sel = FreeCADGui.Selection.getSelection()
+            return bool(_S) and command_enabled(self.key, _active_doc(), sel)
+        except Exception:                              # noqa: BLE001
+            return False
+
+
+def register_commands(gui=None):
+    """Add the Atech menu commands to FreeCAD once (they stay registered;
+    IsActive is False while Atech is not the active workbench)."""
+    if gui is None:
+        import FreeCADGui as gui
+    have = set(gui.listCommands())
+    added = []
+    for cid, text, tip, key in TOOL_COMMANDS + EXPORT_COMMANDS:
+        if cid not in have:
+            gui.addCommand(cid, _AtechCommand(text, tip, key))
+            added.append(cid)
+    return added
+
+
+def context_menu(workbench, recipient, gui=None):
+    """R381: the right-click menu of the 3D view ("View") and the part tree
+    ("Tree"): Hide / Isolate / Show all / See-through, then Colour,
+    Measure and Section, then an "Export and share" submenu. Installed on
+    the Atech workbench by _install_context_menu(); InitGui's
+    Workbench.ContextMenu may call it directly instead."""
+    if recipient not in ("View", "Tree"):
+        return False
+    from . import inspect_tools
+    if gui is not False:
+        inspect_tools.register_commands()
+        register_commands(gui)
+    workbench.appendContextMenu("", ["Separator"]
+                                + list(inspect_tools.CONTEXT_COMMANDS))
+    tools = [c[0] for c in TOOL_COMMANDS]
+    if recipient == "Tree":
+        tools = ["Atech_Colour"]
+    workbench.appendContextMenu("", ["Separator"] + tools)
+    workbench.appendContextMenu(EXPORT_MENU, [c[0] for c in EXPORT_COMMANDS])
+    return True
+
+
+def _atech_workbench():
+    try:
+        import FreeCADGui
+        try:
+            return FreeCADGui.getWorkbench("AcadAgentWorkbench")
+        except Exception:                              # noqa: BLE001
+            return FreeCADGui.activeWorkbench()
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _install_context_menu(wb=None):
+    """FreeCAD asks a Python workbench's ContextMenu(recipient) each time
+    a right-click menu opens. The Atech workbench class has none, so the
+    shell gives its instance one while Atech is active (and takes it off
+    on uninstall). A class that defines its own is left alone."""
+    wb = wb if wb is not None else _atech_workbench()
+    if wb is None:
+        return False
+    if "ContextMenu" in type(wb).__dict__:
+        return False
+    try:
+        wb.ContextMenu = lambda recipient, _wb=wb: _safe(
+            lambda: context_menu(_wb, recipient))
+    except Exception as exc:                           # noqa: BLE001
+        _log("context menu: %r" % (exc,))
+        return False
+    _S["context_wb"] = wb
+    return True
+
+
+def _remove_context_menu():
+    wb = _S.pop("context_wb", None)
+    if wb is not None:
+        try:
+            del wb.ContextMenu
+        except Exception:                              # noqa: BLE001
+            pass
+
+
+# ------------------------------------------- document events (R302)
+class _DocObserver(object):
+    """FreeCAD App document observer: the picker, the parts hint and Home
+    follow document creation, deletion, relabel, activation and saves
+    (was an 800 ms poll of the picker)."""
+
+    def __init__(self, fn):
+        self._fn = fn
+
+    def _ping(self, *_a):
+        try:
+            QtCore.QTimer.singleShot(0, self._fn)
+        except Exception:                              # noqa: BLE001
+            pass
+
+    slotCreatedDocument = slotRelabelDocument = _ping
+    slotFinishSaveDocument = _ping
+
+    def slotDeletedDocument(self, doc):                 # noqa: N802
+        """R516: FreeCAD is closing `doc` (Close All closes one after the
+        other, activating each next one in between). Note it, so the safety
+        tick leaves every view alone until the closing is over, and refresh
+        the picker afterwards (queued: never inside FreeCAD's close)."""
+        _closing_now()
+        self._ping()
+
+    def slotActivateDocument(self, doc):                # noqa: N802
+        self._ping()
+        # R516: queued by Name + Uid, never with the document object: Close
+        # All activates each next document and then closes it before the
+        # event loop runs, so the queued call must find the document again
+        # (or that it is gone) instead of using the one it was given.
+        key = _doc_ref(doc)
+        if key is None:
+            return
+        try:
+            QtCore.QTimer.singleShot(0, lambda k=key: _note_opened(_live_doc(k)))
+        except Exception:                              # noqa: BLE001
+            pass
+
+    def slotStartSaveDocument(self, doc, _filename=None):  # noqa: N802
+        """R382: an exploded view is display only; never saved. Runs
+        before FreeCAD writes the file (synchronously, not queued)."""
+        _before_save(doc)
+
+
+_BASED = set()          # documents whose hand-edit baseline was checked
+#: R516: how long after FreeCAD starts closing a document the safety tick
+#: leaves the 3D views alone (Close All closes the rest within this)
+CLOSING_QUIET_S = 1.0
+_CLOSING = [0.0]        # monotonic time of the last document close
+
+
+def _closing_now():
+    _CLOSING[0] = time.monotonic()
+
+
+def closing_documents():
+    """R516: True while FreeCAD is (or was a moment ago) closing documents."""
+    return time.monotonic() - _CLOSING[0] < CLOSING_QUIET_S
+
+
+def _modal_up():
+    """R516: a modal dialog (Save changes?, a file dialog) is open."""
+    try:
+        app = QtWidgets.QApplication.instance()
+        return app is not None and app.activeModalWidget() is not None
+    except RuntimeError:
+        return False
+
+
+def _doc_ref(doc):
+    """(Name, Uid) of a live document, or None for no / a closed one."""
+    try:
+        return str(doc.Name), str(doc.Uid)
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def _live_doc(ref):
+    """The open document `ref` (_doc_ref) names, or None when it was closed
+    meanwhile (or its Name now belongs to another document)."""
+    if not ref:
+        return None
+    try:
+        import FreeCAD
+        doc = FreeCAD.listDocuments().get(ref[0])
+        if doc is not None and str(doc.Uid) == ref[1]:
+            return doc
+    except Exception:                                  # noqa: BLE001
+        pass
+    return None
+
+
+def _before_save(doc):
+    try:
+        from . import export_tools
+        export_tools.restore_exploded(doc)
+    except Exception as exc:                           # noqa: BLE001
+        _log("exploded view before save: %r" % (exc,))
+
+
+def _note_opened(doc):
+    """R382: once per document, record its agent parts' values as built
+    (export_tools.ensure_base), so hand edits made in a file opened from
+    disk are told apart from the build at the next agent build. Only a
+    file built before hand edits were tracked has parts missing. R516:
+    nothing for no document (the activation's queued call passes None when
+    the document was closed meanwhile, _live_doc)."""
+    if doc is None:
+        return None
+    try:
+        key = (doc.Name, getattr(doc, "FileName", ""))
+    except Exception:                                  # noqa: BLE001
+        return None
+    if key in _BASED:
+        return None
+    _BASED.add(key)
+    try:
+        from . import export_tools
+        return export_tools.ensure_base(doc)
+    except Exception as exc:                           # noqa: BLE001
+        _log("hand-edit baseline: %r" % (exc,))
+        return None
+
+
+def _docs_event():
+    if not _S:
+        return
+    body = _S.get("body")
+    if body is not None:
+        try:
+            body.picker.refresh()
+        except Exception as exc:                       # noqa: BLE001
+            _log("picker: %r" % (exc,))
+        body.sync_model_hint()
+    ov = _S.get("overlay")
+    if ov is not None:
+        ov._queue()
+        try:
+            if ov.empty.isVisible() and hasattr(ov.empty, "refresh") \
+                    and isinstance(ov.empty, HomeView):
+                ov.empty.refresh()
+        except RuntimeError:
+            pass
+
+
+def _on_color_scheme(*_a):
+    """macOS switched Light / Dark: with the System theme chosen, FreeCAD's
+    own theme follows, and so does every Atech surface (R306)."""
+    if not _S or style.theme_choice() != "system":
+        return
+    try:
+        style.apply_theme_choice("system")
+    except Exception as exc:                           # noqa: BLE001
+        _log("system theme: %r" % (exc,))
+    _check_theme()
+
+
 def _fill_workbench_menu(menu):
     """Every workbench, by its menu name, so switching out of Atech needs no
     toolbar (R30: the menubar-corner selector is FreeCAD's, and ours sits
@@ -1057,7 +3745,7 @@ def _build_topbar(mw):
     ll.setContentsMargins(8, 0, 12, 0)
     ll.setSpacing(9)
     mark = QtWidgets.QLabel()
-    word = QtWidgets.QLabel("Atech Atelier")
+    word = QtWidgets.QLabel(style.PRODUCT)
     word.setObjectName("Wordmark")
     ll.addWidget(mark)
     ll.addWidget(word)
@@ -1079,14 +3767,17 @@ def _build_topbar(mw):
     for text, icon_name, tip, fn in (
             ("Workbench", "layers", "Switch workbench", None),
             ("Terminal", "terminal", "Open a terminal", _open_terminal),
-            ("", "settings", "Agent settings", _open_settings)):
+            ("", "settings", "Settings, appearance and keyboard shortcuts",
+             settings_menu)):
         b = QtWidgets.QPushButton(icon_label(text))
-        b.setAccessibleName(text or tip)
+        b.setAccessibleName(text or "Settings")
         b.setObjectName("TopBtn")
         b.setCursor(QtCore.Qt.PointingHandCursor)
         b.setToolTip(tip)
         b.setIconSize(QtCore.QSize(15, 15))
-        if fn is not None:
+        if fn is settings_menu:
+            b.setMenu(settings_menu(b))
+        elif fn is not None:
             b.clicked.connect(fn)
         else:
             menu = QtWidgets.QMenu(b)
@@ -1112,6 +3803,32 @@ def _build_topbar(mw):
         _log("menubar style: %r" % (exc,))
     return {"left": left, "right": right, "mark": mark, "btns": btns,
             "style": st, "old_corners": old, "old_style": None}
+
+
+def _hardware_switch():
+    """R280: the sidebar's "Only CAD | CAD + electronics" switch. It stores
+    hw_mode, which the next chat turn's prompt reads (build.board_default):
+    CAD only builds plain CAD, CAD + electronics builds the request as a
+    real product custom-fitted around the Atech board and modules."""
+    try:
+        from . import hw_mode
+        sw = navbar.PillTabs([hw_mode.LABELS[m] for m in hw_mode.MODES])
+        sw.setObjectName("HardwareSwitch")
+        sw.setAccessibleName("What the agent builds")
+        sw.setToolTip("Only CAD: plain 3D designs.\n"
+                      "CAD + electronics: designs built around the Atech "
+                      "board and modules, fitted to them.\n"
+                      "Applies from your next message.")
+        sw.set_index(hw_mode.MODES.index(hw_mode.get()), animate=False)
+
+        def chosen(i):
+            if not hw_mode.set(hw_mode.MODES[i]):
+                _log("hardware mode: could not save settings")
+        sw.changed.connect(chosen)
+        return sw
+    except Exception as exc:                           # noqa: BLE001
+        _log("hardware switch: %r" % (exc,))
+        return None
 
 
 def _restore_topbar(mw, tb):
@@ -1258,6 +3975,10 @@ def _on_docs_changed():
     body = _S.get("body")
     if body is not None:
         body.sync_model_hint()
+        try:
+            body.picker.refresh()          # R302: a window came or went
+        except Exception as exc:                       # noqa: BLE001
+            _log("picker: %r" % (exc,))
     # A view opening or closing is when FreeCAD shows the Tasks overlay
     # without a dialog (R48), whether or not its panel existed at install.
     w = _S.get("watch")
@@ -1419,7 +4140,26 @@ def _install_chrome(mw, dock, body):
     _S["main_qss"] = mw.styleSheet()
     if isinstance(mdi, QtWidgets.QMdiArea):
         _S["overlay"] = Overlay(mdi, on_docs=_on_docs_changed)
+    _install_context_menu()                                    # R381
     _S["topbar"] = _build_topbar(mw)
+    # R300: on macOS (native menu bar) the top bar's corners are not drawn;
+    # the sidebar head carries the wordmark, Terminal and Settings there.
+    _S["sidebar_chrome"] = sidebar_chrome(mw)
+    body.set_header_chrome(_S["sidebar_chrome"])
+    _install_shortcuts(mw)                                     # R307
+    drops = DropFilter(dock)                                   # R309
+    _S["drops"] = drops
+    for w in (mw, dock):
+        w.installEventFilter(drops)
+    _S["drop_accept"] = mw.acceptDrops()
+    mw.setAcceptDrops(True)
+    _hook_docs()                                               # R302
+    try:
+        hints = QtGui.QGuiApplication.styleHints()
+        hints.colorSchemeChanged.connect(_on_color_scheme)      # R306
+        _S["scheme_hooked"] = hints
+    except Exception as exc:                           # noqa: BLE001
+        _log("colour scheme: %r" % (exc,))
 
     # Event-driven upkeep (S03), backed by a slow safety tick.
     watch.watch(mw.statusBar(), (QtCore.QEvent.ChildAdded,), _status_upkeep)
@@ -1443,6 +4183,33 @@ def _install_chrome(mw, dock, body):
     chrome.hide_toolbars()
     restyle()
     _sync_tasks()
+
+
+def _hook_docs():
+    """Register one FreeCAD document observer while Atech is active."""
+    try:
+        import FreeCAD
+        add = getattr(FreeCAD, "addDocumentObserver", None)
+        if add is None:
+            return False
+        obs = _DocObserver(_docs_event)
+        add(obs)
+        _S["doc_observer"] = obs
+        return True
+    except Exception as exc:                           # noqa: BLE001
+        _log("document observer: %r" % (exc,))
+        return False
+
+
+def _unhook_docs():
+    obs = _S.pop("doc_observer", None)
+    if obs is None:
+        return
+    try:
+        import FreeCAD
+        FreeCAD.removeDocumentObserver(obs)
+    except Exception as exc:                           # noqa: BLE001
+        _log("document observer removal: %r" % (exc,))
 
 
 def _hook_quit():
@@ -1525,6 +4292,7 @@ def _on_quit():
     except Exception as exc:                           # noqa: BLE001
         _log("terminal shutdown: %r" % (exc,))
     join_workers(3000)
+    _closing_now()                                      # R516
     if _S:
         try:
             chrome.write_back(clear=True)
@@ -1918,7 +4686,12 @@ def _hide_dead_subwindows():
 def _light_atech_meshes():
     """Two-sided lighting on the active document's Atech board/module
     meshes (R108: black back faces through the board's open shells).
-    Cheap when nothing changed: one property read per Atech mesh."""
+    Cheap when nothing changed: one property read per Atech mesh. R516:
+    never while documents are being closed (Close All, quit) or a modal
+    dialog (FreeCAD's "Save changes?") runs its own event loop: the view
+    objects of a closing document are on their way out."""
+    if closing_documents() or _modal_up():
+        return
     try:
         import FreeCAD
         doc = FreeCAD.ActiveDocument
@@ -1949,6 +4722,12 @@ def _tick():
         # a document opened with no new MDI window (Start page already
         # open) changes no Overlay key; the hint follows on the tick (R57)
         body.sync_model_hint()
+        # backup for the document events (R302): cheap, and a no-op when
+        # the title did not change
+        try:
+            body.picker.refresh()
+        except Exception as exc:                       # noqa: BLE001
+            _log("picker: %r" % (exc,))
     _sync_tasks()
 
 
@@ -1968,12 +4747,13 @@ def restyle():
     sb.setStyleSheet(style.qss(STATUS_QSS))
     _S.pop("status_btn_qss", None)          # the mode may have changed
     _status_upkeep()
-    mw.setStyleSheet(style.qss(MAIN_QSS))
+    mw.setStyleSheet(style.qss(MAIN_QSS, reset=False))     # R390
     _hide_dead_subwindows()          # the sheets above re-showed them
     ov = _S.get("overlay")
     if ov is not None:
         ov.bar.restyle()
         ov.empty.restyle()
+        ov.hint.restyle()
         ov.place()
     try:
         from . import viewport
@@ -2028,6 +4808,32 @@ def uninstall():
         md.toggleViewAction().setEnabled(True)
         md.setVisible(bool(_S.get("model_visible", True)))
 
+    _remove_shortcuts()
+    _unhook_docs()
+    _remove_context_menu()
+    hints = _S.get("scheme_hooked")
+    if hints is not None:
+        try:
+            hints.colorSchemeChanged.disconnect(_on_color_scheme)
+        except (RuntimeError, TypeError):
+            pass
+    drops = _S.get("drops")
+    if drops is not None:
+        for w in (mw, _S.get("dock")):
+            try:
+                if w is not None:
+                    w.removeEventFilter(drops)
+            except RuntimeError:
+                pass
+        if "drop_accept" in _S:
+            mw.setAcceptDrops(_S["drop_accept"])
+    for key in ("sheet", "appearance"):
+        dlg = _S.get(key)
+        if dlg is not None:
+            try:
+                dlg.close()
+            except RuntimeError:
+                pass
     ov = _S.get("overlay")
     if ov is not None:
         ov.dispose()
@@ -2071,6 +4877,8 @@ def uninstall():
     dock = _S.get("dock")
     if dock is not None and _alive(dock):
         mw.removeDockWidget(dock)       # hides it; the chat lives on
+        if _S.get("focus_view"):
+            dock.setVisible(True)       # full-screen 3D ends with Atech
     chrome.restore_toolbars()
     try:
         from . import viewport
@@ -2087,6 +4895,8 @@ def chat_panel():
 def show_chat():
     if not _S:
         install()
+    if focus_view():
+        set_focus_view(False)
     _S["body"].show_page(0)
     _S["dock"].show()
     return _S["chat"]
@@ -2102,3 +4912,6 @@ def show_model():
     if not _S:
         install()
     _S["body"].show_page(1)
+
+
+register_builtin_tools()                               # R380, at import

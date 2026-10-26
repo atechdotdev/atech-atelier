@@ -28,9 +28,20 @@ in Studio: doc, App, FreeCAD), then prints ONE line:
                 and every seated module (module, ports, label, seeded=True
                 for the user's own) - Studio seats the same ones in the
                 document (PRD R92)
-  png           check.png: two isometric views. Read it and LOOK at it.
-                Not drawn when the check found problems (S39): the stale
+  png           check.png: the 3/4 hero view of a passing build (R230;
+                the old two-view picture only when numpy/PIL fail). Not
+                drawn when the check found problems (S39): the stale
                 picture is removed and render_skipped says why.
+  review        R230 - drawn on EVERY run that built something, a pass, a
+                failed check (FAILED CHECK banner, the problems as notes,
+                the parts they name outlined in red) or a model.py that
+                raised (PARTIAL BUILD banner, the objects made before the
+                error): {"sheet": review.png, "inside": review_inside.png,
+                "closeups": {label: review_<label>.png}, "seconds"}. The
+                sheet has six views (3/4 hero, front, right, rear 3/4,
+                left, top) in the colours Studio shows, one scale for the
+                flat views; the cutaway cuts the bodies at the board. One
+                "REVIEW <path>" line per picture. See review.py.
 
 intent.json and the user (R151): Studio writes .atech_turn.json when a turn
 starts - {"fix": false, "request": <the user's message>} for the user's own
@@ -141,6 +152,10 @@ model.py may set  INTENDED_OVERLAPS = ["Label", ("A", "B"), ...]  to declare
 bodies that are meant to intersect (a peg in a hole modelled line-on-line):
 a single label may overlap anything, a pair only each other.
 
+model.py may set  REVIEW_CLOSEUPS = ["Label", ...]  (at most 4): each part
+gets its own close-up, review_<label>.png, with the parts in front of it
+cut away (R230). ./check takes no arguments, so this is the way to ask.
+
 Headless there is no 3D view, so obj.ViewObject is None. Direct
 `X.ViewObject.attr = value` assignments are RECORDED instead of executed
 (objects[i]["view"], so Studio can apply the colours the script chose). Any
@@ -152,7 +167,8 @@ error is real. headless_patched=true whenever any GUI line was rewritten
 Environment (all optional; Studio's sandbox uses them):
     ATECH_CHECK_SCRIPT    script to run            (default ./model.py)
     ATECH_CHECK_PNG       render target, '' = none (default: check.png next
-                          to the script)
+                          to the script); review*.png go in its folder, and
+                          '' draws none of them (Studio's own build, R230)
     ATECH_CHECK_OUT       directory: write result.json and one <Name>.brep
                           per end result into it
     ATECH_CHECK_TIMEOUT   seconds before the script is stopped (default 60)
@@ -173,6 +189,38 @@ Environment (all optional; Studio's sandbox uses them):
                           "module", "module", "ports", "label"} re-create the
                           Atech board and the user's seated modules with the
                           library (the board's placement may change).
+    ATECH_TURN_T0         R270: epoch second the chat turn started (Studio
+                          sets it); the FIRST line is then "TURN CLOCK
+                          mm:ss" - plain information (R500: no stage
+                          reminders, no instruction to stop: results, not
+                          the clock, end a turn)
+    ATECH_PROMPT_MODE     "fast" keeps the request-named face rule and the
+                          pre-R270 warnings; anything else is quality mode
+
+R270 gates (quality mode): a sealed placed light / ToF / screen / button /
+speaker / microphone / USB-C fails, named in the request or not (an
+intent.json "covers" entry exempts it), and so does one open below its
+floor (screen window < 90 % of the active area, ToF aperture < 10 x 6,
+sound < 3 %); a wall confirmed under 0.6 mm; a bore through both walls not
+(6 mm or wider) listed nowhere in intent.json "through_holes"; a Screw_* named in fitted_after but
+not built; a board no part comes within 0.5 mm of; a screw pilot at or
+over the screw's size (R444: cad.screw_boss drills 0.85 d, and a screw's
+overlap with the pilot it bites in is the thread - a NOTE, not an OVERLAP).
+
+R440-R443 gates (quality mode, WS4): the ARCHETYPE gates of the user's
+request words (atech_geom.ARCHETYPE_GATES - handheld screen region and
+grip thickness, robot face window, speaker height and grille, vehicle
+length and wheel stance, lamp height and light, clock display, fan guard;
+R500: never a PROBLEM - style, not function; R600: never a WARNING
+either - one "ARCHETYPE <label>" NOTE line, a design note); housing parts that
+meet must be joined - a screw through both, a snap / clip or a pin
+(atech_geom.fastening); every CABLED module held within 0.5 mm on two
+sides or by a cradle (atech_geom.cable_holders); a sampled overlap on
+under 5 % of its points is confirmed by an exact volume (> 0.01 mm3)
+before it is reported. NOTE SCORECARD lines count parts, chosen colours,
+detail calls, sealed modules, the screen window and the aspect ratio
+(BLOCKOUT under 12 parts or 3 colours). The agent's ./check keeps unchanged
+pairs' overlap results in .atech_check_cache.json between runs.
 
 Exit code: 0 ok, 1 model.py failed, 3 the checker itself crashed.
 """
@@ -245,6 +293,16 @@ _WATCHDOG = [None]
 _CPU_SOFT = [None]      # the soft RLIMIT_CPU before _arm_timeout lowered it
 
 
+CPU_CORES_MIN = 8        # R250: OCCT's thread pool, at least this many cores
+CPU_SLACK_S = 60         # ... plus this, for the import and the re-run
+
+
+def cpu_limit(seconds):
+    """R250: the CPU-seconds model.py may burn in a `seconds` wall-clock
+    budget - every core OCCT can use, for the whole budget, plus slack."""
+    return float(seconds) * max(CPU_CORES_MIN, os.cpu_count() or 1) + CPU_SLACK_S
+
+
 def _arm_timeout(seconds, res=None):
     """Three layers, each catching what the one before cannot:
       1. SIGALRM raises ScriptTimeout in model.py (gives a line number);
@@ -255,7 +313,14 @@ def _arm_timeout(seconds, res=None):
       3. RLIMIT_CPU kills the process inside a long OCCT call, where neither
          a signal handler nor another Python thread gets to run.
     The CPU limit counts from the CPU already used, so a second run (the
-    headless re-run) gets the full budget again."""
+    headless re-run) gets the full budget again.
+    R250: the limit is CPU-seconds summed over every thread, and OCCT runs
+    its booleans and fillets on ~8 cores: `seconds + 15` killed a detailed
+    car (27.7 s wall, ~200 CPU-s) with NO output, well inside its wall-clock
+    budget. The wall clock is the real bound (layers 1-2 here, the ./check
+    wrapper's `timeout` and Studio's backstop - both print an ERROR line
+    when they or a signal end the child, sandbox.death_text); layer 3 only
+    has to stop a runaway that spins every core, so it is cpu_limit()."""
     def on_alarm(signum, frame):
         raise ScriptTimeout("model.py ran longer than %g s and was stopped" % seconds)
     try:
@@ -283,13 +348,48 @@ def _arm_timeout(seconds, res=None):
         ru = resource.getrusage(resource.RUSAGE_SELF)
         used = ru.ru_utime + ru.ru_stime
         soft, hard = resource.getrlimit(resource.RLIMIT_CPU)
-        want = int(used + seconds) + 15
+        want = int(used + cpu_limit(seconds))
         if hard == resource.RLIM_INFINITY or hard > want:
             if _CPU_SOFT[0] is None:
                 _CPU_SOFT[0] = soft
+            if sys.platform == "darwin":
+                _guard_xcpu(want, seconds)
             resource.setrlimit(resource.RLIMIT_CPU, (want, hard))
     except Exception:                                   # noqa: BLE001
         pass
+
+
+_CPU_WANT = [None]      # R250: the armed CPU limit (darwin's SIGXCPU guard)
+
+
+def _guard_xcpu(want, seconds):
+    """R250: macOS sends SIGXCPU to a process far below its RLIMIT_CPU now
+    and then - MEASURED: a 3 s ./check of the Atech case under a 1 140
+    CPU-s limit killed with no output, 1 run in 12 under load, and Studio
+    builds in test_build_ws the same (exit -24; the "flaky empty output"
+    of earlier rounds). On darwin a SIGXCPU is therefore weighed: below
+    the armed limit it is ignored and the limit armed again; at or over
+    it, model.py is stopped with ScriptTimeout. (A runaway inside one OCCT
+    call is then bounded by the wall clock - the watchdog, the wrapper and
+    Studio's backstop - not by this layer.)"""
+    import resource
+    _CPU_WANT[0] = want
+
+    def on_xcpu(signum, frame):
+        limit = _CPU_WANT[0]
+        if limit is None:
+            return                      # disarmed: the checker's own work
+        ru = resource.getrusage(resource.RUSAGE_SELF)
+        if ru.ru_utime + ru.ru_stime < limit - 1:
+            try:                        # spurious: the budget is not spent
+                resource.setrlimit(resource.RLIMIT_CPU, (
+                    limit, resource.getrlimit(resource.RLIMIT_CPU)[1]))
+            except Exception:                           # noqa: BLE001
+                pass
+            return
+        raise ScriptTimeout("model.py used more than %d CPU-seconds (every core "
+                            "for its %g s) and was stopped" % (limit, seconds))
+    signal.signal(signal.SIGXCPU, on_xcpu)
 
 
 def _disarm_timeout():
@@ -304,6 +404,7 @@ def _disarm_timeout():
     # checker's own work after it (SIGXCPU, exit 152, NO output - MEASURED
     # on an Atech case whose walls block the modules' slide paths); the
     # wrapper's `timeout` and Studio's backstop still bound the whole run.
+    _CPU_WANT[0] = None
     if _CPU_SOFT[0] is not None:
         try:
             import resource
@@ -428,8 +529,55 @@ def _seed_atech(App, doc, items):
     for it in items:
         if it["atech"] == "module":
             ports = [int(p) for p in it["ports"]]
-            ap.seat(doc, str(it["module"]), ports[0] if len(ports) == 1 else tuple(ports),
-                    label=it.get("label") or None)
+            arg = ports[0] if len(ports) == 1 else tuple(ports)
+            if it.get("joint") == "cable" and it.get("placement") and \
+                    hasattr(ap, "place_cabled"):
+                # R511: the user's cabled module stands where they put it
+                # (its cables came as ordinary context shapes)
+                ap.place_cabled(doc, str(it["module"]), arg,
+                                _placement(App, it["placement"]),
+                                label=it.get("label") or None)
+                continue
+            ap.seat(doc, str(it["module"]), arg, label=it.get("label") or None)
+
+
+def _follow_board(doc, seeded):
+    """R511: model.py turned or lifted the board while the USER's modules sit
+    on it. They follow the board, re-seated on their own ports where it is
+    now (as Studio re-seats them when it replays the board, and as the
+    Modules page's Re-seat all does) - unless model.py already did that
+    (ap.reseat_all). Returns {Name: fingerprint} of the user's modules that
+    now sit exactly where the board puts them; the ownership gate accepts
+    those. A module model.py moved anywhere else is not in it."""
+    try:
+        import atech_ports as ap
+    except ImportError:
+        return {}
+    b = ap.board_object(doc, create=False)
+    if b is None or b.Name not in seeded or _seed_fp(b) == seeded[b.Name]:
+        return {}
+    out = {}
+    for n, fp0 in seeded.items():
+        o = doc.getObject(n)
+        if o is None or getattr(o, "AtechRole", None) != "module" or \
+                getattr(o, "AtechJoint", None) == "cable":
+            continue                # a cabled module stays where it stands
+        ports = tuple(getattr(o, "AtechPorts", ()) or ())
+        if not (isinstance(fp0, tuple) and len(fp0) == 4
+                and fp0[1] == getattr(o, "AtechModule", None) and fp0[2] == ports):
+            continue
+        try:
+            ns = [int(p) for p in ports]
+            want = ap.seated_placement(o.AtechModule, ns if len(ns) > 1 else ns[0],
+                                       b.Placement)[0]
+            if _seed_fp(o) == fp0:
+                ap.reseat(doc, o)   # left where the board was: follow it
+            elif not o.Placement.isSame(want, 1e-6):
+                continue            # moved somewhere else by model.py
+        except Exception:                                  # noqa: BLE001
+            continue
+        out[n] = _seed_fp(o)
+    return out
 
 
 def _seed_fp(o):
@@ -458,6 +606,7 @@ def _run(App, code_or_tree, script_path, timeout, res=None, context=None):
            atech_geom.VIEW_FN: atech_geom.view_recorder(view)}
     buf = io.StringIO()
     err = None
+    _reset_details()                                    # R400
     _arm_timeout(timeout, res)
     try:
         with contextlib.redirect_stdout(buf):
@@ -468,6 +617,27 @@ def _run(App, code_or_tree, script_path, timeout, res=None, context=None):
     finally:
         _disarm_timeout()
     return doc, err, buf.getvalue(), env, seeded, view
+
+
+def _reset_details():
+    """R400: forget the cad.detail blocks an earlier run skipped (the same
+    process may run model.py twice: the headless re-run)."""
+    ac = sys.modules.get("atech_cad")
+    if ac is not None and hasattr(ac, "reset_details"):
+        ac.reset_details()
+
+
+def _skipped_warnings(res):
+    """R400: a WARNING per detail a cad.detail block skipped - the build
+    still passes, the detail is still missing."""
+    ac = sys.modules.get("atech_cad")
+    rows = ac.skipped_details() if ac is not None and \
+        hasattr(ac, "skipped_details") else []
+    res["skipped_details"] = [{"name": n, "why": w} for n, w in rows]
+    for name, why in rows:
+        res["warnings"].append(
+            "detail skipped: %r: %s - fix it or drop it; a skipped detail is "
+            "a missing one" % (name, why))
 
 
 def _results(created):
@@ -487,7 +657,26 @@ def _results(created):
     return out
 
 
+def _designed(o):
+    """R222: one of the agent's own bodies, as the case-shaped checks see
+    them (intent sizes and holes, margins, walls, containers, one-wall
+    holes): not the board or a module, and not a ribbon cable
+    atech_ports.cable() made - a 0.6 mm sheet with 6 pin holes is no wall
+    and no hole pattern. Cables still count for overlaps, the desk and
+    whatever they cover."""
+    return not getattr(o, "AtechRole", None) and \
+        not getattr(o, "AtechCableModule", None)
+
+
 def _tight(shape):
+    """R250: atech_geom's cached tight box - the overlap, floating and face
+    checks ask for the same boxes (optimalBoundingBox: 70 ms a body on
+    toy_car, 139 calls = 9.7 s when each stage measured its own)."""
+    try:
+        import atech_geom
+        return atech_geom.tight(shape)
+    except Exception:                                   # noqa: BLE001
+        pass
     try:
         return shape.optimalBoundingBox(True, False)
     except Exception:                                   # noqa: BLE001
@@ -597,7 +786,10 @@ def render(shapes, path, meshes=()):
         ax.set_aspect("equal")
         ax.axis("off")
         _triad(ax, right, up)
-        ax.set_title("from %s" % ("front-left" if k == 0 else "back-right"), fontsize=8)
+        # R230: azim -60 puts the camera at +X/-Y (the front and the +X
+        # side), azim 120 at -X/+Y - the old "front-left" was wrong
+        ax.set_title("from %s" % ("front-right (+X side)" if k == 0
+                                  else "back-left (-X side)"), fontsize=8)
     fig.suptitle("size %.1f x %.1f x %.1f mm (X x Y x Z)"
                  % tuple(mx - mn), fontsize=9)
     fig.tight_layout()
@@ -645,6 +837,144 @@ def _triad(ax, right, up):
                 fontsize=7, transform=ax.transAxes, ha="center", va="center")
 
 
+# ------------------------------------------------------------------ review
+def _review_clear(png):
+    """R230: no review picture of an earlier run survives a run that draws
+    none (model.py did not compile, added nothing...)."""
+    if not png:
+        return
+    try:
+        import review
+        review.clear(os.path.dirname(os.path.abspath(png)))
+    except Exception:                                   # noqa: BLE001
+        pass
+
+
+def _closeup_labels(value, res):
+    """REVIEW_CLOSEUPS = ["Label", ...] from model.py (read like
+    INTENDED_OVERLAPS): labels, at most review.MAX_CLOSEUPS."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) for v in value):
+        res["warnings"].append("REVIEW_CLOSEUPS must be a list of part labels, "
+                               "e.g. ['Bumper', 'light_2']")
+        return []
+    out = []
+    for v in value:
+        if v and v not in out:
+            out.append(v)
+    if len(out) > 4:
+        res["warnings"].append("REVIEW_CLOSEUPS: only the first 4 are drawn (%d listed)"
+                               % len(out))
+    return out[:4]
+
+
+def _problem_labels(problems, labels):
+    """The labels a problem line names (whole words), for the red outline."""
+    text = "\n".join(problems or ())
+    return {lab for lab in labels if lab and re.search(
+        r"(?<![\w])%s(?![\w])" % re.escape(lab), text)}
+
+
+def _review_items(doc, seeded, view, bad):
+    """What the sheet draws: the end results in Studio's colours (the
+    recorded ShapeColor / DiffuseColor; a cable its own colour; else
+    PALETTE in build._colour's order, one body the default grey), the
+    seated Atech board and modules, and the user's own solids."""
+    import review
+    ends = _results([o for o in doc.Objects if o.Name not in seeded])
+    items, free = [], 0
+    for o in ends:
+        rec = view.get(o.Name) or {}
+        col = rec.get("ShapeColor")
+        dif = rec.get("DiffuseColor")
+        if col is None and isinstance(dif, (list, tuple)) and dif:
+            col = dif[0] if isinstance(dif[0], (list, tuple)) else dif
+        role = getattr(o, "AtechRole", None)
+        kind = "body"
+        if getattr(o, "AtechCableModule", None):
+            kind = "cable"
+            col = col or review.CABLE
+        elif role:
+            kind = "board" if role == "board" else "module"
+            col = col or (review.BOARD if role == "board" else review.MODULE)
+        if col is None:
+            col = review.PALETTE[free % len(review.PALETTE)] if len(ends) > 1 \
+                else review.DEFAULT
+            free += 1
+        try:
+            col = tuple(float(c) for c in col)[:3]
+            if len(col) < 3:
+                raise ValueError
+        except Exception:                               # noqa: BLE001
+            col = review.DEFAULT
+        items.append({"label": o.Label, "shape": o.Shape, "color": col, "kind": kind,
+                      "problem": o.Label in bad})
+    for o in doc.Objects:
+        role = getattr(o, "AtechRole", None)
+        if o.TypeId == "Mesh::Feature" and role:
+            items.append({"label": o.Label, "mesh": o.Mesh,
+                          "kind": "board" if role == "board" else "module",
+                          "color": review.BOARD if role == "board" else review.MODULE,
+                          "problem": o.Label in bad})
+    for u in _user_items(doc, seeded):
+        items.append({"label": u["label"], "shape": u["shape"], "kind": "user",
+                      "color": review.USER, "problem": u["label"] in bad})
+    return items
+
+
+def _review(res, doc, seeded, view, env, png, ws, banner=None, notes=(), hero=False):
+    """R230: draw review.png (+ review_inside.png, review_<label>.png, and
+    check.png as the hero view when `hero`) next to `png`. Returns True
+    when the sheet was drawn; False sends a passing build to the old
+    render(). Never raises."""
+    t_r = time.time()
+    rv = res.setdefault("review", {})
+    try:
+        import review
+        why = review.available()
+        if why:
+            rv["skipped"] = why
+            _review_clear(png)
+            return False
+        labels = [o.Label for o in doc.Objects]
+        bad = _problem_labels(res.get("problems"), labels)
+        items = _review_items(doc, seeded, view, bad)
+        wanted = _closeup_labels(env.get("REVIEW_CLOSEUPS") if env else None, res)
+        title = _turn_request(ws) or os.path.basename(ws.rstrip(os.sep)) or "model.py"
+        title = " ".join(str(title).split())
+        title = (title[:90] + "...") if len(title) > 90 else title
+        out = review.draw(items, os.path.dirname(os.path.abspath(png)), title=title,
+                          notes=notes, banner=banner, closeups=wanted,
+                          hero_path=png if hero else None)
+    except Exception as exc:                            # noqa: BLE001
+        rv["skipped"] = "review failed: %s: %s" % (type(exc).__name__, exc)
+        res["warnings"].append("review: " + rv["skipped"])
+        rv["seconds"] = round(time.time() - t_r, 2)
+        return False
+    rv.update(sheet=out.get("sheet"), inside=out.get("inside"),
+              closeups=out.get("closeups") or {}, triangles=out.get("triangles"),
+              seconds=out.get("seconds"), timings=out.get("timings"),
+              banner=out.get("banner"), outlined=out.get("outlined") or [],
+              inside_cut=out.get("inside_cut"))
+    if out.get("why"):
+        rv["skipped"] = out["why"]
+    if out.get("inside_skipped"):
+        rv["inside_skipped"] = out["inside_skipped"]
+    for lab in out.get("missing") or ():
+        res["warnings"].append(
+            "REVIEW_CLOSEUPS: no part labelled %r (labels: %s)" % (
+                lab, ", ".join(sorted({it["label"] for it in items}))[:300]))
+    for e in out.get("errors") or ():
+        res["warnings"].append("review: " + e)
+    if hero and out.get("hero"):
+        res["png"] = out["hero"]
+    res["render_seconds"] = round(time.time() - t_r, 2)
+    return bool(out.get("sheet"))
+
+
 # -------------------------------------------------------------------- main
 def main():
     t0 = time.time()
@@ -661,6 +991,10 @@ def main():
     ws = os.path.dirname(script)
     if ws not in sys.path:
         sys.path.insert(0, ws)
+    clock = turn_clock()                                # R270: the first line
+    if clock:
+        for line in clock:
+            _say(line)
     png = os.environ.get("ATECH_CHECK_PNG")
     png = os.path.join(ws, "check.png") if png is None else png
     timeout = float(os.environ.get("ATECH_CHECK_TIMEOUT") or 60)
@@ -684,10 +1018,20 @@ def main():
         res["error"] = traceback.format_exc(limit=0)
         res["error_lines"] = _error_lines(res["error"], script, code)
         _explain_error(res, code)
+        _review_clear(png)
         res["seconds"] = round(time.time() - t0, 2)
         _emit(res, 1)
 
     import atech_geom
+    if clock:
+        res["turn_clock"] = clock
+    if not out_dir:
+        # R270: the agent's ./check keeps unchanged pairs' results between
+        # runs (Studio's own build, ATECH_CHECK_OUT, measures everything)
+        try:
+            atech_geom.use_check_cache(ws)
+        except Exception:                               # noqa: BLE001
+            pass
     context = os.environ.get("ATECH_CHECK_CONTEXT") or None
     t_run = time.time()
     counts = {}
@@ -719,11 +1063,23 @@ def main():
         res["problems"].append(turned)
         res["intent_problems"] = res.get("intent_problems", []) + [turned]
     res["stdout"] = out[-4000:]
+    _skipped_warnings(res)                              # R400
     if err:
         res["error"] = err[-6000:]
         res["error_lines"] = _error_lines(err, script, code)
         res["timed_out"] = "ScriptTimeout" in err
         _explain_error(res, code)
+        if png:
+            # R230: what model.py built before it raised is still drawn,
+            # under a PARTIAL BUILD banner
+            last = [ln for ln in err.strip().splitlines() if ln.strip()] or ["error"]
+            el = res["error_lines"]
+            where = (" (model.py line %d)" % el[-1]["line"]) if el else ""
+            _review(res, doc, seeded, view, env, png, ws,
+                    banner=("PARTIAL BUILD", "model.py raised%s: %s" % (where, last[-1].strip()[:110])),
+                    notes=["PARTIAL BUILD - model.py raised%s: %s" % (where, last[-1].strip()),
+                           "Only the objects made before the error are drawn."])
+            _say_review(res)
         res["seconds"] = round(time.time() - t0, 2)
         _emit(res, 1)
 
@@ -731,17 +1087,23 @@ def main():
     # an edit made here could never be carried over (R16's rule, sandboxed).
     if seeded:
         gone = sorted(n for n in seeded if doc.getObject(n) is None)
+        # R511: the user's seated modules follow a board model.py turned or
+        # lifted (re-seated on their own ports, as Studio does on replay).
+        followed = _follow_board(doc, seeded)
         # The board is a shared fixture model.py may orient (as in Studio's
         # own document); every other context object must stay as it was.
         changed = sorted(n for n in seeded if doc.getObject(n) is not None
                          and getattr(doc.getObject(n), "AtechRole", None) != "board"
-                         and _seed_fp(doc.getObject(n)) != seeded[n])
-        # ...unless the user's own modules sit on it: seat() places a module
-        # once from the board's placement, so turning the board would leave
-        # their modules hanging where the board was (in Studio too).
+                         and _seed_fp(doc.getObject(n)) != seeded[n]
+                         and followed.get(n) != _seed_fp(doc.getObject(n)))
+        # ...and a user's module that could not follow it (a cabled one
+        # stays, and its cable is remade in Studio; any other one would be
+        # left hanging where the board was) still forbids the move.
         if not gone and not changed:
             users_mods = [n for n in seeded if getattr(
-                doc.getObject(n), "AtechRole", None) == "module"]
+                doc.getObject(n), "AtechRole", None) == "module"
+                and n not in followed
+                and getattr(doc.getObject(n), "AtechJoint", None) != "cable"]
             moved = [n for n in seeded if getattr(
                 doc.getObject(n), "AtechRole", None) == "board"
                 and _seed_fp(doc.getObject(n)) != seeded[n]]
@@ -754,6 +1116,7 @@ def main():
                             "user's." % ("deleted" if gone else "changed",
                                          ", ".join(gone or changed)))
             res["foreign_objects"] = {"deleted": gone, "changed": changed}
+            _review_clear(png)
             res["seconds"] = round(time.time() - t0, 2)
             _emit(res, 1)
 
@@ -768,6 +1131,7 @@ def main():
         res["error"] = ("model.py ran without error but added nothing to the "
                         "document (it added no shape). Add each body with "
                         "doc.addObject('Part::Feature', 'Name').Shape = shape")
+        _review_clear(png)
         res["seconds"] = round(time.time() - t0, 2)
         _emit(res, 1)
     problems = res.setdefault("problems", [])
@@ -810,10 +1174,20 @@ def main():
                "axes": _axes(App, o)}
               for o in doc.Objects if o.TypeId == "Mesh::Feature"
               and getattr(o, "AtechRole", None)]
+    # R620: a product around the board works through its modules - the
+    # board with nothing but power is a case, not the product
+    mods = {it["module"] for it in items if it.get("role") == "module" and it.get("module")}
+    if any(it.get("role") == "board" for it in items) and not mods - {"usbc"}:
+        res["warnings"].append(
+            "MODULES: the board carries %s - add the Atech modules that make the "
+            "product work (eyes, motors, lights, buttons, a screen, a speaker), "
+            "seated or cabled with ap.cable to where they belong"
+            % ("only the usbc" if mods else "no module"))
     t_g = time.time()
-    hits, note = atech_geom.overlaps(items, res["intended_overlaps"])
+    hits, note = atech_geom.overlaps(items, res["intended_overlaps"], cap=OVERLAP_CAP)
     if note:
         res["warnings"].append(note)
+    hits = _threads(res, ends, hits)                    # R444
     users = _user_items(doc, seeded)
     uhits, unote = _user_overlaps(users, ends, doc, seeded, res["intended_overlaps"])
     if unote:
@@ -830,8 +1204,21 @@ def main():
                 "the user's object, so listing the pair there changes nothing"
                 if h.get("declared") else "")))
     ulabels = {u["label"] for u in users}
-    res["floating"] = [f for f in atech_geom.floating(items + users)
-                       if f["label"] not in ulabels]
+    # R222: a cable hangs between the board and its module (meshes this
+    # test does not see): never "floating" for that
+    ulabels |= {o.Label for o in ends if getattr(o, "AtechCableModule", None)}
+    # R250: the overlap hits are contacts floating() need not measure again;
+    # the bodies never reported are not measured as candidates either
+    t_f = time.time()
+    res["floating"] = [f for f in atech_geom.floating(
+        items + users, cap=OVERLAP_CAP, skip=ulabels,
+        contacts=[(h["a"], h["b"]) for h in hits + uhits])
+        if f["label"] not in ulabels]
+    res["floating_seconds"] = round(time.time() - t_f, 3)
+    # R250: what the pairwise checks cost (overlaps + floating), and on how
+    # many bodies - OVERLAP_CAP is measured with these
+    res["overlap_seconds"] = round(time.time() - t_g, 3)
+    res["overlap_bodies"] = len(items)
     _intent(res, ws, ends)
     _layout(res, doc, ends, items)
     _desk(res, ends, items, ws)
@@ -844,29 +1231,59 @@ def main():
     _mates(res, ends, ws)
     _joints(res, ends, ws)
     _channels(res, ends, ws)
+    _fasteners(res, ends, ws)                           # R270
+    _retention(res, ends, items)                        # R270
+    _archetype(res, ends, items, ws)                    # R440
+    _fastening(res, ends, code, ws)                     # R441
+    _holders(res, ends, items)                          # R442
     res["geometry_seconds"] = round(time.time() - t_g, 3)
     _walls(res, ends, ws)
     _atech_port_check(doc, res)
+    _firmware(res, ws)
+    try:
+        res["check_cache"] = atech_geom.check_cache_stats()   # R270
+        hits = atech_geom.save_check_cache()
+        if hits:
+            res["cache_hits"] = hits
+    except Exception:                                   # noqa: BLE001
+        pass
     try:
         import Part
         if ends:
-            bb = _tight(Part.makeCompound([o.Shape for o in ends]))
+            # R250: the union of the bodies' cached boxes (the same tight
+            # box as the compound's, without measuring every body again)
+            bb = _tight(ends[0].Shape)
+            for o in ends[1:]:
+                bb.add(_tight(o.Shape))
             res["whole_size"] = [round(bb.XLength, 3), round(bb.YLength, 3),
                                  round(bb.ZLength, 3)]
     except Exception as exc:                            # noqa: BLE001
         res["warnings"].append("whole bbox: %s" % exc)
+    _scorecard(res, doc, seeded, view, ends, code)      # R270
     res["ok"] = True
-    if png and res.get("problems"):
-        # S39: a failed check is followed by an edit, never by a look at the
-        # picture (eval round 3), and rendering cost up to 14 s. No picture
-        # then - and no stale one from an earlier run to be mistaken for it.
-        res["render_skipped"] = "the check failed: fix the problems first"
+    # R230: the review sheet is drawn on EVERY check - a failed one too,
+    # with the problems as notes and the guilty parts outlined in red.
+    failed = bool(res.get("problems"))
+    if png:
+        n_p = len(res["problems"])
+        drew = _review(res, doc, seeded, view, env, png, ws,
+                       banner=("FAILED CHECK", "%d problem%s - the parts outlined in red; "
+                               "fix them, then look again" % (n_p, "" if n_p == 1 else "s"))
+                       if failed else None,
+                       notes=["PROBLEM " + p for p in res["problems"]], hero=not failed)
+    if png and failed:
+        # S39: check.png (the old picture) stays a passing build's only, and
+        # no stale one from an earlier run is left to be mistaken for it.
+        res["render_skipped"] = ("the check failed: fix the problems first "
+                                 "(review.png shows this failed build)")
         try:
             if os.path.isfile(png) and not os.path.islink(png):
                 os.unlink(png)
         except OSError:
             pass
-    elif png:
+    elif png and not drew:
+        # R230: numpy/PIL missing or the review renderer failed - the old
+        # two-view matplotlib picture
         t_r = time.time()
         try:
             why = render([o.Shape for o in ends], png,
@@ -892,7 +1309,7 @@ def _intent(res, ws, ends):
     the message never states (S54, R183)."""
     import atech_geom
     intent, bad = atech_geom.read_intent(ws)
-    ends = [o for o in ends if not getattr(o, "AtechRole", None)]
+    ends = [o for o in ends if _designed(o)]
     notes = []
     bad = bad + atech_geom.intent_problems(
         intent, [o.Shape for o in ends], request=_turn_request(ws),
@@ -915,10 +1332,14 @@ def _layout(res, doc, ends, items):
                   if it.get("role") == "board" and it.get("mesh") is not None), None)
     if board is None:
         return
-    mods = [{"label": it["label"], "name": it["name"], "mesh": it["mesh"]}
+    # R250: the library module and its world X, Y, Z go with each module
+    # (atech_geom._module_meta / enclosure read them): without them
+    # atech_geom fell back to FreeCAD.ActiveDocument, which need not be
+    # the document checked here
+    mods = [{"label": it["label"], "name": it["name"], "mesh": it["mesh"],
+             "module": it.get("module"), "axes": it.get("axes")}
             for it in items if it.get("role") == "module" and it.get("mesh") is not None]
-    parts = [{"label": o.Label, "shape": o.Shape} for o in ends
-             if not getattr(o, "AtechRole", None)]
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
     intent, _bad = atech_geom.read_intent(os.path.dirname(res["script"]))
     try:
         bad, facts = atech_geom.atech_layout(parts, board, mods, intent,
@@ -955,13 +1376,18 @@ def _desk(res, ends, items, ws):
 
 def _wall_holes(res, ends, ws):
     """R181 (D69): a hole that goes through more than one wall (a hollow
-    case's front AND back wall) - a WARNING naming each wall, never a
-    failure (a pin through a clevis is meant to)."""
+    case's front AND back wall) - a WARNING naming each wall. R270: in
+    quality mode a PROBLEM when 6 mm or wider and not listed in intent.json
+    "through_holes" (atech_geom.through_is_problem: a pin or axle bore under
+    that stays a warning; the request saying "through both walls" still
+    exempts it inside wall_crossings)."""
     import atech_geom
     request = _turn_request(ws)
+    quality = _quality()
+    intent, _bad = atech_geom.read_intent(ws) if quality else (None, [])
     rows = []
     for o in ends:
-        if getattr(o, "AtechRole", None):
+        if not _designed(o):
             continue
         try:
             found = atech_geom.wall_crossings(o.Shape, request)
@@ -972,9 +1398,262 @@ def _wall_holes(res, ends, ws):
         for b in found:
             b = dict(b, label=o.Label)
             rows.append(b)
-            res["warnings"].append(atech_geom.wall_crossing_text(o.Label, b))
+            if quality and atech_geom.through_is_problem(intent, o.Label, b["d_mm"]):
+                # R270: an unintended bore through both walls fails
+                b["problem"] = True
+                res.setdefault("problems", []).append(
+                    atech_geom.through_problem_text(o.Label, b))
+            else:
+                res["warnings"].append(atech_geom.wall_crossing_text(o.Label, b))
     if rows:
         res["wall_crossings"] = rows
+
+
+# ------------------------------------------------------------ R270 gates
+TURN_T0_ENV = "ATECH_TURN_T0"       # epoch second the chat turn started (WS5)
+# R500 (the user: "it's about results, not how long it takes"): no
+# clock-based stage nudges - the clock line is information only
+TURN_STAGES = ()
+
+
+def turn_clock(now=None, environ=None):
+    """R270: ["TURN CLOCK mm:ss"] from $ATECH_TURN_T0 (the turn's start, set
+    by Studio for the agent's shell), or [] when it is not set or not a
+    number. R500: the elapsed time only - no stage reminder under it."""
+    env = os.environ if environ is None else environ
+    raw = (env.get(TURN_T0_ENV) or "").strip()
+    if not raw:
+        return []
+    try:
+        t0 = float(raw)
+    except ValueError:
+        return []
+    el = max(0, int((time.time() if now is None else now) - t0))
+    return ["TURN CLOCK %02d:%02d" % (el // 60, el % 60)]
+
+
+def _quality():
+    """R270: quality mode (the default; $ATECH_PROMPT_MODE=fast is not)."""
+    import atech_geom
+    try:
+        return atech_geom.quality_mode()
+    except Exception:                                   # noqa: BLE001
+        return True
+
+
+_KIT_PILOT = [None]
+
+
+def _kit_pilot_ok():
+    """R270: does the kit's own cad.screw_boss drill a thread-forming pilot
+    (under the screw's size)? MEASURED once per run on a 20 mm test box.
+    While it still drills the nominal size (a tapped-hole pilot), a pilot
+    of d is the kit's doing and only a WARNING; once the kit drills
+    undersize, the same pilot is a PROBLEM. None: could not tell."""
+    if _KIT_PILOT[0] is None:
+        try:
+            import Part
+            import FreeCAD as App
+            import atech_cad as cad
+            import atech_geom
+            V = App.Vector
+            case = Part.makeBox(20, 20, 12).cut(Part.makeBox(16, 16, 12, V(2, 2, 2)))
+            boss = cad.screw_boss(case, (10, 10, 9), "-Z", "M2.5", ribs=0)
+            screw = Part.makeCylinder(1.2, 6, V(10, 10, 3.5))
+            screw = screw.fuse(Part.makeCylinder(2.5, 1, V(10, 10, 9.5)))
+            rows = atech_geom.screw_pilots([{"label": "Screw_probe", "shape": screw},
+                                            {"label": "Boss", "shape": boss}])
+            pd = rows[0].get("pilot_mm") if rows else None
+            _KIT_PILOT[0] = "unknown" if pd is None else bool(pd < 2.5 - 0.02)
+        except Exception:                               # noqa: BLE001
+            _KIT_PILOT[0] = "unknown"
+    return None if _KIT_PILOT[0] == "unknown" else _KIT_PILOT[0]
+
+
+def _fasteners(res, ends, ws):
+    """R270: each screw part's pilot (atech_geom.screw_pilots): one at or
+    over the screw's nominal size cannot bite - a PROBLEM in quality mode,
+    a WARNING in fast mode (R444: the kit's screw_boss drills 0.85 d, so
+    _kit_pilot_ok's probe no longer decides it)."""
+    import atech_geom
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
+    if not any(re.match(atech_geom.SCREW_RE, p["label"], re.I) for p in parts):
+        return
+    try:
+        rows = atech_geom.screw_pilots(parts)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("screw pilot probe could not run: %s" % exc)
+        return
+    if not rows:
+        return
+    res["screw_pilots"] = rows
+    bad = [r for r in rows if r["verdict"] == "no bite"]
+    if not bad:
+        return
+    # R444: cad.screw_boss drills the thread-forming pilot (0.85 d) now, so
+    # a pilot of d or over is the model's own - a PROBLEM in quality mode
+    for r in bad:
+        line = atech_geom.pilot_text(r)
+        if _quality():
+            res.setdefault("problems", []).append(line)
+        else:
+            res["warnings"].append(line)
+
+
+def _threads(res, ends, hits):
+    """R444: a screw's overlap with the part its thread-forming pilot
+    bites in, no bigger than the thread's annulus, is the thread cutting
+    - a NOTE, not an OVERLAP (atech_geom.thread_engagement)."""
+    import atech_geom
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
+    try:
+        kept, excused = atech_geom.thread_engagement(hits, parts)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("thread-engagement probe could not run: %s" % exc)
+        return hits
+    if excused:
+        res["thread_engagement"] = excused
+        res.setdefault("notes", []).append(
+            "thread engagement (not an overlap): %s" % "; ".join(
+                "%s / %s: the thread in a %.1f mm pilot (%.3f mm3 <= the thread's %.2f)" % (
+                    e["a"], e["b"], e["pilot_mm"], e["volume_mm3"], e["thread_cap_mm3"])
+                for e in excused))
+    return kept
+
+
+def _archetype(res, ends, items, ws):
+    """R440: the archetype gates for the user's request
+    (atech_geom.archetype_problems): one "ARCHETYPE <label>" NOTE line
+    (R500: style, never a PROBLEM; R600: never a WARNING - a design note
+    that does not pull the agent toward the numbers). No request (a bare
+    ./check outside Studio's turn): not judged."""
+    import atech_geom
+    req = _turn_request(ws)
+    if not req:
+        return
+    views = {f["name"]: f["view"] for f in res.get("objects") or ()
+             if isinstance(f, dict) and f.get("view")}
+    parts = [{"label": o.Label, "name": o.Name, "shape": o.Shape, "view": views.get(o.Name),
+              "cable": bool(getattr(o, "AtechCableModule", None))} for o in ends
+             if not getattr(o, "AtechRole", None)]
+    mods = [{"label": it["label"], "name": it["name"], "mesh": it["mesh"],
+             "module": it.get("module"), "axes": it.get("axes"), "role": it.get("role")}
+            for it in items if it.get("mesh") is not None]
+    t = time.time()
+    try:
+        r = atech_geom.archetype_problems(parts, mods, req, mode="quality" if _quality() else "fast")
+    except Exception as exc:                            # noqa: BLE001
+        res.setdefault("notes", []).append("archetype probe could not run: %s" % exc)
+        return
+    res["archetype_seconds"] = round(time.time() - t, 3)
+    if r.get("archetype") is None:
+        return
+    res["archetype"] = {"label": r["archetype"], "facts": r["facts"]}
+    # R500/R600: style, not function - NOTE lines only, never a WARNING or
+    # a PROBLEM
+    res.setdefault("notes", []).extend(r["notes"])
+
+
+def _fastening(res, ends, code, ws=None):
+    """R441: housing parts that meet must be joined (a screw through both,
+    a snap or clip, a pin) - atech_geom.fastening. A PROBLEM in quality
+    mode, a WARNING in fast mode."""
+    import atech_geom
+    views = {f["name"]: f["view"] for f in res.get("objects") or ()
+             if isinstance(f, dict) and f.get("view")}
+    parts = [{"label": o.Label, "name": o.Name, "shape": o.Shape, "view": views.get(o.Name),
+              "cable": bool(getattr(o, "AtechCableModule", None))} for o in ends
+             if not getattr(o, "AtechRole", None)]
+    if len(parts) < 2:
+        return
+    # R505: a hinge declared in intent.json "motion" joins its pair
+    motions = []
+    try:
+        intent, _bad = atech_geom.read_intent(ws or os.getcwd())
+        if isinstance(intent, dict):
+            motions = atech_geom.read_motion(intent)
+    except Exception:                                   # noqa: BLE001
+        motions = []
+    t = time.time()
+    try:
+        r = atech_geom.fastening(parts, code, motions=motions)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("fastening probe could not run: %s" % exc)
+        return
+    res["fastening_seconds"] = round(time.time() - t, 3)
+    if len(r["housing"]) < 2:
+        return
+    res["fastening"] = r
+    for row in r["loose"]:
+        line = atech_geom.fastening_text(row)
+        (res.setdefault("problems", []) if _quality() else res["warnings"]).append(line)
+
+
+def _holders(res, ends, items):
+    """R442: every CABLED module needs material within 0.5 mm on two sides
+    or a cradle (atech_geom.cable_holders) - the board holds a seated one.
+    A PROBLEM in quality mode, a WARNING in fast mode."""
+    import atech_geom
+    cabled = {str(getattr(o, "AtechCableModule", "") or "") for o in ends}
+    cabled.discard("")
+    if not cabled:
+        return
+    parts = [{"label": o.Label, "shape": o.Shape,
+              "cable": bool(getattr(o, "AtechCableModule", None))} for o in ends
+             if not getattr(o, "AtechRole", None)]
+    mods = [{"label": it["label"], "name": it["name"], "mesh": it["mesh"], "axes": it.get("axes")}
+            for it in items if it.get("role") == "module" and it.get("mesh") is not None]
+    t = time.time()
+    try:
+        rows = atech_geom.cable_holders(parts, mods, cabled)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("cabled-module holder probe could not run: %s" % exc)
+        return
+    res["holders_seconds"] = round(time.time() - t, 3)
+    res["holders"] = rows
+    for row in rows:
+        if not row["held"]:
+            line = atech_geom.holder_text(row)
+            (res.setdefault("problems", []) if _quality() else res["warnings"]).append(line)
+
+
+def _retention(res, ends, items):
+    """R270: with an Atech board, some part must hold it - within
+    atech_geom.RETAIN_MM above it or under it (a ledge). A PROBLEM in
+    quality mode when nothing does."""
+    import atech_geom
+    board = next(({"label": it["label"], "mesh": it["mesh"]} for it in items
+                  if it.get("role") == "board" and it.get("mesh") is not None), None)
+    if board is None or not _quality():
+        return
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
+    if not parts:
+        return
+    try:
+        r = atech_geom.board_retention(parts, board)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("board retention probe could not run: %s" % exc)
+        return
+    res["board_retention"] = r
+    if r.get("retained") is False:
+        res.setdefault("problems", []).append(atech_geom.retention_text(board["label"]))
+
+
+def _scorecard(res, doc, seeded, view, ends, code):
+    """R270: the PRODUCT SCORECARD NOTE lines (review.scorecard) - never a
+    failure."""
+    try:
+        import review
+        items = _review_items(doc, seeded, view, set())
+        card = review.scorecard(items, view_colored={
+            o.Label for o in ends if (view.get(o.Name) or {}).get("ShapeColor")
+            is not None or (view.get(o.Name) or {}).get("DiffuseColor")},
+            face_open=res.get("face_open"), whole=res.get("whole_size"), code=code)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("scorecard could not run: %s" % exc)
+        return
+    res["scorecard"] = card["facts"]
+    res.setdefault("notes", []).extend(card["lines"])
 
 
 def _turn_guard(ws, before):
@@ -1005,6 +1684,12 @@ def _turn_guard(ws, before):
 
 
 USER_MAX = 30       # user objects compared with the build, at most
+# R250: bodies (parts + board + modules) the overlap and floating checks
+# compare. atech_geom's MAX_PAIRS_OBJECTS (30) left the last 10+ parts of a
+# 40-part product unchecked; boxes are compared first (O(n^2) on boxes,
+# booleans only on touching pairs) - MEASURED on examples/toy_car.py: see
+# test_agent_kit.Check.test_R250_overlap_cap.
+OVERLAP_CAP = 120
 
 
 def _user_items(doc, seeded):
@@ -1079,7 +1764,15 @@ def _face_open(res, ends, items, ws):
     board = next(({"label": it["label"], "mesh": it["mesh"]} for it in items
                   if it.get("role") == "board" and it.get("mesh") is not None), None)
     mods = [it for it in items if it.get("role") == "module" and it.get("mesh") is not None]
-    parts = [{"label": o.Label, "shape": o.Shape} for o in ends
+    # R250: each part's recorded view props (obj.ViewObject.Transparency =
+    # ... in model.py, recorded headless) go with it: a see-through lens
+    # lets a light's rays out (atech_geom.part_transparency)
+    views = {f["name"]: f["view"] for f in res.get("objects") or ()
+             if isinstance(f, dict) and f.get("view")}
+    parts = [{"label": o.Label, "name": o.Name, "shape": o.Shape,
+              "view": views.get(o.Name),
+              # R270: a ribbon cable is never a module's cover
+              "cable": bool(getattr(o, "AtechCableModule", None))} for o in ends
              if not getattr(o, "AtechRole", None)]
     if board is None or not mods or not parts:
         return
@@ -1110,8 +1803,7 @@ def _containers(res, ends, items, ws):
     """R169: a part named as a container (pot, cup, planter...) must be open
     from above (atech_geom.containers)."""
     import atech_geom
-    parts = [{"label": o.Label, "shape": o.Shape} for o in ends
-             if not getattr(o, "AtechRole", None)]
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
     if not parts:
         return
     intent, _bad = atech_geom.read_intent(ws)
@@ -1298,6 +1990,53 @@ def _channels(res, ends, ws):
         res["channels"] = rows
 
 
+WALL_BUDGET_QUALITY_S = 20.0    # R270: the wall probe's time cap in quality mode
+
+
+def _walls_cached(parts):
+    """R270: thin_walls in quality mode - every part probed to the end
+    (its verdict fails the check now, so it must not depend on how loaded
+    the machine is: MEASURED, the round-1 toy car's 0.27 mm spot was found
+    or missed with the 0.5-4 s cap depending on load), each part with its
+    own seed and a fixed sample count, and an unchanged part's row taken
+    from the workspace cache."""
+    import atech_geom
+    t0 = time.time()
+    per = max(50, int(atech_geom.WALL_SAMPLES / max(1, len(parts))))
+    store = atech_geom._pair_store()
+    keys, rows, todo = {}, {}, []
+    for i, p in enumerate(parts):
+        fp = atech_geom.cache_fingerprint(p["shape"]) if store is not None else None
+        if fp is not None:
+            keys[i] = atech_geom._pair_key("wall", p["label"], fp, "", None, per)
+            hit = store["data"].get(keys[i])
+            if isinstance(hit, dict):
+                store["hits"] += 1
+                rows[i] = hit
+                continue
+        todo.append(i)
+    w = atech_geom.thin_walls([parts[i] for i in todo], budget_s=WALL_BUDGET_QUALITY_S,
+                              samples=per * max(1, len(todo)), per_part_seed=True) \
+        if todo else {"parts": [], "samples": 0, "complete": True}
+    got = {r["label"]: r for r in w["parts"]}
+    for i in todo:
+        r = got.get(parts[i]["label"])
+        if r is None:
+            continue
+        rows[i] = r
+        if i in keys and not r.get("partial") and not r.get("skipped"):
+            store["data"][keys[i]] = r
+            store["dirty"] = True
+            store["miss"] = store.get("miss", 0) + 1
+    out = [rows[i] for i in range(len(parts)) if i in rows]
+    found = [r for r in out if r.get("mm") is not None]
+    return {"parts": out, "min": min(found, key=lambda r: r["mm"]) if found else None,
+            "samples": sum(r.get("samples") or 0 for r in out),
+            "seconds": round(time.time() - t0, 3),
+            "complete": bool(w.get("complete")) and len(out) == len(parts),
+            "cached": len(parts) - len(todo)}
+
+
 def _walls(res, ends, ws=None):
     """R154: the thinnest wall the sampled probe measured; a WARNING below
     atech_geom.WALL_FLOOR_MM, never a failure (it is an estimate). R194:
@@ -1305,12 +2044,14 @@ def _walls(res, ends, ws=None):
     intent.json "wall_mm" - a NOTE when they differ, so the reply quotes
     the measured number."""
     import atech_geom
-    parts = [{"label": o.Label, "shape": o.Shape} for o in ends
-             if not getattr(o, "AtechRole", None)]
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
     if not parts:
         return
     try:
-        w = atech_geom.thin_walls(parts)
+        # R270: a PROBLEM now, so the sampled probe gets the time to finish
+        # (0.5 s hit its cap on every round-1 shell: which part was probed,
+        # and so the verdict, changed with the machine's load)
+        w = _walls_cached(parts) if _quality() else atech_geom.thin_walls(parts)
     except Exception as exc:                            # noqa: BLE001
         res["warnings"].append("wall probe could not run: %s" % exc)
         return
@@ -1332,7 +2073,19 @@ def _walls(res, ends, ws=None):
                     "in your reply give the measured thickness, not %g" % (
                         p["label"], sd["mm"], sd["lo"], sd["hi"], want, want))
     m = w.get("min")
-    if m is not None and m["mm"] < atech_geom.WALL_FLOOR_MM:
+    bad = []
+    if _quality():
+        # R270: a confirmed spot under WALL_PROBLEM_MM fails
+        try:
+            bad, thin = atech_geom.thin_wall_problems(
+                w, {o.Label: o.Shape for o in ends if _designed(o)})
+        except Exception as exc:                        # noqa: BLE001
+            res["warnings"].append("exact wall re-measure could not run: %s" % exc)
+            bad, thin = [], []
+        if thin:
+            w["thin"] = thin
+        res.setdefault("problems", []).extend(bad)
+    if m is not None and m["mm"] < atech_geom.WALL_FLOOR_MM and not bad:
         res["warnings"].append(
             "%s: a wall only %.2f mm thick near (%s) - below %.1f mm (2 x a 0.4 mm "
             "FDM nozzle), it prints weak or not at all; thicken it or move the "
@@ -1352,10 +2105,20 @@ def _atech_report(doc, seeded):
             board = {"label": o.Label, "name": o.Name, "seeded": o.Name in seeded,
                      "placement": placement_list(o.Placement)}
         elif role == "module":
-            mods.append({"module": str(getattr(o, "AtechModule", "")),
-                         "ports": [int(p) for p in (getattr(o, "AtechPorts", ()) or ())],
-                         "label": o.Label, "name": o.Name,
-                         "seeded": o.Name in seeded})
+            m = {"module": str(getattr(o, "AtechModule", "")),
+                 "ports": [int(p) for p in (getattr(o, "AtechPorts", ()) or ())],
+                 "label": o.Label, "name": o.Name,
+                 "seeded": o.Name in seeded}
+            if getattr(o, "AtechJoint", None) == "cable":
+                # R222: placed, not seated - Studio replays it where it
+                # stands and marks its cables (results, by label) again
+                m["joint"] = "cable"
+                m["placement"] = placement_list(o.Placement)
+                m["cables"] = [{"label": q.Label, "port": int(q.AtechCablePort),
+                                "length": float(q.AtechCableLength)}
+                               for q in doc.Objects
+                               if getattr(q, "AtechCableModule", None) == o.Name]
+            mods.append(m)
     if board is None and not mods:
         return None
     return {"board": board, "modules": mods}
@@ -1409,9 +2172,41 @@ def _atech_port_check(doc, res):
         res["atech_check"][label] = {k: v.get("verdict") for k, v in checks.items()}
         for k, v in checks.items():
             if v.get("verdict") == getattr(ap, "FAIL", "FAIL"):
+                # R222: the reason when the library gives one ("the board
+                # or the module moved after its cable was made")
+                why = v.get("why") if isinstance(v.get("why"), str) else ""
                 res.setdefault("problems", []).append(
-                    "Atech %s: %s FAIL" % (label, k))
+                    "Atech %s: %s FAIL%s" % (label, k, ": " + why if why else ""))
     res["atech_check_seconds"] = round(time.time() - t, 2)
+
+
+def _firmware(res, ws):
+    """The firmware half of an Atech build (atech_firmware, the Atech SDK's
+    catalog): the project.yaml modules block of what model.py placed, every
+    port the SDK would refuse, and ws/project.yaml against the build.
+    Warnings, never problems: the CAD board and the SDK's still disagree
+    on ports 8 and 12."""
+    mods = (res.get("atech") or {}).get("modules") or []
+    if not mods:
+        return
+    try:
+        import atech_firmware
+        fw = atech_firmware.report(mods, ws)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("firmware check could not run: %s" % exc)
+        return
+    if not fw:
+        return
+    res["firmware"] = fw
+    for line in fw["issues"]:
+        res["warnings"].append("FIRMWARE %s" % line)
+    for line in fw["project"]:
+        res["warnings"].append("FIRMWARE %s" % line)
+    if not fw["project_found"]:
+        res["warnings"].append(
+            "FIRMWARE no project.yaml: write %s with the modules block "
+            "./check prints and a code: block that makes the product work "
+            "(reference/%s)" % (atech_firmware.PROJECT, atech_firmware.REFERENCE))
 
 
 def _fitted_after(doc, res):
@@ -1447,6 +2242,19 @@ def _fitted_after(doc, res):
                 out.append(parts[name])
         else:
             missing.append(name)
+    screws = [n for n in missing if re.match(r"screw", n, re.I)]
+    if screws:
+        # R270: a screw named in fitted_after but never built is a missing
+        # fastener, not a part still to come - it fails in ./check too
+        res.setdefault("problems", []).append(
+            "intent.json fitted_after names %s, but model.py builds no such part: the "
+            "product is missing %s fastener%s. Build %s (cad.screw(..) at each "
+            "boss, a Part::Feature named exactly so), or take %s out of "
+            "fitted_after if the design has no screws there" % (
+                ", ".join(screws), "that" if len(screws) == 1 else "those",
+                "" if len(screws) == 1 else "s", "it" if len(screws) == 1 else "them",
+                "it" if len(screws) == 1 else "them"))
+        res["fitted_after_missing_screws"] = screws
     if missing:
         res["fitted_after_missing"] = missing
         res.setdefault("notes", []).append(
@@ -1528,6 +2336,16 @@ def _say_summary(res):
         _say("ATECH module %s on port(s) %s%s" % (
             m["label"], ",".join(str(p) for p in m["ports"]),
             " (the user's)" if m.get("seeded") else ""))
+    fw = res.get("firmware") or {}
+    if fw:
+        _say("FIRMWARE %s, project.yaml %s; the modules block of this build:"
+             % (fw["sdk"], "found" if fw.get("project_found") else "missing"))
+        for e in fw["modules"]:
+            if e.get("id"):
+                _say("FIRMWARE   - {id: %s, instance: %s, %s}" % (
+                    e["id"], e["instance"],
+                    "port: %d" % e["ports"][0] if len(e["ports"]) == 1
+                    else "ports: [%s]" % ", ".join(str(p) for p in e["ports"])))
     lay = res.get("atech_layout") or {}
     if lay.get("board_tilt_from_vertical_deg") is not None:
         _say("ATECH board plane %.0f deg from vertical (0 = upright, 90 = flat)"
@@ -1613,9 +2431,30 @@ def _say_summary(res):
     for w in res.get("warnings") or []:
         _say("WARNING " + w)
     if res.get("png"):
-        _say("PNG %s  <- Read it and look at it" % res["png"])
+        _say("PNG %s  <- the hero view alone" % res["png"]
+             if res.get("review", {}).get("sheet") else
+             "PNG %s  <- Read it and look at it" % res["png"])
     elif res.get("render_skipped"):
         _say("PNG not drawn: %s" % res["render_skipped"])
+    _say_review(res)
+
+
+def _say_review(res):
+    """R230: the REVIEW lines - the pictures to Read."""
+    rv = res.get("review") or {}
+    if rv.get("sheet"):
+        _say("REVIEW %s  <- six views (3/4 hero, front, right, rear 3/4, left, "
+             "top), real colours, one scale: Read it and judge it as an "
+             "industrial designer would" % rv["sheet"])
+    if rv.get("inside"):
+        _say("REVIEW %s  <- cutaway at the board: how the electronics sit in "
+             "the body" % rv["inside"] if rv.get("inside_cut") == "board" else
+             "REVIEW %s  <- cutaway through the middle (front half off): walls "
+             "and what is inside" % rv["inside"])
+    for lab, p in sorted((rv.get("closeups") or {}).items()):
+        _say("REVIEW %s  <- close-up of %s (REVIEW_CLOSEUPS)" % (p, lab))
+    if rv.get("skipped"):
+        _say("REVIEW not drawn: %s" % rv["skipped"])
 
 
 if __name__ in ("__main__", "check"):

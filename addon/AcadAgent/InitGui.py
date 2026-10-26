@@ -47,13 +47,9 @@ class AcadAgentWorkbench(Workbench):  # noqa: F821 - injected by FreeCAD
         # FreeCAD's own Help menu ("&Help", StdWorkbench) is merged by name,
         # so the credits also sit where users look for an About box.
         self.appendMenu("&Help", ["AcadAgent_Credits"])
-        # Projects get their own submenu, one entry per buildable project.
-        # Empty when the module library is not on this machine — an absent
-        # library yields an absent menu, never a broken entry.
-        projects = ["AcadAgent_Project_%s" % commands._safe(k)
-                    for k in commands.project_command_ids()]
-        if projects:
-            self.appendMenu(["Atech", "New Project"], projects)
+        # R456: no "New Project" submenu of starter projects any more. The
+        # default projects are files in the projects folder (installed by
+        # default_projects.py) and Home's "Start from an example" row.
 
     def Activated(self):
         from acadagent import shell, viewport

@@ -526,3 +526,178 @@ def capture_to_panel(panel, width=1200, height=900, view_name=AUTO,
 
     panel.add_shot(path, default_caption(view_name))
     return path
+
+
+# ===================================================================
+# R347 share image: a clean hero picture to Pictures + the clipboard
+# ===================================================================
+#: Where share images go (PRD W4 8). ATECH_SHARE_DIR overrides it (tests).
+SHARE_FOLDER = os.path.join("~", "Pictures", "Atech AI CAD")
+SHARE_SIZE = (1920, 1080)
+#: saveImage's background for a share image: plain white, not the themed
+#: gradient of the live view.
+SHARE_BACKGROUND = "White"
+
+
+def share_dir(out_dir=None):
+    """The folder share images are saved to (created)."""
+    d = out_dir or os.environ.get("ATECH_SHARE_DIR") or os.path.expanduser(SHARE_FOLDER)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _share_path(doc, out_dir, what="image"):
+    label = getattr(doc, "Label", "") or "Atech AI CAD"
+    safe = "".join(c if (c.isalnum() or c in " ._-") else "_" for c in label).strip(" .")
+    stamp = time.strftime("%Y-%m-%d at %H.%M.%S")
+    base = os.path.join(share_dir(out_dir), "%s %s %s" % (safe or "Design", what, stamp))
+    path, k = base + ".png", 2
+    while os.path.exists(path):
+        path, k = "%s (%d).png" % (base, k), k + 1
+    return path
+
+
+def copy_image_to_clipboard(path):
+    """Put the PNG at `path` on the clipboard. False when there is no Qt
+    application (headless) or the image cannot be read."""
+    try:
+        from PySide6 import QtGui
+        app = QtGui.QGuiApplication.instance()
+        if app is None:
+            return False
+        img = QtGui.QImage(path)
+        if img.isNull():
+            return False
+        app.clipboard().setImage(img)
+        return True
+    except Exception as exc:                              # noqa: BLE001
+        _log("clipboard: %r" % (exc,))
+        return False
+
+
+def _kit_on_path():
+    import sys
+    kit = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_kit")
+    if kit not in sys.path:
+        sys.path.append(kit)
+
+
+def _scene_items(doc):
+    """review.py items for a document's visible solids and Atech meshes,
+    in the colours the user sees (ViewObject, else the recorded build /
+    hand-edit colours, else review's own role colours)."""
+    _kit_on_path()
+    import review
+    from . import export_tools as et
+    items = []
+    for o in doc.Objects:
+        if not et._visible(o) or not et._top_level(o):
+            continue
+        if et.PREVIOUS in (getattr(o, "Label", "") or ""):
+            continue
+        role = getattr(o, "AtechRole", None)
+        kind = role or ("cable" if getattr(o, "AtechCableModule", None) else "body")
+        c, _t = et.object_colour(o)
+        if c is None:
+            c = {"board": review.BOARD, "module": review.MODULE,
+                 "cable": review.CABLE}.get(kind)
+        if et._is_mesh(o):
+            items.append({"label": o.Label, "mesh": o.Mesh, "color": c, "kind": kind})
+        elif et._has_solid(o):
+            items.append({"label": o.Label, "shape": o.Shape, "color": c, "kind": kind})
+    if items and all(it["color"] is None for it in items if it["kind"] == "body"):
+        k = 0
+        for it in items:
+            if it["kind"] == "body":
+                it["color"] = review.PALETTE[k % len(review.PALETTE)]
+                k += 1
+    return items
+
+
+def render_hero(doc, path, width=SHARE_SIZE[0], height=SHARE_SIZE[1]):
+    """The review sheet's 3/4 hero, drawn without OpenGL (agent_kit/
+    review.py: numpy + PIL) at width x height on a plain light background.
+    Used when there is no 3D view (headless, or the view cannot save)."""
+    _kit_on_path()
+    import numpy as np
+    import review
+    from PIL import Image
+    scene = review.scene_from(_scene_items(doc))
+    if scene is None:
+        raise _err("nothing to draw in %r" % getattr(doc, "Label", "?"),
+                   "There is nothing to show yet: the design has no visible parts.")
+    diag = float(np.linalg.norm(scene["max"] - scene["min"]))
+    ctr = (scene["min"] + scene["max"]) / 2
+    _name, v, up, persp = review.HERO
+    cam = review.camera(v, up, ctr, diag, persp)
+    shadow = review.ShadowMap(scene, review.KEY)
+    img, _scale = review.render_view(scene, cam, int(width), int(height), shadow, ss=1)
+    Image.fromarray((np.clip(img, 0, 1) * 255).astype(np.uint8)).save(path)
+    _verify_png(path)
+    return path
+
+
+def share_image(doc=None, out_dir=None, width=SHARE_SIZE[0], height=SHARE_SIZE[1],
+                clipboard=True, view_name=AUTO):
+    """R347: save a 1920 x 1080 hero picture of the design to
+    ~/Pictures/Atech AI CAD/ and copy it to the clipboard. With a 3D view
+    it is the view's own render (saveImage, the default side - the module
+    face of an Atech board - fitted, on white, the user's camera put back);
+    without one, review.py's hero. Returns the path."""
+    if doc is None:
+        try:
+            import FreeCAD
+            doc = FreeCAD.ActiveDocument
+        except ImportError:
+            doc = None
+    if doc is None:
+        raise _err("no document", _USER_NO_DOC)
+    path = _share_path(doc, out_dir)
+    done = False
+    try:
+        import FreeCAD
+        gui = bool(getattr(FreeCAD, "GuiUp", False))
+    except ImportError:
+        gui = False
+    if gui:
+        try:
+            capture(path=path, width=width, height=height,
+                    view_name=default_view(doc) if view_name == AUTO else view_name,
+                    fit=True, background=SHARE_BACKGROUND, restore=True)
+            done = True
+        except CaptureError as exc:
+            _log("share image from the view failed, drawing it instead: %s" % exc)
+    if not done:
+        render_hero(doc, path, width, height)
+    if clipboard:
+        copy_image_to_clipboard(path)
+    _log("share image %s" % path)
+    return path
+
+
+def share_sheet(doc=None, out_dir=None, clipboard=False):
+    """PRD W4 8: the six-view review sheet (agent_kit/review.py) of the
+    design, saved next to the share images. Returns the path."""
+    if doc is None:
+        import FreeCAD
+        doc = FreeCAD.ActiveDocument
+    if doc is None:
+        raise _err("no document", _USER_NO_DOC)
+    _kit_on_path()
+    import review
+    import shutil
+    import tempfile as _tf
+    tmp = _tf.mkdtemp(prefix="atech-sheet-")
+    try:
+        res = review.draw(_scene_items(doc), tmp, title=getattr(doc, "Label", ""),
+                          inside=False)
+        if not res.get("sheet"):
+            raise _err("review sheet: %s" % res.get("why"),
+                       "There is nothing to show yet: the design has no visible parts.")
+        path = _share_path(doc, out_dir, "review sheet")
+        shutil.copyfile(res["sheet"], path)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    if clipboard:
+        copy_image_to_clipboard(path)
+    return path

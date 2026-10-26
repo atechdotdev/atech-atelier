@@ -77,6 +77,181 @@ def project_info(key):
     return m.PROJECTS[key]
 
 
+def _ports_lib():
+    """atech_ports from this installation's projects/ folder (or None)."""
+    if _mod() is None:
+        return None
+    import atech_ports
+    return atech_ports
+
+
+# ------------------------------------------------- free parts (R305)
+#: The Atech role of a part placed by hand that plugs into no port (the N20
+#: wheel; the NEMA 17 stepper; any part whose mesh has no pin header). It is
+#: not "module" (atech_ports.occupied() counts modules by their AtechPorts).
+FREE_ROLE = "part"
+FREE_GAP_MM = 12.0
+
+
+def free_parts(seatable=None):
+    """Library parts that can only be placed by hand, never seated: every
+    presets.yaml entry that is not the board and not in `seatable`
+    (atech_ports.seatable(); measured when None). Sorted by name."""
+    m = _mod()
+    ap = _ports_lib()
+    if m is None or ap is None:
+        return []
+    names = [n for n, sp in m.specs().items() if sp.get("category") != "board"]
+    if seatable is None:
+        seatable = ap.seatable(sorted(names))
+    return sorted(n for n in names if n not in seatable)
+
+
+def _world_bbox(o):
+    try:
+        if hasattr(o, "Mesh"):
+            return o.Mesh.BoundBox
+        sh = getattr(o, "Shape", None)
+        if sh is not None and not sh.isNull():
+            return sh.BoundBox
+    except Exception:                               # noqa: BLE001
+        pass
+    return None
+
+
+def free_part_placement(doc, name):
+    """Where a free part goes when added by hand: beside everything already
+    in the document (+X), clear of it by FREE_GAP_MM, centred on the board
+    (or the origin) in Y and Z. A Placement, in the mesh's own frame."""
+    import Mesh
+    m = _mod()
+    mbb = Mesh.Mesh(m.stl_path(name)).BoundBox
+    xmax, centre = None, FreeCAD.Vector(0, 0, 0)
+    for o in doc.Objects:
+        bb = _world_bbox(o)
+        if bb is None or not bb.isValid():
+            continue
+        xmax = bb.XMax if xmax is None else max(xmax, bb.XMax)
+        if getattr(o, "AtechRole", None) == "board":
+            centre = bb.Center
+    x = (xmax + FREE_GAP_MM if xmax is not None else 0.0) - mbb.XMin
+    return FreeCAD.Placement(
+        FreeCAD.Vector(x, centre.y - (mbb.YMin + mbb.YMax) / 2.0,
+                       centre.z - (mbb.ZMin + mbb.ZMax) / 2.0),
+        FreeCAD.Rotation())
+
+
+def place_free_part(doc, name, placement=None, label=None):
+    """Add library part `name` (n20_wheel, nema17_stepper, ...) to doc
+    as a free part through atech_modules.load_module, tagged AtechRole
+    "part" and AtechModule <name>. Returns the object. It plugs into no
+    port; atech_ports.check() still counts it as an obstacle."""
+    m = _mod()
+    if m is None:
+        raise RuntimeError(MISSING_LIBRARY)
+    pl = placement if placement is not None else free_part_placement(doc, name)
+    obj, _rep = m.load_module(doc, name, label=label or name, placement=pl)
+    for prop, txt in (("AtechRole", "board | module | part"),
+                      ("AtechModule", "presets.yaml module name")):
+        if prop not in obj.PropertiesList:
+            obj.addProperty("App::PropertyString", prop, "Atech", txt)
+    obj.AtechRole = FREE_ROLE
+    obj.AtechModule = name
+    doc.recompute()
+    return obj
+
+
+def placed_free_parts(doc):
+    """[obj] of the free parts in doc, in document order."""
+    if doc is None:
+        return []
+    return [o for o in doc.Objects if getattr(o, "AtechRole", None) == FREE_ROLE]
+
+
+# --------------------------------------------- starter projects (R306)
+#: The order starter modules take ports in: the side columns first, then
+#: the top edge; 8 (USB-C, bottom middle) and 12 (Reset) last, as the
+#: board's own docs describe them. USB-C goes to 8 first.
+STARTER_PORT_ORDER = (1, 2, 3, 4, 5, 6, 9, 10, 11, 13, 14, 7, 12, 8)
+STARTER_PREFERRED = {"usbc": (8,)}
+
+
+def _all_pass(res):
+    return all((v or {}).get("verdict") == "PASS" for v in res.values())
+
+
+def seat_starter(doc, module_names, ap=None):
+    """Seat module_names on the board of doc, each on the first port (pair,
+    for a two-connector module) in STARTER_PORT_ORDER whose check passes
+    with everything seated before it. Modules with no pin header become
+    free parts beside the board. Returns a report: placed [{name, ports,
+    object}], free [{name, object}], skipped [{name, reason}]."""
+    ap = ap or _ports_lib()
+    rep = {"placed": [], "free": [], "skipped": []}
+    seatable = ap.seatable(sorted(set(module_names)))
+    reserved = dict(getattr(ap, "RESERVED", {}) or {})
+    ap.board_object(doc)
+    for name in module_names:
+        if name not in seatable:
+            try:
+                o = place_free_part(doc, name)
+                rep["free"].append({"name": name, "object": o.Name})
+            except Exception as exc:                # noqa: BLE001
+                rep["skipped"].append({"name": name, "reason": str(exc)})
+            continue
+        order = list(STARTER_PREFERRED.get(name, ())) + [
+            n for n in STARTER_PORT_ORDER if n not in STARTER_PREFERRED.get(name, ())]
+        done, last = None, "no free port"
+        for n in order:
+            occ = ap.occupied(doc)
+            if n in occ or n in reserved:
+                continue
+            try:
+                arg = (n if seatable[name] == 1
+                       else ap.pair_for(doc, name, n, reserved=reserved))
+                o = ap.seat(doc, name, arg)
+            except Exception as exc:                # noqa: BLE001
+                last = str(exc)
+                continue
+            res = ap.check(doc, only=[o.Name]).get(o.Name, {})
+            if _all_pass(res):
+                done = o
+                break
+            last = "port %s: %s" % (n, ap.first_why(res))
+            ap.remove(doc, int(o.AtechPorts[0]))
+        if done is None:
+            rep["skipped"].append({"name": name, "reason": last})
+        else:
+            rep["placed"].append({"name": name, "object": done.Name,
+                                  "ports": [int(p) for p in done.AtechPorts]})
+    doc.recompute()
+    return rep
+
+
+def build_starter(key, doc_name=None):
+    """A starter project (atech_modules.PROJECTS[key]) as real hardware: the
+    tagged board, each module seated through atech_ports on measured ports
+    (AtechRole/AtechPorts, so the Modules page, check() and the agent see
+    it), parts without a pin header as tagged free parts. Returns (doc,
+    report) in the shape _summary() reads."""
+    m = _mod()
+    if m is None:
+        raise RuntimeError(MISSING_LIBRARY)
+    if key not in m.PROJECTS:
+        raise KeyError(key)
+    p = m.PROJECTS[key]
+    doc = FreeCAD.newDocument(doc_name or key)
+    rep = seat_starter(doc, p["modules"])
+    report = {"project": p["title"], "overlaps": [], "fits_on_board": True,
+              "placed": [{"name": r["name"], "ports": r["ports"], "delta": None}
+                         for r in rep["placed"]] +
+                        [{"name": r["name"], "ports": [], "delta": None}
+                         for r in rep["free"]],
+              "skipped": rep["skipped"], "seated": rep["placed"],
+              "free": rep["free"]}
+    return doc, report
+
+
 # Atech brand: board neutral, modules on the blue ramp so the stack reads.
 _BOARD_COLOR = (0.18, 0.20, 0.26)
 _MODULE_COLORS = [(0.35, 0.64, 1.00), (0.60, 0.42, 1.00),
@@ -91,7 +266,9 @@ def build_and_show(key):
         FreeCAD.Console.PrintError("Atech: %s\n" % MISSING_LIBRARY)
         return None, None
     try:
-        doc, report = m.build_named(key)
+        # R306: seated on measured ports and tagged (AtechRole/AtechPorts),
+        # not atech_modules.build_named's untagged meshes packed in a row
+        doc, report = build_starter(key)
     except Exception as exc:
         FreeCAD.Console.PrintError("Atech: %s\n" % exc)
         return None, None

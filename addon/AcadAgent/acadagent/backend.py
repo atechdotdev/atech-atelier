@@ -276,8 +276,8 @@ def log_path():
         import FreeCAD
         base = FreeCAD.getUserAppDataDir()
     except Exception:                                        # noqa: BLE001
-        base = os.path.join(os.path.expanduser("~"), ".local", "share",
-                            "Atech Atelier", "v1-1")
+        from . import fallback_data_root
+        base = os.path.join(fallback_data_root(), "v1-1")
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, "agent-backend.log")
 

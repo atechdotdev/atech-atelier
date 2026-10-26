@@ -27,6 +27,11 @@ import time
 import types
 import unittest
 
+# R230: these tests pin the FAST mode prompt and limits (the text before
+# quality mode, byte for byte); test_quality_mode.py covers quality mode.
+# Inherited by every freecadcmd these tests start (_fc_env copies os.environ).
+os.environ.setdefault("ATECH_PROMPT_MODE", "fast")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 ADDON = os.environ.get("ATECH_ADDON_DIR") or os.path.dirname(HERE)
@@ -264,7 +269,7 @@ class TestPromptRound3(unittest.TestCase):
         sp = pbuild.system_prompt("/nonexistent/ws", request=self.PLAIN)
         for sig in ("cad.fillet_safe(shape, r, edges=None, why=None)",
                     "cad.chamfer_safe(shape, d, edges=None, why=None)",
-                    "cad.fuse_one(*shapes)", "cad.cut(shape, *tools)",
+                    "cad.fuse_one(*shapes)", "cad.cut(shape, *tools, optional=False)",  # R270: optional=
                     "cad.hole(shape, at, axis, d, depth=None, through=False)",
                     "cad.rounded_box(x, y, z, r, at=(0, 0, 0), edges='vertical')",
                     "cad.spur_gear(m, z, thickness, bore=None",
@@ -297,9 +302,23 @@ class TestPromptRound3(unittest.TestCase):
         self.assertFalse(pbuild.mentions_atech("a board game box with a lid"))
 
     def test_S27_no_full_atech_section_for_plain_requests(self):
-        sp = pbuild.system_prompt("/nonexistent/ws", request=self.PLAIN)
+        # R220: with the library here, board_default puts the full section
+        # into every turn on purpose; S27's pointer-only prompt is the
+        # board_default-off one
+        old = os.environ.get("ATECH_PROMPT_OFF")
+        os.environ["ATECH_PROMPT_OFF"] = "board_default"
+        try:
+            sp = pbuild.system_prompt("/nonexistent/ws", request=self.PLAIN)
+        finally:
+            if old is None:
+                os.environ.pop("ATECH_PROMPT_OFF", None)
+            else:
+                os.environ["ATECH_PROMPT_OFF"] = old
         self.assertNotIn("this is the complete reference", sp)
         self.assertNotIn("ap.seat(doc", sp)
+        if pbuild.library_available():
+            on = pbuild.system_prompt("/nonexistent/ws", request=self.PLAIN)
+            self.assertIn("this is the complete reference", on)
 
 
 class TestRound4Pure(unittest.TestCase):
@@ -474,10 +493,22 @@ class TestRound5Pure(unittest.TestCase):
                 continue                   # kit-gated (TestRound9Pure)
             if sw == "socket_opening":
                 continue                   # Atech section only (TestRound11Pure)
+            if sw == "cables":
+                continue                   # Atech section only (TestBoardDetail)
+            if sw == "firmware":
+                continue                   # Atech section only (test_firmware_r630)
+            if sw == "module_plan":
+                continue                   # Atech section only (test_module_plan_r620)
             if sw == "pin_hinge" and pbuild.kit_pin_hinge() is None:
                 continue                   # kit-gated (TestRound11Pure)
             if sw == "mates" and not pbuild.kit_reads_intent_key(pbuild.MATES):
                 continue                   # kit-gated (TestRound11Pure)
+            if sw == "font" and pbuild.font_path() is None:
+                continue                   # no font on this host (macOS CI)
+            if sw == "board_default" and not pbuild.library_available():
+                continue                   # library-gated (TestBoardDetail)
+            if sw in ("levels", "seed_fork", "real_world"):
+                continue                   # quality mode, a new product (test_design_levels_r400)
             self.assertNotEqual(self.prompt(sw), full, sw)
 
     def test_R140_prompt_names_the_sandbox_font(self):
@@ -554,6 +585,22 @@ class TestRound5Pure(unittest.TestCase):
         lines = text.splitlines()
         self.assertLess([i for i, l in enumerate(lines) if "light_p3" in l][0],
                         lines.index("</document_data>"))
+
+    def test_R520_stale_lines_survive_a_doc_without_getObject(self):
+        # under freecadcmd the real atech_ports answers "unknown" for a
+        # stand-in document; the brief must still render (it raised
+        # AttributeError in label() before R520)
+        lib = types.SimpleNamespace(stale_modules=lambda d: {
+            "seated": ["M"], "cabled": [], "unknown": {"X": "no shape"}})
+        real = pbuild._ports_lib
+        pbuild._ports_lib = lambda: lib
+        try:
+            lines = pbuild._stale_lines(types.SimpleNamespace(Name="S"), ["Board"])
+        finally:
+            pbuild._ports_lib = real
+        text = "\n".join(lines)
+        self.assertIn("M: seated for where the board was", text)
+        self.assertIn("X: could not be checked (no shape)", text)
 
     def test_R139_empty_doc_still_says_no_solids_yet(self):
         text = pbuild.document_brief(types.SimpleNamespace(Name="E", Label="E",
@@ -721,9 +768,12 @@ class TestRound6Pure(unittest.TestCase):
         try:
             pbuild.kit_reads_fitted_after = lambda: True
             on = pbuild._draft_caps()
-            self.assertIn('("End_Cap_L", cb.XMin - W)', on["caps"])
+            # R250: the example builds its own caps - no code is appended
+            # (the old flat caps made End_Cap_L001 overlapping End_Cap_L)
+            self.assertNotIn("doc.addObject", on["caps"])
+            self.assertIn('"fitted_after": ["End_Cap_L", "End_Cap_R"]', _flat(on["caps"]))
             self.assertIn("only while model.py builds that part", _flat(on["caps"]))
-            self.assertEqual(on["caps_head"], " and these end caps appended")
+            self.assertEqual(on["caps_head"], ", its end caps kept")
             os.environ["ATECH_PROMPT_OFF"] = "caps_in_draft"
             self.assertEqual(pbuild._draft_caps(), {"caps_head": "", "caps": ""})
             os.environ.pop("ATECH_PROMPT_OFF")
@@ -733,7 +783,7 @@ class TestRound6Pure(unittest.TestCase):
                 example="    pass", slide=pbuild.SLIDE_CLOSED, refine="with Edit",
                 caps_head=on["caps_head"], caps=on["caps"], draft_first="",
                 socket=""))
-            self.assertIn("swapped in and these end caps appended - nothing else yet",
+            self.assertIn("swapped in, its end caps kept - nothing else yet",
                           rules)
         finally:
             pbuild.kit_reads_fitted_after = saved
@@ -851,7 +901,7 @@ class TestRound7Pure(unittest.TestCase):
             os.environ["ATECH_PROMPT_OFF"] = "intent_before_draft"
             off = _flat(pbuild._draft_caps()["caps"])
             self.assertNotIn("FIRST", off)
-            self.assertIn('("End_Cap_L", cb.XMin - W)', off)   # caps stay
+            self.assertIn('"fitted_after": ["End_Cap_L", "End_Cap_R"]', off)   # caps stay
             os.environ["ATECH_PROMPT_OFF"] = "caps_in_draft"
             self.assertEqual(pbuild._draft_caps(), {"caps_head": "", "caps": ""})
         finally:
@@ -1792,6 +1842,132 @@ class TestRound11Pure(unittest.TestCase):
             pbuild.KIT_DIR = saved
 
 
+class TestBoardDetail(unittest.TestCase):
+    """R220 (unsized products house the Atech board) and R221 (named
+    objects carry their recognisable details): "a car" came out ~10x the
+    board, a few flat slabs, with the board stuck on its side."""
+
+    CAR = "a car"
+
+    def prompt(self, off=None, library=True, request=CAR):
+        from unittest import mock
+        old = os.environ.get("ATECH_PROMPT_OFF")
+        try:
+            if off is None:
+                os.environ.pop("ATECH_PROMPT_OFF", None)
+            else:
+                os.environ["ATECH_PROMPT_OFF"] = off
+            with mock.patch.object(pbuild, "library_available",
+                                   lambda refresh=False: library), \
+                    mock.patch.object(pbuild, "_atech_note",
+                                      lambda: "\nATECH SECTION\n"), \
+                    mock.patch.object(pbuild, "_atech_pointer",
+                                      lambda: "\nATECH POINTER\n"):
+                return _flat(pbuild.system_prompt("/nonexistent/ws",
+                                                  request=request))
+        finally:
+            if old is None:
+                os.environ.pop("ATECH_PROMPT_OFF", None)
+            else:
+                os.environ["ATECH_PROMPT_OFF"] = old
+
+    def test_switches_listed(self):
+        for sw in ("board_default", "rich_detail"):
+            self.assertIn(sw, pbuild.PROMPT_CHANGES)
+
+    def test_R220_unsized_product_is_built_around_the_board(self):
+        sp = self.prompt()
+        self.assertIn("ATECH BOARD BY DEFAULT", sp)
+        self.assertIn("60 x 120 x 6.5 mm", sp)
+        self.assertIn("sits INSIDE the body", sp)
+        self.assertIn("Rotation(Vector(1, 0, 0), 90)", sp)
+        self.assertIn("ATECH SECTION", sp)          # full section, not pointer
+        self.assertNotIn("desk-sized", sp)
+        # a plain part keeps the board-free route, in the rule's own words
+        self.assertIn("a part that serves another object", sp)
+
+    def test_R220_off_or_no_library_restores_the_old_text(self):
+        for sp in (self.prompt("board_default"), self.prompt(library=False)):
+            self.assertNotIn("ATECH BOARD BY DEFAULT", sp)
+            self.assertIn("a desk-sized, 3D-printable model is a good default "
+                          "scale", sp)
+            self.assertIn("ATECH POINTER", sp)
+            self.assertNotIn("ATECH SECTION", sp)
+
+    def test_R220_board_default(self):
+        from unittest import mock
+        with mock.patch.object(pbuild, "library_available",
+                               lambda refresh=False: True):
+            os.environ.pop("ATECH_PROMPT_OFF", None)
+            self.assertTrue(pbuild.board_default())
+        with mock.patch.object(pbuild, "library_available",
+                               lambda refresh=False: False):
+            self.assertFalse(pbuild.board_default())
+
+    def test_R222_real_hardware_and_cables(self):
+        from unittest import mock
+        with mock.patch.object(pbuild, "library_has_cable", lambda: True):
+            sp = self.prompt()
+            os.environ.pop("ATECH_PROMPT_OFF", None)
+            rule = _flat(pbuild._cables_rule())
+        self.assertIn("built as the REAL thing made with Atech hardware", sp)
+        self.assertIn("light modules as headlights", sp)
+        self.assertIn("cable the rest (ap.cable - CABLES in the Atech section) "
+                      "to where they belong.", sp)
+        self.assertIn("0.2-0.3 mm clearance, never a guessed size", sp)
+        self.assertIn("never \"a feature the user did not ask for\"", sp)
+        self.assertIn("CABLES - a module goes where the product needs it", rule)
+        self.assertIn("a plug with all 6 pins in the port, a socket on all 6 "
+                      "module pins", rule)
+        self.assertIn("ap.module_placement(", rule)
+        self.assertIn("Never model a cable or a connector yourself", rule)
+        # off, or a library without cable(): no cable text anywhere
+        with mock.patch.object(pbuild, "library_has_cable", lambda: True):
+            off = self.prompt("cables")
+            os.environ["ATECH_PROMPT_OFF"] = "cables"
+            try:
+                self.assertEqual(pbuild._cables_rule(), "")
+            finally:
+                os.environ.pop("ATECH_PROMPT_OFF", None)
+        self.assertNotIn("ap.cable", off)
+        self.assertIn("leave out the rest", off)
+        with mock.patch.object(pbuild, "library_has_cable", lambda: False):
+            self.assertEqual(pbuild._cables_rule(), "")
+            self.assertNotIn("ap.cable", self.prompt())
+
+    def test_R222_library_has_cable_reads_the_source(self):
+        d = tempfile.mkdtemp(prefix="r222_lib_")
+        self.addCleanup(shutil.rmtree, d, True)
+        from unittest import mock
+        with mock.patch.object(pbuild, "_projects_dir", lambda: d):
+            self.assertFalse(pbuild.library_has_cable())       # no file
+            with open(os.path.join(d, "atech_ports.py"), "w") as fh:
+                fh.write("def seat(doc):\n    pass\n")
+            self.assertFalse(pbuild.library_has_cable())
+            with open(os.path.join(d, "atech_ports.py"), "a") as fh:
+                fh.write("\ndef cable(doc, module_name, port_arg, placement):\n"
+                         "    pass\n")
+            self.assertTrue(pbuild.library_has_cable())
+        # the real library has it
+        self.assertTrue(os.path.isfile(os.path.join(
+            ADDON, "..", "..", "projects", "atech_ports.py")))
+
+    def test_R221_named_object_gets_its_details(self):
+        sp = self.prompt()
+        self.assertIn("DETAIL: a named object must read as that object", sp)
+        self.assertIn("at least 12", sp)
+        self.assertIn("wheel arches", sp)
+        self.assertIn("ARE part of what the user asked for", sp)
+        self.assertIn("The first CHECK PASS ends the work once every DETAIL "
+                      "is in", sp)
+        off = self.prompt("rich_detail")
+        self.assertNotIn("DETAIL:", off)
+        self.assertIn("The first CHECK PASS ends the work: Read check.png", off)
+        # the draft stays coarse: details come after it
+        self.assertIn("AT MOST 30 LINES", sp)
+        self.assertLess(sp.index("AT MOST 30 LINES"), sp.index("DETAIL:"))
+
+
 @unittest.skipUnless(IN_FREECAD, "needs FreeCAD (run under freecadcmd)")
 class _Headless(unittest.TestCase):
 
@@ -1935,14 +2111,30 @@ class TestModes(_Headless):
         for ex in sorted(f for f in os.listdir(kit) if f.endswith(".py")):
             with open(os.path.join(kit, ex), encoding="utf-8") as fh:
                 code = fh.read()
+            intent = _example_intent(code)
             for mode in (self.build.IN_PROCESS, self.build.SANDBOX):
                 self.fresh("WS_T")
-                self.write(code)
+                ws = self.scratch()     # R250: each its own intent record
+                if intent is not None:
+                    # R250: an example with end caps / fitted parts carries
+                    # its intent.json as INTENT (atech_case.py's caps)
+                    self.write(json.dumps(intent), ws=ws, name=self.build.INTENT)
+                self.write(code, ws=ws)
                 t = time.time()
-                r = self.apply(mode=mode)
+                r = self.apply(ws=ws, mode=mode)
                 TIMINGS["%s %s (s)" % (ex, mode)] = round(time.time() - t, 3)
                 self.assertTrue(r.ok, r.error)
                 self.assertEqual(self.build.failures(r), "", ex)
+
+
+def _example_intent(code):
+    """R250: an example's INTENT = {...} literal (its intent.json), or None."""
+    import ast
+    for node in ast.parse(code).body:
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "INTENT"
+                                                for t in node.targets):
+            return ast.literal_eval(node.value)
+    return None
 
 
 class TestOwnership(_Headless):
@@ -2450,8 +2642,49 @@ case = cad.rounded_box(bb.XLength + 2 * (W + C), bb.YLength + 2 * (W + C),
 # open at both X ends: the modules slide in along X (ports 1-6, 9-14), so
 # closed walls there would block their slide paths (ap.check FAILs that)
 case = cad.shell(case, W, cad.faces_at(case, "+X") + cad.faces_at(case, "-X"))
+# R270 (quality ./check): every placed module's working face is opened (a
+# window in front of it, along the board's normal) and something holds the
+# board (ribs from the wall behind it to 0.1 mm off its back)
+up = %(tilt)s == 90                    # the board's normal: +Z flat, +Y upright
+for m in mods:
+    mb = ap.bbox(m)
+    if up:
+        win = Part.makeBox(mb.XLength - 4, mb.YLength - 4, 20,
+                           Vector(mb.XMin + 2, mb.YMin + 2, mb.ZMax - 1))
+    else:
+        win = Part.makeBox(mb.XLength - 4, 20, mb.ZLength - 4,
+                           Vector(mb.XMin + 2, mb.YMax - 1, mb.ZMin + 2))
+    case = cad.cut(case, win, optional=True)
+pb = cad.bound_of(board)
+ribs = []
+for f in (0.2, 0.5, 0.8):
+    x = pb.XMin + f * pb.XLength - 1.5
+    if up:
+        z0 = case.BoundBox.ZMin + 0.5
+        ribs.append(Part.makeBox(3, pb.YLength - 4, pb.ZMin - 0.1 - z0,
+                                 Vector(x, pb.YMin + 2, z0)))
+    else:
+        y0 = case.BoundBox.YMin + 0.5
+        ribs.append(Part.makeBox(3, pb.YMin - 0.1 - y0, pb.ZLength - 4,
+                                 Vector(x, y0, pb.ZMin + 2)))
+case = cad.fuse_one(case, *ribs)
 doc.addObject("Part::Feature", "Case").Shape = case
+# R250: the open ends closed by end caps in their closed position (as
+# examples/atech_case.py), declared in intent.json "fitted_after" so the
+# slide paths are tested without them: ./check's enclosure gate fails a
+# module that sees out of an open end ("not enclosed on its -X side")
+cb = case.BoundBox
+L, G, T = 2.0, 0.15, 0.8
+for name, x, d in (("End_Cap_L", cb.XMin - W, 1), ("End_Cap_R", cb.XMax, -1)):
+    plate = cad.rounded_box(W, cb.YLength, cb.ZLength, 0, at=(x, cb.YMin, cb.ZMin))
+    x0 = cb.XMin - 0.5 if d > 0 else cb.XMax - L
+    iy, iz = cb.YLength - 2 * (W + G), cb.ZLength - 2 * (W + G)
+    lip = cad.cut(Part.makeBox(L + 0.5, iy, iz, Vector(x0, cb.YMin + W + G, cb.ZMin + W + G)),
+                  Part.makeBox(L + 2, iy - 2 * T, iz - 2 * T,
+                               Vector(x0 - 0.75, cb.YMin + W + G + T, cb.ZMin + W + G + T)))
+    doc.addObject("Part::Feature", name).Shape = cad.fuse_one(plate, lip)
 """
+CAPS = ["End_Cap_L", "End_Cap_R"]
 
 
 class TestRound3Atech(_Headless):
@@ -2469,6 +2702,7 @@ class TestRound3Atech(_Headless):
         return ATECH_CASE % {"what": what, "tilt": tilt, "lift": lift}
 
     def intent(self, **kw):
+        kw.setdefault("fitted_after", CAPS)     # R250: the fixture's end caps
         with open(os.path.join(self.ws, self.build.INTENT), "w") as fh:
             json.dump(kw, fh)
 
@@ -2499,7 +2733,7 @@ class TestRound3Atech(_Headless):
         self.assertTrue(r2.ok, r2.error)
         mods2 = {o.Label: o for o in d.Objects if getattr(o, "AtechRole", None) == "module"}
         self.assertEqual({k: id(v) for k, v in mods2.items()}, ids)
-        self.assertEqual(r2.unchanged, ["Case"])
+        self.assertEqual(sorted(r2.unchanged), ["Case"] + CAPS)
         # a different port: the old module goes, the new one is seated
         self.write(self.case().replace('"button", 3', '"button", 4'))
         r3 = self.apply(r2.record())
@@ -2512,6 +2746,45 @@ class TestRound3Atech(_Headless):
         self.assertFalse(r4.ok)
         self.assertEqual(sorted(o.Label for o in d.Objects
                                 if getattr(o, "AtechRole", None) == "module"), labels)
+
+    def test_R222_cabled_module_replays_in_studio(self):
+        """The sandboxed child cables a light 40 mm off the board; Studio
+        places the module where it stands, takes the ribbon as a result
+        and marks it as that module's cable again, so the library's check
+        in Studio's document finds it connected."""
+        import atech_ports as ap
+        if not hasattr(ap, "cable"):
+            self.skipTest("port library has no cable()")
+        d = self.fresh("WS_R222")
+        self.write("import atech_ports as ap\n"
+                   "from FreeCAD import Vector, Placement, Rotation\n"
+                   "board = ap.board_object(doc)\n"
+                   "head, ribbons = ap.cable(doc, 'light', 2, ap.module_placement(\n"
+                   "    'light', (-40, 0, 60), face='-Y', cable='+X'))\n")
+        r1 = self.apply()
+        self.assertTrue(r1.ok, r1.error)
+        self.assertEqual(r1.mode, self.build.SANDBOX)
+        mods = [o for o in d.Objects if getattr(o, "AtechRole", None) == "module"]
+        self.assertEqual([o.Label for o in mods], ["light_2"])
+        m = mods[0]
+        self.assertEqual(m.AtechJoint, "cable")
+        self.assertEqual(list(m.AtechPorts), [2])
+        want = ap.module_placement("light", (-40, 0, 60), face="-Y", cable="+X")
+        self.assertTrue(m.Placement.isSame(want, 1e-6), m.Placement)
+        cables = ap.cables_of(d, m)
+        self.assertEqual([c.Label for c in cables], ["light_2_cable_p2"])
+        self.assertEqual(cables[0].AtechCablePort, 2)
+        res = ap.check(d)[m.Name]
+        self.assertEqual({k: v["verdict"] for k, v in res.items()},
+                         {"seated": "PASS", "interference": "PASS",
+                          "slide_path": "PASS"}, res)
+        # rebuilt: still one module, its cable marked again
+        r2 = self.apply(r1.record())
+        self.assertTrue(r2.ok, r2.error)
+        mods = [o for o in d.Objects if getattr(o, "AtechRole", None) == "module"]
+        self.assertEqual(len(mods), 1)
+        self.assertEqual([c.Label for c in ap.cables_of(d, mods[0])],
+                         ["light_2_cable_p2"])
 
     def test_R92_atech_script_cannot_read_home(self):
         if self.sandbox.isolation() != "bwrap":
@@ -2555,22 +2828,27 @@ class TestRound3Atech(_Headless):
         self.assertEqual(sorted(ap.occupied(d)), [3, 5])
 
     def test_R92_board_carrying_user_modules_cannot_be_moved(self):
-        # review round 3: seat() places a module once, from the board's
-        # placement - turning the board would strand the user's module.
+        # review round 3 refused this move (seat() places a module once, from
+        # the board's placement). R511 replaced the refusal: the user's seated
+        # module follows the board, stays the same object and stays theirs.
         import atech_ports as ap
         d = self.fresh("WS_R92move")
-        ap.board_object(d)
+        b0 = ap.board_object(d)
         user = ap.seat(d, "button", 5)
         d.recompute()
-        before = FreeCAD.Placement(user.Placement)
+        rel = b0.Placement.inverse().multiply(user.Placement)
         self.write("import atech_ports as ap\nfrom FreeCAD import Placement, "
                    "Rotation, Vector\nb = ap.board_object(doc)\n"
                    "b.Placement = Placement(Vector(0, 0, 50), Rotation())\n"
                    + BOX % ("Plate", 5))
         r = self.apply()
-        self.assertFalse(r.ok)
-        self.assertIn("must not move it", r.error)
-        self.assertTrue(user.Placement.isSame(before, 1e-9))
+        self.assertTrue(r.ok, r.error)
+        self.assertIs(d.getObject(user.Name), user)
+        self.assertFalse(getattr(user, "AtechAgentBuilt", False))
+        b = ap.board_object(d, create=False)
+        self.assertAlmostEqual(b.Placement.Base.z, 50, 6)
+        self.assertTrue(b.Placement.inverse().multiply(user.Placement).isSame(rel, 1e-6),
+                        (user.Placement, b.Placement))
 
     def test_S36_correct_seated_product_passes(self):
         self.fresh("WS_S36ok")
@@ -2625,6 +2903,7 @@ class TestRound3Atech(_Headless):
         import atech_ports as ap
         d = self.fresh("WS_R121")
         self.write(self.case())
+        self.intent(board="upright")    # R250: the end caps fitted after
         real = ap.check
 
         def boom(*a, **k):
@@ -2979,7 +3258,9 @@ print("PROMPT_PROBE=" + json.dumps({"atech": "ATECH MODULES" in sp,
       "door_full": "ap.seat(doc" in door,
       "read_assembly": "read " + str(build.assembly_doc()) in sp,
       "bound_of": "cad.bound_of(board, *modules)" in sp,
-      "caps": build.DRAFT_CAPS in sp and "end caps appended - nothing else yet" in sp,
+      "caps": ("its end caps kept - nothing else yet" in sp
+               and '"fitted_after": ["End_Cap_L", "End_Cap_R"] (its INTENT line)' in sp
+               and sp.count('("End_Cap_L", cb.XMin - W, 1)') == 1),
       "reads_fitted_after": build.kit_reads_fitted_after(),
       "pin_hinge": build.kit_pin_hinge(),
       "pin_line": "- A pin hinge: one call" in hinged,
@@ -2987,6 +3268,7 @@ print("PROMPT_PROBE=" + json.dumps({"atech": "ATECH MODULES" in sp,
       "socket_line": "never work out socket coordinates by hand" in sp,
       "named_line": "every feature the request NAMES" in plain,
       "door_chars": len(door),
+      "board_default": build.board_default(),
       "assembly": build.assembly_doc()}))
 sys.stdout.flush(); os._exit(0)
 """
@@ -3519,10 +3801,10 @@ class TestRound8Build(_Headless):
 
     # ---------------------------------------------------------------- R179
     def atech_code(self):
-        import textwrap
         with open(os.path.join(self.build.KIT_DIR, "examples",
                                self.build.ATECH_EXAMPLE), encoding="utf-8") as fh:
-            return fh.read() + "\n" + textwrap.dedent(self.build.DRAFT_CAPS) + "\n"
+            # R250: the example builds its own end caps (no DRAFT_CAPS)
+            return fh.read() + "\n"
 
     def test_R179_caps_declared_after_the_build(self):
         if not self.build.library_available():
@@ -3940,6 +4222,51 @@ class TestRound10Build(_Headless):
         self.assertIn("hits Box at 5 deg", bad)
 
 
+class TestR521ThreadsInProcess(_Headless):
+    """R521: a screw biting its pilot is thread engagement, not an overlap,
+    in BOTH build modes (check.py excused it in the sandbox, R444; the
+    in-process judge did not, so rc_tank.py failed only in-process).
+    Sabotage: without atech_geom.thread_engagement the in-process build
+    reports the overlap again."""
+
+    CODE = ("import Part\nimport atech_cad as cad\nfrom FreeCAD import Vector\n"
+            "upper = Part.makeBox(40, 40, 15, Vector(-5, -5, 3)).cut(\n"
+            "    Part.makeBox(36, 36, 12, Vector(-3, -3, 3)))\n"
+            "lower = Part.makeBox(40, 40, 3, Vector(-5, -5, 0))\n"
+            "lower, upper = cad.screw_through(lower, upper, (15, 15, 0), size='M2')\n"
+            "s = cad.screw('csk_phillips', 'M2', 10, at=(15, 15, 0), axis='+Z')\n"
+            "for nm, sh in (('Base', lower), ('Boss', upper), ('Screw_1', s)):\n"
+            "    doc.addObject('Part::Feature', nm).Shape = sh\n")
+
+    def run_mode(self, mode):
+        self.fresh("WS_R521_" + mode)
+        ws = self.scratch()
+        self.write(self.CODE, ws=ws)
+        return self.apply(ws=ws, mode=mode)
+
+    def test_both_modes_agree_the_thread_is_no_overlap(self):
+        verdicts = {}
+        for mode in (self.build.IN_PROCESS, self.build.SANDBOX):
+            r = self.run_mode(mode)
+            self.assertTrue(r.ok, r.error)
+            verdicts[mode] = sorted(frozenset((h["a"], h["b"])) for h in r.overlaps)
+            self.assertEqual(self.build.failures(r), "", (mode, r.overlaps))
+        self.assertEqual(verdicts[self.build.IN_PROCESS], verdicts[self.build.SANDBOX])
+
+    def test_sabotage_without_the_excuse_the_overlap_is_back(self):
+        g = self.build._geom()
+        real = g.thread_engagement
+        g.thread_engagement = lambda hits, parts: (hits, [])
+        try:
+            r = self.run_mode(self.build.IN_PROCESS)
+        finally:
+            g.thread_engagement = real
+        self.assertTrue(r.ok, r.error)
+        if not r.overlaps:
+            self.skipTest("this screw_through leaves no thread overlap to excuse")
+        self.assertIn("Screw_1", self.build.failures(r))
+
+
 @unittest.skipIf(IN_FREECAD, "already inside FreeCAD")
 class TestLauncher(unittest.TestCase):
 
@@ -3964,15 +4291,18 @@ class TestLauncher(unittest.TestCase):
         self.assertTrue(r["atech"], r)
         self.assertFalse(r["ap_check"], r)
         self.assertTrue(r["run_check"], r)
-        # S27/S34: the full section only for Atech turns; plain turns get
-        # a pointer; nothing sends the agent to read the assembly doc.
-        self.assertFalse(r["plain_full"], r)
-        self.assertTrue(r["plain_pointer"], r)
+        # R220/R250: board_default on (the default, library present) sends
+        # the full section to every turn, a plain one too, on purpose.
+        # S27/S34 with board_default off: the full section only for Atech
+        # turns; plain turns get a pointer. Either way nothing sends the
+        # agent to read the assembly doc.
+        self.assertEqual(r["plain_full"], r["board_default"], r)
+        self.assertEqual(r["plain_pointer"], not r["board_default"], r)
         self.assertTrue(r["door_full"], r)
         self.assertFalse(r["read_assembly"], r)
         self.assertTrue(r["bound_of"], r)
         # S50: the end caps ride in the Atech draft wherever the kit reads
-        # fitted_after (the snippet passes ./check: DRAFT_CAPS comment)
+        # fitted_after (R250: the example's own caps, built in it)
         self.assertEqual(r["caps"], r["reads_fitted_after"], r)
         # S65 / S66 / S67: the pin-hinge line wherever the kit has
         # cad.pin_hinge, the socket-opening line wherever it has that call,
@@ -3981,6 +4311,28 @@ class TestLauncher(unittest.TestCase):
         self.assertEqual(r["socket_line"], r["socket_call"] is not None, r)
         self.assertTrue(r["named_line"], r)
         sys.stderr.write("\n[prompt probe] %s\n" % r)
+
+    def test_R250_board_default_on_and_off(self):
+        """R220/R250: unset, board_default is on wherever the library is and
+        a plain request gets the full Atech section; ATECH_PROMPT_OFF=
+        board_default restores S27/S34 (plain: a pointer only)."""
+        fc = _freecadcmd()
+        if fc is None:
+            self.skipTest("freecadcmd not found")
+        on = _prompt_probe(fc, {"ATECH_PROMPT_OFF": ""})
+        self.assertIsNotNone(on)
+        if not on["lib"]:
+            self.skipTest("Atech module library not installed here")
+        self.assertTrue(on["board_default"], on)
+        self.assertTrue(on["plain_full"], on)
+        self.assertFalse(on["plain_pointer"], on)
+        off = _prompt_probe(fc, {"ATECH_PROMPT_OFF": "board_default"})
+        self.assertIsNotNone(off)
+        self.assertFalse(off["board_default"], off)
+        self.assertFalse(off["plain_full"], off)
+        self.assertTrue(off["plain_pointer"], off)
+        self.assertTrue(off["door_full"], off)
+        self.assertLess(off["plain_chars"], off["door_chars"], off)
 
     def test_headless_suite_passes(self):
         fc = _freecadcmd()
@@ -4013,11 +4365,12 @@ def main():
     pure = [TestBriefIsData, TestCompiles, TestErrorText, TestFailuresRound2,
             TestPromptRound2, TestPromptRound3, TestRound4Pure, TestRound5Pure,
             TestRound6Pure, TestRound7Pure, TestRound8Pure, TestRound9Pure,
-            TestRound10Pure, TestRound11Pure]
+            TestRound10Pure, TestRound11Pure, TestBoardDetail]
     headless = [TestModes, TestOwnership, TestTrust, TestGeometryGates, TestS24,
                 TestCheckWrapper, TestSandboxEscape, TestRound3Atech, TestRound3Build,
                 TestRound4Build, TestRound5Build, TestRound6Build, TestRound7Build,
-                TestRound8Build, TestRound9Build, TestRound10Build]
+                TestRound8Build, TestRound9Build, TestRound10Build,
+                TestR521ThreadsInProcess]
     only = [n for n in (os.environ.get("ATECH_BUILD_WS_ONLY") or "").split(",") if n]
     if only:                              # a quick run of named classes
         pure = [c for c in pure if c.__name__ in only]

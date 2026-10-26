@@ -13,6 +13,26 @@ this file only draws and dispatches:
                 clear of the board, and atech_ports.check() is shown
     remove      animated out along the same axis, then atech_ports.remove()
 
+    move/swap   (R300) "Move or swap", then pick an empty port (move) or one
+                holding a module with as many ports (swap): atech_ports.move/
+                swap, one undo step, the object (and its colour) kept
+    re-seat     (R301) atech_ports.stale_modules() is polled with the page;
+                when the board (or a cabled module) moved, a banner offers
+                "Re-seat all" (atech_ports.reseat_all)
+    cables      (R302) cabled modules show a cable icon and length, "Connected
+                by cable", a plug on the map, and "Remake cable" when stale
+    by cable    "Connect by cable" adds the module OFF the board, clear of it
+                beyond the picked port, wired to it by atech_ports.cable(): a
+                module that must leave the board (a sensor at the front, a
+                light in a nose); move it, then "Remake cable"
+    power       (R303) Check all warns when no USB-C module is on the board
+    hover/undo  (R304) port tooltips (port_tooltip) and "Added X · Undo"
+    free parts  (R305) parts with no pin header or no port (N20 wheel,
+                NEMA 17) placed by hand beside the board (projects.place_free_part)
+    derived     a module whose presets.yaml entry has `derived` (no Atech CAD:
+                the simready dataset's shell + placeholder parts) says so on
+                its button
+
 A module with two connectors takes the picked port and a free neighbour in
 the same column whose trial check passes (atech_ports.pair_for); if neither
 does, the page says so instead of adding a module its own check would FAIL.
@@ -23,6 +43,9 @@ never shown as a raw exception with internal slugs or paths; the raw text
 goes to the Report view.
 """
 import html
+import json
+import math
+import os
 import sys
 import time
 
@@ -202,6 +225,7 @@ PAGE_QSS = """
 #MVerdictUnknown {{ color: {warn}; font-size: 11px; font-weight: 600; }}
 #MError {{ color: {fail}; font-size: 12px; }}
 #MNotice {{ color: {muted}; font-size: 12px; }}
+#MWarn {{ color: {warn}; font-size: 12px; font-weight: 600; }}
 #MLink {{
     background: transparent; color: {accent}; border: none; padding: 0 4px;
     font-family: {UI}; font-size: 12px; font-weight: 600;
@@ -348,10 +372,26 @@ CHECK_WORDS = {
 CHECK_ORDER = ("seated", "interference", "slide_path")
 
 
-def verdict_words(key, result, name_of=None):
-    """(sentence, colour token) for one check result dict."""
+# R302: a cabled module is not seated on its port, its cable's plug is; and
+# it never slides in. "Fully seated" / "Slides in freely" would be untrue.
+CABLED_WORDS = {
+    "seated": {"PASS": "Connected by cable", "FAIL": "Cable not connected",
+               None: "Can't tell if the cable is connected"},
+    "interference": CHECK_WORDS["interference"],
+    "slide_path": {"PASS": "On a cable, nothing slides in",
+                   "FAIL": "On a cable, nothing slides in",
+                   None: "On a cable, nothing slides in"},
+}
+CABLED_ORDER = ("seated", "interference")
+CABLE_REMADE_WHY = ("The board or the module moved after its cable was made. "
+                    "Use Remake cable.")
+
+
+def verdict_words(key, result, name_of=None, cabled=False):
+    """(sentence, colour token) for one check result dict. cabled: the
+    module is on a cable (AtechJoint "cable"), R302."""
     v = result.get("verdict") if isinstance(result, dict) else result
-    words = CHECK_WORDS[key]
+    words = (CABLED_WORDS if cabled else CHECK_WORDS)[key]
     if v == "PASS":
         return words["PASS"], "ok"
     if v == "FAIL":
@@ -377,6 +417,8 @@ def fail_why(key, result, name_of=None):
     atech_ports.check(); nothing is rounded into a nicer story."""
     if not isinstance(result, dict) or result.get("verdict") != "FAIL":
         return None
+    if key == "seated" and "make the cable again" in str(result.get("why") or ""):
+        return CABLE_REMADE_WHY
     if key == "seated":
         for p in result.get("ports") or []:
             if p.get("why"):
@@ -400,6 +442,124 @@ def fail_why(key, result, name_of=None):
             % (who, h.get("met_mm_before_seat", 0.0)))
 
 
+# ------------------------------------------- power, ports, cables (R300+)
+#: The module that powers the board (presets.yaml name). R303: every
+#: product needs one; Check all says so when the board has none.
+POWER_MODULE = "usbc"
+
+
+def power_warning(modules):
+    """The power-rule sentence for a board carrying `modules` (presets.yaml
+    names, one per module), or None: no warning on an empty board (there is
+    nothing to power yet) or when a USB-C module is among them."""
+    mods = [m for m in modules if m]
+    if not mods or POWER_MODULE in mods:
+        return None
+    return ("No USB-C module on the board, so nothing can power it. Add a "
+            "USB-C module (it usually goes on port 8).")
+
+
+EDGE_WORDS = {"left": "slides in from the left", "right":
+              "slides in from the right", "top": "slides in from the top",
+              "bottom": "slides in from the bottom"}
+
+
+def port_tooltip(n, edge=None, occupant=None, others=(), cable_mm=None,
+                 reserved=None):
+    """R304: the plain-text hover line for port n of the board map.
+    occupant: display name of the module on it (None = empty); others: the
+    other ports a two-port module also takes; cable_mm: the module is on a
+    cable of that length (0/None with occupant = seated); reserved: why
+    no module can go there. The pin order of a port is not published (OPEN
+    in the library), so the line never names pins."""
+    head = "Port %d" % n + (" · %s edge" % edge if edge else "")
+    if occupant:
+        if cable_mm is not None:
+            what = "%s on a %d mm cable" % (occupant, round(cable_mm))
+        else:
+            what = "%s, seated" % occupant
+        also = ""
+        if others:
+            ns = sorted(int(p) for p in others)
+            also = " · also on port%s %s" % ("s" if len(ns) > 1 else "",
+                                              ", ".join(str(p) for p in ns))
+        return "%s · %s%s" % (head, what, also)
+    if reserved:
+        return "%s · reserved for %s" % (head, reserved)
+    return "%s · empty · a module %s" % (head, EDGE_WORDS.get(edge, "slides in"))
+
+
+def cable_words(lengths_mm):
+    """'Connected by cable · 182 mm' for a module's cable lengths (one per
+    connector; two cables are summed and counted)."""
+    ls = [float(v) for v in lengths_mm or [] if v is not None]
+    if not ls:
+        return "Connected by cable"
+    if len(ls) == 1:
+        return "Connected by cable · %d mm" % round(ls[0])
+    return "Connected by %d cables · %d mm in all" % (len(ls), round(sum(ls)))
+
+
+def stale_sentence(n_seated, n_cabled):
+    """R301: what the page says when modules no longer match the board, or
+    None when everything matches."""
+    if not n_seated and not n_cabled:
+        return None
+    parts = []
+    if n_seated:
+        parts.append("%d module%s no longer in %s port%s" % (
+            n_seated, " is" if n_seated == 1 else "s are",
+            "its" if n_seated == 1 else "their", "" if n_seated == 1 else "s"))
+    if n_cabled:
+        parts.append("%d cable%s no longer reach%s %s module%s" % (
+            n_cabled, "" if n_cabled == 1 else "s", "es" if n_cabled == 1 else "",
+            "its" if n_cabled == 1 else "their", "" if n_cabled == 1 else "s"))
+    lead = ("The board has moved" if n_seated else
+            "A cabled module or the board has moved")
+    return "%s: %s. Re-seat all puts them back." % (lead, " and ".join(parts))
+
+
+def move_action(moving_ports, target, occ_at_target=None):
+    """R300: what clicking port `target` does while a module on
+    `moving_ports` is being moved. occ_at_target: (Name, its ports) of the
+    module on target, or None. Returns ("move", target), ("swap", Name),
+    ("cancel", None) for its own port, or ("refuse", sentence)."""
+    moving_ports = [int(p) for p in moving_ports]
+    if target in moving_ports:
+        return "cancel", None
+    if occ_at_target is None:
+        return "move", int(target)
+    name, ports_ = occ_at_target
+    if len(ports_) != len(moving_ports):
+        return ("refuse", "Only modules that take the same number of ports can "
+                "swap. Pick an empty port, or move the other module first.")
+    return "swap", name
+
+
+def cable_icon(color, size=16):
+    """A small ribbon-cable icon (plug, curved ribbon, socket) drawn in
+    `color`, for rows of cabled modules (R302). No image file."""
+    pm = QtGui.QPixmap(size * 2, size * 2)
+    pm.setDevicePixelRatio(2.0)
+    pm.fill(QtCore.Qt.transparent)
+    p = QtGui.QPainter(pm)
+    p.setRenderHint(QtGui.QPainter.Antialiasing)
+    c = QtGui.QColor(color)
+    p.setPen(QtGui.QPen(c, 1.6, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap))
+    path = QtGui.QPainterPath(QtCore.QPointF(3.5, size * 0.72))
+    path.cubicTo(QtCore.QPointF(size * 0.45, size * 0.72),
+                 QtCore.QPointF(size * 0.55, size * 0.28),
+                 QtCore.QPointF(size - 3.5, size * 0.28))
+    p.setBrush(QtCore.Qt.NoBrush)
+    p.drawPath(path)
+    p.setBrush(c)
+    p.setPen(QtCore.Qt.NoPen)
+    p.drawRoundedRect(QtCore.QRectF(0.5, size * 0.72 - 2.5, 4, 5), 1, 1)
+    p.drawRoundedRect(QtCore.QRectF(size - 4.5, size * 0.28 - 2.5, 4, 5), 1, 1)
+    p.end()
+    return QtGui.QIcon(pm)
+
+
 def check_all_block(label, where, body, muted):
     """One module's block in the "Check all" list (R160): its own heading
     (name, then its ports) and a gap below it, so modules never run
@@ -412,6 +572,10 @@ def check_all_block(label, where, body, muted):
 
 
 CHECK_ALL_GAP_PX = 10
+
+
+#: projects.FREE_ROLE, repeated so the page can be imported without FreeCAD
+FREE_ROLE = "part"
 
 
 def _lib():
@@ -429,6 +593,181 @@ def _lib():
     return atech_ports, atech_modules
 
 
+FITTED_AFTER = "fitted_after"
+INTENT_FILE = "intent.json"
+
+
+def _fitted_value(data):
+    """intent.json's "fitted_after" as a list of names ([] when missing or
+    malformed - never a guess)."""
+    v = data.get(FITTED_AFTER) if isinstance(data, dict) else None
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, (list, tuple)):
+        return []
+    return [str(n) for n in v if isinstance(n, str) and n.strip()]
+
+
+def _intent_of_script(code):
+    """The INTENT = {...} literal of a build script (an example forked as
+    model.py carries its intent.json there), or None."""
+    import ast
+    try:
+        tree = ast.parse(code or "")
+    except (SyntaxError, ValueError):
+        return None
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", None) == "INTENT" for t in node.targets):
+            try:
+                return ast.literal_eval(node.value)
+            except (ValueError, SyntaxError, TypeError):
+                return None
+    return None
+
+
+def fitted_after(doc):
+    """R517: the agent-built parts doc's design fits AFTER the modules go in
+    (intent.json "fitted_after": a closed case's end caps, a lid), as
+    labels. atech_ports.check() judges the slide paths without them, as the
+    agent's own ./check and Studio's build gate do - without this, every
+    module of a closed product showed "Something is in the way as it slides
+    in" on this page although the build passed.
+
+    Read from, in order: the intent.json of the document's chat (its
+    workspace, through the sessions record of its project id), the INTENT
+    literal of the newest agent build script in the document, the
+    intent.json saved in the project file. Only names of agent-built parts
+    still in the document count; [] when nothing declares any."""
+    if doc is None:
+        return []
+    parts = {}
+    newest, newest_n = None, -1
+    try:
+        for o in doc.Objects:
+            if getattr(o, "AtechAgentBuilt", False) and not getattr(o, "AtechRole", None) \
+                    and not getattr(o, "AtechCableModule", None):
+                parts[o.Name] = o.Label
+                parts.setdefault(o.Label, o.Label)
+                n = int(getattr(o, "AtechAgentBuild", 0) or 0)
+                if n > newest_n and getattr(o, "AtechAgentScript", ""):
+                    newest, newest_n = o, n
+    except Exception:                                  # noqa: BLE001
+        return []
+    if not parts:
+        return []
+    names = None
+    try:
+        from . import projects_store as ps
+        rec = ps.load_sessions().get(ps.doc_key(doc) or "")
+        ws = rec.get("ws") if isinstance(rec, dict) else None
+        if isinstance(ws, str) and os.path.isfile(os.path.join(ws, INTENT_FILE)):
+            with open(os.path.join(ws, INTENT_FILE), encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict) and FITTED_AFTER in data:
+                names = _fitted_value(data)
+    except Exception as exc:                           # noqa: BLE001
+        _log("fitted_after (chat): %r" % (exc,))
+    if names is None and newest is not None:
+        data = _intent_of_script(getattr(newest, "AtechAgentScript", ""))
+        if isinstance(data, dict) and FITTED_AFTER in data:
+            names = _fitted_value(data)
+    if names is None:
+        try:
+            from . import projects_store as ps
+            bundle = ps.read_doc_chat(doc)
+            raw = ((bundle or {}).get("files") or {}).get(INTENT_FILE)
+            if raw:
+                data = json.loads(raw.decode("utf-8"))
+                if isinstance(data, dict) and FITTED_AFTER in data:
+                    names = _fitted_value(data)
+        except Exception as exc:                       # noqa: BLE001
+            _log("fitted_after (file): %r" % (exc,))
+    out = []
+    for n in names or ():
+        lab = parts.get(n)
+        if lab and lab not in out:
+            out.append(lab)
+    return out
+
+
+#: what marks an object as the agent build's (build._ensure_props)
+AGENT_PROPS = (("App::PropertyBool", "AtechAgentBuilt"),
+               ("App::PropertyString", "AtechAgentScript"),
+               ("App::PropertyString", "AtechAgentBuildId"),
+               ("App::PropertyInteger", "AtechAgentBuild"))
+
+
+def cable_owners(doc, mod):
+    """{port: (label, {prop: value})} of the agent build marks on mod's
+    cables now (R512), for keep_cable_owners after a remake."""
+    out = {}
+    try:
+        ports_mod, _ = _lib()
+        for c in ports_mod.cables_of(doc, mod):
+            if not getattr(c, "AtechAgentBuilt", False):
+                continue
+            out[int(getattr(c, "AtechCablePort", 0) or 0)] = (
+                c.Label, {p: getattr(c, p) for _t, p in AGENT_PROPS
+                          if p in c.PropertiesList})
+    except Exception as exc:                           # noqa: BLE001
+        _log("cable owners: %r" % (exc,))
+    return out
+
+
+def keep_cable_owners(doc, mod, owners):
+    """R512: a remade cable of an agent-built module is still the build's:
+    the old cable's marks and label go onto the new one on the same port.
+    Without this the next build kept the remade cable as the USER's (two
+    cables on one module, the old one stale, overlapping the new one).
+    Returns how many cables were marked."""
+    if not owners:
+        return 0
+    n = 0
+    try:
+        ports_mod, _ = _lib()
+        for c in ports_mod.cables_of(doc, mod):
+            rec = owners.get(int(getattr(c, "AtechCablePort", 0) or 0))
+            if rec is None:
+                continue
+            label, props = rec
+            for typ, p in AGENT_PROPS:
+                if p in props:
+                    if p not in c.PropertiesList:
+                        c.addProperty(typ, p, "Atech", "")
+                    setattr(c, p, props[p])
+            if label:
+                c.Label = label
+            n += 1
+    except Exception as exc:                           # noqa: BLE001
+        _log("keep cable owners: %r" % (exc,))
+    return n
+
+
+def fitted_note(labels):
+    """R517: the line under a check that used the design's fitted-after parts."""
+    shown = ", ".join(labels[:4]) + (" and %d more" % (len(labels) - 4)
+                                     if len(labels) > 4 else "")
+    return ("Slide paths checked before %s go on (the design fits %s after "
+            "the modules)." % (shown, "it" if len(labels) == 1 else "them"))
+
+
+def check_doc(ports_mod, doc, only=None):
+    """atech_ports.check() on doc as the agent's build judged it: with the
+    design's fitted-after parts (R517) when it declares any and the library
+    takes them. Returns (result, fitted labels)."""
+    fa = fitted_after(doc)
+    kw = {}
+    if fa:
+        import inspect
+        try:
+            if FITTED_AFTER in inspect.signature(ports_mod.check).parameters:
+                kw[FITTED_AFTER] = fa
+        except (TypeError, ValueError):
+            pass
+    return ports_mod.check(doc, only=only, **kw), list(kw.get(FITTED_AFTER) or ())
+
+
 def _doc(create=True):
     import FreeCAD
     doc = FreeCAD.ActiveDocument
@@ -438,82 +777,258 @@ def _doc(create=True):
 
 
 # ------------------------------------------------------------- board map
+# Studio's board (studio.atech.dev): the same plan-view pictures, the same
+# cells. SPRITE_DIR holds studio's board_sprites (see its SOURCE.md); CELLS is
+# studio's board_geometry("14port_board") for the 14-port board: each port's
+# cell centre [x, z] in mm from the board centre (x right, z toward the
+# bottom edge, port 1 top-left) and the edge its module faces. A module is
+# drawn with its sprite's origin (its connector) on the cell centre, turned
+# so the sprite's up (the module's outer face) points outward; a two-port
+# module sits on the mean of its cells and faces its first port's edge.
+SPRITE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "board_sprites")
+SPRITE_PX_PER_MM = 8.0
+BOARD_SPRITE = "frame-2"
+CELL_MM = (19.5, 20.0)                  # a port cell: across, along the column
+CELLS = {
+    1: ((-19.5, -49.99), (-1, 0)), 2: ((-19.5, -30.0), (-1, 0)),
+    3: ((-19.5, -10.0), (-1, 0)), 4: ((-19.5, 10.0), (-1, 0)),
+    5: ((-19.5, 29.99), (-1, 0)), 6: ((-19.5, 49.99), (-1, 0)),
+    7: ((0.0, -49.99), (0, -1)), 8: ((0.0, 49.99), (0, 1)),
+    9: ((19.5, -49.99), (1, 0)), 10: ((19.5, -30.0), (1, 0)),
+    11: ((19.5, -10.0), (1, 0)), 12: ((19.5, 10.0), (1, 0)),
+    13: ((19.5, 29.99), (1, 0)), 14: ((19.5, 49.99), (1, 0)),
+}
+#: presets.yaml module name -> studio sprite (studio hw_models.MODULE_SLUG).
+SPRITE_FOR = {
+    "button": "button", "light": "led-grid", "usbc": "usb-c",
+    "screen": "screen", "speaker": "speaker", "dc_motor": "dc-motor",
+    "orientation": "orientation-sensor", "temp_humidity": "temp-sensor",
+    "distance_sensor": "distance-sensor", "knob": "knob",
+    "microphone": "microphone",
+}
+_SPRITES = {}
+
+
+def _manifest():
+    if "_manifest" not in _SPRITES:
+        try:
+            with open(os.path.join(SPRITE_DIR, "MANIFEST.json"), encoding="utf-8") as fh:
+                _SPRITES["_manifest"] = json.load(fh).get("sprites", {})
+        except (OSError, ValueError):
+            _SPRITES["_manifest"] = {}
+    return _SPRITES["_manifest"]
+
+
+def sprite(name):
+    """(QPixmap, (origin_x, origin_y) px) for a studio sprite, or None."""
+    if name not in _SPRITES:
+        rec = _manifest().get(name) or {}
+        pm = QtGui.QPixmap(os.path.join(SPRITE_DIR, rec.get("file") or (name + ".png")))
+        _SPRITES[name] = None if pm.isNull() else (
+            pm, tuple(rec.get("origin_px") or (pm.width() / 2.0, pm.height() / 2.0)))
+    return _SPRITES[name]
+
+
+def module_pose(ports):
+    """(centre [x, z] mm from the board centre, outward [x, z]) of a module
+    seated on `ports` (studio's rule), or None when no port is a cell."""
+    cells = [CELLS[n] for n in ports if n in CELLS]
+    if not cells:
+        return None
+    x = sum(c[0][0] for c in cells) / len(cells)
+    z = sum(c[0][1] for c in cells) / len(cells)
+    return (x, z), cells[0][1]
+
+
+def outward_angle(outward):
+    """Degrees (Qt, clockwise) turning a sprite's up (-z) to `outward`."""
+    return math.degrees(math.atan2(outward[0], -outward[1]))
+
+
 class BoardMap(QtWidgets.QWidget):
-    """The board drawn from the measured port table. Emits the picked port."""
+    """The Atech board as studio.atech.dev draws it: the board's own plan
+    view, each placed module's picture seated in its port, port numbers from
+    the artwork. Click a port to pick it. Emits the picked port."""
 
     picked = QtCore.Signal(int)
 
-    BOARD_X, BOARD_Z = 60.0, 120.0      # board STL frame extents (mm)
+    BOARD_X, BOARD_Z = 60.0, 120.0      # board extents (mm)
+    #: Room around the board for modules that reach past its edge (the DC
+    #: motor's 28.7 mm is the longest; studio's sprites, measured).
+    MARGIN_X, MARGIN_Z = 30.0, 22.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setMinimumHeight(360)
         self.setMouseTracking(True)
+        self.setAccessibleName("Atech board map")
+        self.setAccessibleDescription("The 14 ports of the board. Click a port "
+                                      "to pick it.")
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.ports = {}                 # n -> Port
         self.occupied = {}              # n -> short label
+        #: object name -> (module, (ports...)[, joint]); joint "cable" = R302
+        self.modules = {}
+        self.tips = {}                  # n -> hover line (port_tooltip, R304)
+        self.moving = ()                # ports of the module being moved (R300)
         self.selected = None
         self.hover = None
         self._rects = {}
 
     def sizeHint(self):                                 # noqa: N802
-        return QtCore.QSize(320, 380)
+        return QtCore.QSize(320, 400)
 
-    def set_state(self, ports, occupied, selected):
+    def set_state(self, ports, occupied, selected, modules=None, tips=None,
+                  moving=()):
         self.ports, self.occupied, self.selected = ports, occupied, selected
+        self.modules = dict(modules or {})
+        self.tips = dict(tips or {})
+        self.moving = tuple(moving or ())
         self.update()
 
-    def _geometry(self):
-        """Board rect in widget pixels, portrait, -Z (top edge) up."""
-        pad = 22
-        h = self.height() - 2 * pad
-        w = h * self.BOARD_X / self.BOARD_Z
-        x0 = (self.width() - w) / 2.0
-        return QtCore.QRectF(x0, pad, w, h)
+    def tip_for(self, n):
+        """The hover line for port n (R304): the page's port_tooltip, or the
+        short form when the page gave none."""
+        if n is None:
+            return ""
+        if n in self.tips:
+            return self.tips[n]
+        return "Port %d%s" % (n, (" · " + self.occupied[n]) if n in self.occupied
+                              else " · empty")
 
-    def _slot(self, p, b):
-        """Pixel rect of port p: its MEASURED housing box (board frame X, Z),
-        scaled onto the board drawing. Pushed a little outboard so the slot
-        reads as an opening on the edge the module comes from."""
-        sx = b.width() / self.BOARD_X
-        sz = b.height() / self.BOARD_Z
-        lo, hi = p.housing_lo, p.housing_hi
-        r = QtCore.QRectF(b.left() + lo[0] * sx, b.top() + lo[2] * sz,
-                          (hi[0] - lo[0]) * sx, (hi[2] - lo[2]) * sz)
-        out = QtCore.QPointF(p.outward[0], p.outward[2]) * 6.0
-        return r.translated(out)
+    def _draw_cable_plug(self, p, mports, module, t):
+        """R302: a cabled module is NOT in its port; only its cable's plug
+        is. Each of its ports shows a plug and a ribbon leaving the board,
+        dashed, never the module's picture."""
+        f = QtGui.QFont(style.FONT_UI)
+        f.setPixelSize(9)
+        f.setBold(True)
+        for n in mports:
+            r = self._cell(n)
+            if r is None:
+                continue
+            (_x, _z), out = CELLS[n]
+            c = r.center()
+            s = self._scale()
+            plug = QtCore.QRectF(-3.0 * s, -2.2 * s, 6.0 * s, 4.4 * s)
+            p.save()
+            p.translate(c)
+            p.rotate(outward_angle(out))
+            p.setPen(QtGui.QPen(QtGui.QColor(t["line_strong"]), 1))
+            p.setBrush(QtGui.QColor("#d9d9d4"))
+            p.drawRoundedRect(plug, 1.5, 1.5)
+            pen = QtGui.QPen(QtGui.QColor("#d9d9d4"), max(2.0, 2.2 * s),
+                             QtCore.Qt.DashLine, QtCore.Qt.RoundCap)
+            p.setPen(pen)
+            p.drawLine(QtCore.QPointF(0, -2.2 * s), QtCore.QPointF(0, -14.0 * s))
+            p.restore()
+        cells = [self._cell(n) for n in mports if self._cell(n) is not None]
+        if cells:
+            p.setFont(f)
+            p.setPen(QtGui.QColor("#ffffff"))
+            r0 = cells[0]
+            p.drawText(r0.adjusted(0, r0.height() * 0.45, 0, 0),
+                       QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop, module[:8])
+
+    def _scale(self):
+        """px per mm, fitting the board and its margins."""
+        return max(0.5, min(self.width() / (self.BOARD_X + 2 * self.MARGIN_X),
+                            self.height() / (self.BOARD_Z + 2 * self.MARGIN_Z)))
+
+    def _centre(self):
+        return QtCore.QPointF(self.width() / 2.0, self.height() / 2.0)
+
+    def _px(self, x, z):
+        s, c = self._scale(), self._centre()
+        return QtCore.QPointF(c.x() + x * s, c.y() + z * s)
+
+    def _cell(self, n):
+        if n not in CELLS:
+            return None
+        (x, z), _o = CELLS[n]
+        s = self._scale()
+        w, h = CELL_MM[0] * s, CELL_MM[1] * s
+        c = self._px(x, z)
+        return QtCore.QRectF(c.x() - w / 2.0, c.y() - h / 2.0, w, h)
+
+    def _draw_sprite(self, p, name, centre, angle):
+        sp = sprite(name)
+        if sp is None:
+            return False
+        pm, (ox, oy) = sp
+        k = self._scale() / SPRITE_PX_PER_MM
+        p.save()
+        p.translate(centre)
+        p.rotate(angle)
+        p.scale(k, k)
+        p.drawPixmap(QtCore.QPointF(-ox, -oy), pm)
+        p.restore()
+        return True
 
     def paintEvent(self, _ev):                         # noqa: N802
         t = style.tokens()
         p = QtGui.QPainter(self)
         p.setRenderHint(QtGui.QPainter.Antialiasing)
-        b = self._geometry()
-        p.setPen(QtGui.QPen(QtGui.QColor(t["line_strong"]), 1))
-        p.setBrush(QtGui.QColor(t["card"]))
-        p.drawRoundedRect(b, 10, 10)
+        p.setRenderHint(QtGui.QPainter.SmoothPixmapTransform)
+        s = self._scale()
+        board = QtCore.QRectF(self._px(-self.BOARD_X / 2, -self.BOARD_Z / 2),
+                              QtCore.QSizeF(self.BOARD_X * s, self.BOARD_Z * s))
+        # A soft shadow under the board, as the 3D view lights it.
+        p.setPen(QtCore.Qt.NoPen)
+        p.setBrush(QtGui.QColor(0, 0, 0, 28))
+        p.drawRoundedRect(board.translated(0, 3), 4 * s, 4 * s)
+        if not self._draw_sprite(p, BOARD_SPRITE, self._centre(), 0.0):
+            p.setBrush(QtGui.QColor("#3a3a3a"))
+            p.drawRoundedRect(board, 4 * s, 4 * s)
+        # Modules, each once (a two-port module spans its cells).
         f = QtGui.QFont(style.FONT_UI)
         f.setPixelSize(10)
-        p.setFont(f)
-        p.setPen(QtGui.QColor(t["dim"]))
-        p.drawText(b, QtCore.Qt.AlignCenter, "14-port\nboard")
+        f.setBold(True)
+        for _name, rec in sorted(self.modules.items()):
+            module, mports = rec[0], rec[1]
+            if len(rec) > 2 and rec[2] == "cable":
+                self._draw_cable_plug(p, mports, module, t)
+                continue
+            pose = module_pose(mports)
+            if pose is None:
+                continue
+            (x, z), out = pose
+            c = self._px(x, z)
+            if not self._draw_sprite(p, SPRITE_FOR.get(module, ""), c, outward_angle(out)):
+                # No picture (a module studio has no model for): its cells,
+                # labelled, so it is never silently missing.
+                rect = QtCore.QRectF()
+                for n in mports:
+                    r = self._cell(n)
+                    if r is not None:
+                        rect = rect.united(r) if not rect.isNull() else r
+                p.setPen(QtGui.QPen(QtGui.QColor(t["line_strong"]), 1))
+                p.setBrush(QtGui.QColor("#94a3b8"))
+                p.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 3, 3)
+                p.setFont(f)
+                p.setPen(QtGui.QColor("#111827"))
+                p.drawText(rect, QtCore.Qt.AlignCenter, module[:6])
+        # Ports: the artwork carries the numbers; hover and the pick are rings.
         self._rects = {}
-        for n, port in sorted(self.ports.items()):
-            r = self._slot(port, b)
+        for n in sorted(self.ports):
+            r = self._cell(n)
+            if r is None:
+                continue
             self._rects[n] = r
-            occ = n in self.occupied
-            sel = n == self.selected
-            fill = t["btn_bg"] if occ else t["panel"]
-            p.setBrush(QtGui.QColor(fill))
-            pen = QtGui.QPen(QtGui.QColor(
-                t["accent"] if sel else (t["text"] if n == self.hover else
-                                         t["line_strong"])), 2 if sel else 1)
-            p.setPen(pen)
-            p.drawRoundedRect(r, 5, 5)
-            p.setPen(QtGui.QColor(t["btn_text"] if occ else t["muted"]))
-            fb = QtGui.QFont(style.FONT_UI)
-            fb.setPixelSize(10)
-            fb.setBold(True)
-            p.setFont(fb)
-            p.drawText(r, QtCore.Qt.AlignCenter, str(n))
+            sel, hov = n == self.selected, n == self.hover
+            if n in self.moving:
+                # R300: the module being moved, dashed in the accent colour
+                p.setBrush(QtCore.Qt.NoBrush)
+                p.setPen(QtGui.QPen(QtGui.QColor(t["accent"]), 2.0,
+                                    QtCore.Qt.DashLine))
+                p.drawRoundedRect(r.adjusted(1, 1, -1, -1), 4, 4)
+            if not (sel or hov):
+                continue
+            ring = r.adjusted(2, 2, -2, -2)
+            p.setBrush(QtGui.QColor(255, 255, 255, 40 if hov else 0))
+            p.setPen(QtGui.QPen(QtGui.QColor(t["accent"] if sel else "#ffffff"),
+                                2.5 if sel else 1.5))
+            p.drawRoundedRect(ring, 4, 4)
         p.end()
 
     def _hit(self, pos):
@@ -527,9 +1042,10 @@ class BoardMap(QtWidgets.QWidget):
         if h != self.hover:
             self.hover = h
             # Tooltips auto-detect rich text: escape the module name.
-            self.setToolTip("Port %d%s" % (h, (" · " + html.escape(self.occupied[h]))
-                                           if h in self.occupied else " · empty")
-                            if h else "")
+            tip = self.tip_for(h)
+            self.setToolTip(html.escape(tip) if h else "")
+            if h:
+                self.setAccessibleDescription(tip)
             self.setCursor(QtCore.Qt.PointingHandCursor if h else
                            QtCore.Qt.ArrowCursor)
             self.update()
@@ -539,8 +1055,68 @@ class BoardMap(QtWidgets.QWidget):
         if h is not None:
             self.picked.emit(h)
 
+    def keyPressEvent(self, ev):                       # noqa: N802
+        """Keyboard: arrows step through the ports, Return or Space picks
+        the one under the ring (its hover line is the accessible
+        description)."""
+        ns = sorted(self.ports) or sorted(CELLS)
+        k = ev.key()
+        cur = self.hover if self.hover in ns else (
+            self.selected if self.selected in ns else None)
+        if k in (QtCore.Qt.Key_Down, QtCore.Qt.Key_Right,
+                 QtCore.Qt.Key_Up, QtCore.Qt.Key_Left):
+            step = 1 if k in (QtCore.Qt.Key_Down, QtCore.Qt.Key_Right) else -1
+            i = ns.index(cur) + step if cur is not None else 0
+            self.hover = ns[i % len(ns)]
+            tip = self.tip_for(self.hover)
+            self.setToolTip(html.escape(tip))
+            self.setAccessibleDescription(tip)
+            self.update()
+            return
+        if k in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter,
+                 QtCore.Qt.Key_Space) and cur is not None:
+            self.picked.emit(cur)
+            return
+        super().keyPressEvent(ev)
+
 
 # ------------------------------------------------------------------ page
+#: Where "Connect by cable" puts a module: this far (mm) past the port's
+#: mouth, plus half the module's own size, so it is clear of the board.
+CABLED_CLEAR_MM = 40.0
+
+
+def _axis_word(v):
+    """'+X' ... '-Z' of the world axis nearest the vector v."""
+    k = max(range(3), key=lambda i: abs(v[i]))
+    return ("+" if v[k] > 0 else "-") + "XYZ"[k]
+
+
+def cabled_placement(ports_mod, name, port, board_placement):
+    """World placement of a module connected by cable to `port`: outside
+    the board past the port's mouth (CABLED_CLEAR_MM + half the module's
+    measured size), at the board's height, working face up as on the board
+    and its pins toward the port, so the ribbon runs straight in."""
+    import FreeCAD
+    v = FreeCAD.Vector
+    d = v(*port.insert_dir)
+    # row_centre, mouth and pcb_y are the port's coordinates along its own
+    # orthonormal axes (row, insertion, up), so this is the mouth's centre.
+    mouth = (v(*port.row_dir) * port.row_centre + d * port.mouth
+             + v(*port.up) * port.pcb_y)
+    feat = ports_mod.measure_module(name)
+    import numpy as np
+    P = np.concatenate([feat["body_tris"], feat["pin_tris"]]).reshape(-1, 3)
+    half = float((P.max(0) - P.min(0)).max()) / 2.0
+    at_board = mouth - d * (CABLED_CLEAR_MM + half)
+    at = board_placement.multVec(at_board)
+    rot = board_placement.Rotation
+    up_w = rot.multVec(v(0, 1, 0))
+    d_w = rot.multVec(d)
+    return ports_mod.module_placement(name, (at.x, at.y, at.z),
+                                      face=_axis_word(up_w), cable=_axis_word(d_w))
+
+
 class ModulesPage(QtWidgets.QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -589,6 +1165,33 @@ class ModulesPage(QtWidgets.QWidget):
         self.btn_check.setEnabled(False)
         head.addWidget(self.btn_check)
         lay.addLayout(head)
+
+        # R301: the board moved (or a cabled module did) and modules no
+        # longer match it: say so, and offer to put every one back.
+        self.stale_row = QtWidgets.QWidget()
+        self.stale_row.setObjectName("MStale")
+        sl = QtWidgets.QVBoxLayout(self.stale_row)
+        sl.setContentsMargins(0, 2, 0, 4)
+        sl.setSpacing(4)
+        self.stale_text = QtWidgets.QLabel("")
+        self.stale_text.setObjectName("MWarn")
+        self.stale_text.setWordWrap(True)
+        self.stale_text.setTextFormat(QtCore.Qt.PlainText)
+        sl.addWidget(self.stale_text)
+        srow = QtWidgets.QHBoxLayout()
+        self.btn_reseat = QtWidgets.QPushButton("Re-seat all")
+        self.btn_reseat.setObjectName("MPrimary")
+        self.btn_reseat.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_reseat.setAccessibleName("Re-seat all modules")
+        self.btn_reseat.setToolTip("Seat every module on its port where the board "
+                                   "is now, and remake cables that no longer reach")
+        self.btn_reseat.clicked.connect(self._reseat_all)
+        srow.addWidget(self.btn_reseat)
+        srow.addStretch(1)
+        sl.addLayout(srow)
+        self.stale_row.hide()
+        lay.addWidget(self.stale_row)
+        self._stale = {"seated": [], "cabled": [], "unknown": {}}
 
         self.map = BoardMap()
         self.map.picked.connect(self.pick)
@@ -681,20 +1284,94 @@ class ModulesPage(QtWidgets.QWidget):
         self.btn_remove.setObjectName("MGhost")
         self.btn_remove.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_remove.clicked.connect(self._remove)
+        self.btn_remove.setAccessibleName("Remove this module")
         ol.addWidget(self.btn_remove)
+        # R300: move to another port, or swap with the module there
+        self.btn_move = QtWidgets.QPushButton("Move or swap")
+        self.btn_move.setObjectName("MGhost")
+        self.btn_move.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_move.setAccessibleName("Move this module to another port")
+        self.btn_move.setToolTip("Then pick an empty port to move it there, or a "
+                                 "port with another module to swap the two")
+        self.btn_move.clicked.connect(self._start_move)
+        ol.addWidget(self.btn_move)
+        # R302: a cable made for another board or module placement
+        self.btn_recable = QtWidgets.QPushButton("Remake cable")
+        self.btn_recable.setObjectName("MGhost")
+        self.btn_recable.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_recable.setAccessibleName("Remake this module's cable")
+        self.btn_recable.setToolTip("Make the cable again for the board and the "
+                                    "module where they are now")
+        self.btn_recable.clicked.connect(self._remake_cable)
+        self.btn_recable.hide()
+        ol.addWidget(self.btn_recable)
         ol.addStretch(1)
         self.occ_row.hide()
         lay.addWidget(self.occ_row)
+
+        # R300: while a module is being moved: what to do, and Cancel
+        self.move_row = QtWidgets.QWidget()
+        ml = QtWidgets.QHBoxLayout(self.move_row)
+        ml.setContentsMargins(0, 0, 0, 0)
+        ml.setSpacing(4)
+        self.move_text = QtWidgets.QLabel("")
+        self.move_text.setObjectName("MPortSub")
+        self.move_text.setWordWrap(True)
+        self.move_text.setTextFormat(QtCore.Qt.PlainText)
+        self.btn_move_cancel = QtWidgets.QPushButton("Cancel")
+        self.btn_move_cancel.setObjectName("MLink")
+        self.btn_move_cancel.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_move_cancel.setAccessibleName("Cancel moving")
+        self.btn_move_cancel.clicked.connect(self._cancel_move)
+        ml.addWidget(self.move_text, 1)
+        ml.addWidget(self.btn_move_cancel)
+        self.move_row.hide()
+        lay.addWidget(self.move_row)
+        self._moving = None             # (doc Uid, object Name) being moved
 
         self.list_label = QtWidgets.QLabel("ADD A MODULE")
         self.list_label.setObjectName("MSection")
         self.list_label.hide()
         lay.addWidget(self.list_label)
+        # Off the board: the module goes clear of the board beyond the port
+        # and a ribbon cable wires it to the port (atech_ports.cable).
+        self.by_cable = QtWidgets.QCheckBox("Connect by cable, off the board")
+        self.by_cable.setObjectName("MPortSub")
+        self.by_cable.setAccessibleName("Connect the module by cable, off the board")
+        self.by_cable.setToolTip("The module is placed beside the board, past this "
+                                 "port, with a ribbon cable to the port. Move it "
+                                 "where the design needs it, then Remake cable.")
+        self.by_cable.hide()
+        lay.addWidget(self.by_cable)
         self.grid = QtWidgets.QGridLayout()
         self.grid.setSpacing(6)
         lay.addLayout(self.grid)
-        lay.addStretch(1)
         self._module_btns = []
+
+        # R305: library parts with no pin header (the knob) or no port at
+        # all (N20 wheel, NEMA 17 stepper): placed by hand beside the board.
+        lay.addSpacing(6)
+        self.free_label = QtWidgets.QLabel("PARTS WITHOUT A PORT")
+        self.free_label.setObjectName("MSection")
+        self.free_label.hide()
+        lay.addWidget(self.free_label)
+        self.free_sub = QtWidgets.QLabel(
+            "These plug into no port. They are placed beside the board; move "
+            "them where the design needs them.")
+        self.free_sub.setObjectName("MPortSub")
+        self.free_sub.setWordWrap(True)
+        self.free_sub.hide()
+        lay.addWidget(self.free_sub)
+        self.free_grid = QtWidgets.QGridLayout()
+        self.free_grid.setSpacing(6)
+        lay.addLayout(self.free_grid)
+        self.free_list = QtWidgets.QVBoxLayout()
+        self.free_list.setSpacing(2)
+        lay.addLayout(self.free_list)
+        self._free_btns = []
+        self._free_rows = []
+        self._free_names = []
+        lay.addStretch(1)
 
         self._timer = QtCore.QTimer(self)
         self._timer.timeout.connect(self.refresh)
@@ -704,6 +1381,7 @@ class ModulesPage(QtWidgets.QWidget):
         self._plans = {}                # doc Uid -> FirstFrame still polling
         self._verdict_uid = None        # doc Uid the verdicts shown are about
         self._last_check = None         # (doc, Name, only, result) on screen (R175)
+        self._fitted = []               # R517: the fitted-after parts the last check used
         self._closing = set()           # doc Uids being closed right now
         self._loaded = False
         self._watch = None
@@ -744,6 +1422,11 @@ class ModulesPage(QtWidgets.QWidget):
             # only ever fail). R65.
             self._seatable = ports_mod.seatable(sorted(self._specs))
             self._reserved = dict(getattr(ports_mod, "RESERVED", {}) or {})
+            # R305: parts that plug into no port, placed by hand
+            from . import projects
+            self._free_names = projects.free_parts(seatable=self._seatable)
+            for n in self._free_names:
+                self._specs.setdefault(n, modules_mod.spec(n))
         except Exception as exc:                       # noqa: BLE001
             _log("library: %r" % (exc,))
             msg = describe_error(exc, action="loading")
@@ -754,6 +1437,7 @@ class ModulesPage(QtWidgets.QWidget):
             return
         self._show_unavailable(None)
         self._build_module_buttons()
+        self._build_free_buttons()
         self.refresh()
 
     def _show_unavailable(self, msg):
@@ -769,8 +1453,11 @@ class ModulesPage(QtWidgets.QWidget):
             # must not bring verdicts back over an unusable library (R175).
             self._hide_verdicts()
             for w in (self.occ_row, self.list_label, self.undo_row,
-                      self.notice):
+                      self.notice, self.stale_row, self.move_row,
+                      self.free_label, self.free_sub):
                 w.hide()
+            for b in self._free_btns + self._free_rows:
+                b.hide()
             self.meta.setText("")
             self._show_error(msg)
         else:
@@ -785,11 +1472,16 @@ class ModulesPage(QtWidgets.QWidget):
                 offered, key=lambda kv: kv[1].get("display_name", kv[0]))):
             dims = sp.get("dimensions_mm") or {}
             sub = " × ".join("%g" % dims[k] for k in ("x", "z", "y") if k in dims)
-            b = QtWidgets.QPushButton("%s\n%s mm" % (
-                sp.get("display_name") or name, sub or "—"))
+            derived = sp.get("derived")
+            b = QtWidgets.QPushButton("%s\n%s mm%s" % (
+                sp.get("display_name") or name, sub or "—",
+                " · derived" if derived else ""))
             b.setObjectName("MModule")
             b.setCursor(QtCore.Qt.PointingHandCursor)
-            b.setToolTip(sp.get("description") or name)
+            tip = sp.get("description") or name
+            if derived:
+                tip += "\n\nDerived model, not Atech CAD: " + derived
+            b.setToolTip(tip)
             b.clicked.connect(lambda _=False, n=name: self._add(n))
             self.grid.addWidget(b, i // 2, i % 2)
             self._module_btns.append(b)
@@ -841,6 +1533,9 @@ class ModulesPage(QtWidgets.QWidget):
             self._verdict_uid = None
             self._hide_verdicts()
             self.notice.hide()
+        if self._moving is not None and (self._moving[0] != uid or doc is None
+                                         or doc.getObject(self._moving[1]) is None):
+            self._cancel_move()
         occ = self._occupied()
         # R107: nothing to check without a document; R206: nor on a board
         # with no module seated - enabled by the first add, disabled again
@@ -855,8 +1550,22 @@ class ModulesPage(QtWidgets.QWidget):
         first = {}
         for n, o in sorted(occ.items()):
             first.setdefault(o.Name, n)
-        self.map.set_state(self._ports, labels, self._selected)
+        mods = {}
+        for n, o in sorted(occ.items()):
+            key, ports, joint = mods.get(o.Name, (getattr(o, "AtechModule", "") or o.Label,
+                                                  [], self._joint(o)))
+            ports.append(n)
+            mods[o.Name] = (key, ports, joint)
+        moving = ()
+        if self._moving is not None and doc is not None:
+            mo = doc.getObject(self._moving[1])
+            moving = tuple(int(p) for p in getattr(mo, "AtechPorts", []) or [])
+        self.map.set_state(self._ports, labels, self._selected,
+                           {k: (m, tuple(ps), j) for k, (m, ps, j) in mods.items()},
+                           tips=self._tips(occ), moving=moving)
         self._sync_list(occ, first)
+        self._sync_free(doc)
+        self._sync_stale(doc, occ)
         mods = {o.Name for o in occ.values()}
         self.meta.setText("%d module%s on %d port%s" % (
             len(mods), "" if len(mods) == 1 else "s",
@@ -864,8 +1573,58 @@ class ModulesPage(QtWidgets.QWidget):
             "No modules on the board yet")
         self._sync_panel(occ)
 
+    @staticmethod
+    def _joint(o):
+        return "cable" if getattr(o, "AtechJoint", None) == "cable" else "seat"
+
+    def _cables(self, o):
+        """[length mm] of a cabled module's cables (R302), [] otherwise."""
+        if self._joint(o) != "cable":
+            return []
+        try:
+            ports_mod, _ = _lib()
+            return [float(getattr(c, "AtechCableLength", 0.0) or 0.0)
+                    for c in ports_mod.cables_of(o.Document, o)]
+        except Exception:                              # noqa: BLE001
+            return []
+
+    def _tips(self, occ):
+        """{port: hover line} for the board map (R304)."""
+        out = {}
+        for n, prt in self._ports.items():
+            o = occ.get(n)
+            edge = getattr(prt, "edge", None)
+            if o is None:
+                out[n] = port_tooltip(n, edge, reserved=self._reserved.get(n))
+                continue
+            others = [int(p) for p in o.AtechPorts if int(p) != n]
+            ls = self._cables(o)
+            out[n] = port_tooltip(n, edge, self._short(o), others,
+                                  cable_mm=(sum(ls) if ls else
+                                            (0.0 if self._joint(o) == "cable" else None)))
+        return out
+
+    def _sync_stale(self, doc, occ):
+        """R301: the board-moved detector. Shows the Re-seat all banner while
+        any module no longer matches the board."""
+        stale = {"seated": [], "cabled": [], "unknown": {}}
+        if doc is not None and occ:
+            try:
+                ports_mod, _ = _lib()
+                stale = ports_mod.stale_modules(doc)
+            except Exception as exc:                   # noqa: BLE001
+                _log("stale: %r" % (exc,))
+        self._stale = stale
+        text = (None if self._anim is not None else
+                stale_sentence(len(stale["seated"]), len(stale["cabled"])))
+        self.stale_text.setText(text or "")
+        self.btn_reseat.setEnabled(self._anim is None)
+        self.stale_row.setVisible(bool(text))
+
     def _sync_list(self, occ, first):
-        key = [(n, occ[n].Name) for n in sorted(first.values())]
+        key = [(n, occ[n].Name, self._joint(occ[n]),
+                tuple(round(v) for v in self._cables(occ[n])))
+               for n in sorted(first.values())]
         if key == getattr(self, "_list_key", None):
             return
         self._list_key = key
@@ -873,13 +1632,21 @@ class ModulesPage(QtWidgets.QWidget):
             w.deleteLater()
         self._on_rows = []
         self.on_label.setVisible(bool(key))
-        for n, name in key:
+        icon = cable_icon(style.tokens()["muted"])
+        for n, _name, joint, lengths in key:
             o = occ[n]
             ports = ", ".join(str(p) for p in sorted(o.AtechPorts))
-            b = QtWidgets.QPushButton("%s   ·   port%s %s" % (
-                self._short(o), "s" if len(o.AtechPorts) > 1 else "", ports))
+            where = "port%s %s" % ("s" if len(o.AtechPorts) > 1 else "", ports)
+            if joint == "cable":
+                where += "   ·   %s" % cable_words(lengths).replace(
+                    "Connected by", "by")
+            b = QtWidgets.QPushButton("%s   ·   %s" % (self._short(o), where))
+            if joint == "cable":
+                b.setIcon(icon)
             b.setObjectName("MRow")
             b.setCursor(QtCore.Qt.PointingHandCursor)
+            b.setAccessibleName("%s, %s%s" % (
+                self._short(o), where.replace("   ·   ", ", "), ""))
             b.clicked.connect(lambda _=False, k=n: self.pick(k))
             self.on_list.addWidget(b)
             self._on_rows.append(b)
@@ -890,6 +1657,10 @@ class ModulesPage(QtWidgets.QWidget):
 
     # ---------------------------------------------------------- selection
     def pick(self, n):
+        if self._moving is not None:
+            # R300: the pick is where the module goes
+            self._move_to(n)
+            return
         self._selected = n
         self._hide_verdicts()
         self.err.hide()
@@ -907,28 +1678,35 @@ class ModulesPage(QtWidgets.QWidget):
     def _sync_panel(self, occ):
         n = self._selected
         if n is None or n not in self._ports:
-            for w in (self.occ_row, self.list_label):
+            for w in (self.occ_row, self.list_label, self.by_cable):
                 w.hide()
             for b in self._module_btns:
                 b.hide()
             return
         port = self._ports[n]
-        axis = {"left": "slides in from the left", "right":
-                "slides in from the right", "top": "slides in from the top",
-                "bottom": "slides in from the bottom"}.get(port.edge, port.edge)
+        axis = EDGE_WORDS.get(port.edge, port.edge)
         self.port_title.setText("Port %d" % n)
         if n in occ:
             # The title already says "Port n" and the verdicts below name
             # nothing again (R60): say only what is new here.
             o = occ[n]
             others = sorted(int(p) for p in o.AtechPorts if int(p) != n)
+            cabled = self._joint(o) == "cable"
+            how = cable_words(self._cables(o)) if cabled else axis
             self.port_sub.setText("%s · %s%s" % (
-                self._short(o), axis,
+                self._short(o), how,
                 (" · also on port%s %s" % ("s" if len(others) > 1 else "",
                                            ", ".join(str(p) for p in others)))
                 if others else ""))
             self.occ_row.show()
+            busy = self._anim is not None
+            for b in (self.btn_remove, self.btn_move):
+                b.setEnabled(not busy)
+            self.btn_move.setVisible(self._moving is None)
+            self.btn_recable.setVisible(cabled and o.Name in self._stale["cabled"])
+            self.btn_recable.setEnabled(not busy)
             self.list_label.hide()
+            self.by_cable.hide()
             for b in self._module_btns:
                 b.hide()
         elif n in self._reserved:
@@ -936,6 +1714,7 @@ class ModulesPage(QtWidgets.QWidget):
                                   "here." % self._reserved[n])
             self.occ_row.hide()
             self.list_label.hide()
+            self.by_cable.hide()
             for b in self._module_btns:
                 b.hide()
         else:
@@ -943,6 +1722,8 @@ class ModulesPage(QtWidgets.QWidget):
                                   "when its pins are seated." % (port.edge, axis))
             self.occ_row.hide()
             self.list_label.show()
+            self.by_cable.show()
+            self.by_cable.setEnabled(self._anim is None)
             for b in self._module_btns:
                 b.show()
                 b.setEnabled(self._anim is None)
@@ -962,6 +1743,9 @@ class ModulesPage(QtWidgets.QWidget):
         n = self._selected
         if n is None or self._anim is not None or n in self._reserved:
             return
+        if self.by_cable.isChecked():
+            self._add_cabled(name)
+            return
         self.err.hide()
         self.notice.hide()
         self._clear_undo()
@@ -972,7 +1756,8 @@ class ModulesPage(QtWidgets.QWidget):
             feat = ports_mod.measure_module(name)
             arg = n if len(feat["groups"]) == 1 else self._pair_for(name, n)
             # One undo step for the add (it may also create the board).
-            FreeCAD.setActiveTransaction("Add %s" % name)
+            txn = "Add %s" % name
+            FreeCAD.setActiveTransaction(txn)
             try:
                 obj = ports_mod.seat(doc, name, arg)
             finally:
@@ -988,15 +1773,57 @@ class ModulesPage(QtWidgets.QWidget):
         self._first_frame(doc)
         oname = obj.Name
         self._animate(obj, obj.AtechSlideOut, 0.0,
-                      lambda: self._after_add(doc, oname))
+                      lambda: self._after_add(doc, oname, txn))
 
-    def _after_add(self, doc, oname):
+    def _add_cabled(self, name):
+        """Add `name` off the board, wired to the picked port: placed by
+        cabled_placement (clear of the board past the port), cabled by
+        atech_ports.cable, one undo step. A two-connector module takes the
+        same port pair a seated one would (pair_for)."""
+        n = self._selected
+        self.err.hide()
+        self.notice.hide()
+        self._clear_undo()
+        import FreeCAD
+        try:
+            ports_mod, _ = _lib()
+            doc = _doc()
+            feat = ports_mod.measure_module(name)
+            arg = n if len(feat["groups"]) == 1 else self._pair_for(name, n)
+            txn = "Add %s by cable" % name
+            FreeCAD.setActiveTransaction(txn)
+            try:
+                board = ports_mod.board_object(doc)
+                pl = cabled_placement(ports_mod, name, self._ports[n], board.Placement)
+                obj, _cables = ports_mod.cable(doc, name, arg, pl)
+            finally:
+                FreeCAD.closeActiveTransaction()
+            try:
+                obj.ViewObject.ShapeColor = (0.35, 0.64, 1.00)
+            except Exception:                          # noqa: BLE001
+                pass
+        except Exception as exc:                       # noqa: BLE001
+            _log("cable %s to %s: %r" % (name, n, exc))
+            self._show_failure(exc, module=name, port=n, action="adding")
+            return
+        self._first_frame(doc)
+        plan = self._plans.get(_doc_uid(doc))
+        if plan is not None:
+            plan.slide_done()           # nothing slides in: frame it now
+        self._after_add(doc, obj.Name, txn)
+
+    def _after_add(self, doc, oname, txn=None):
         plan = self._plans.get(_doc_uid(doc))
         if plan is not None:
             plan.slide_done()           # the next settled poll frames the seated board
         self.refresh()
-        if doc.getObject(oname) is not None:
+        o = doc.getObject(oname)
+        if o is not None:
             self._show_check(doc=doc, only=oname)
+            if txn:
+                # R304: "Added <name> · Undo", like Remove's row
+                shown = self._short(o)
+                self._offer_undo(doc, txn, shown, "Added %s" % shown)
 
     def _remove(self):
         n = self._selected
@@ -1034,6 +1861,328 @@ class ModulesPage(QtWidgets.QWidget):
             self._hide_verdicts()
             self.refresh()
         self._animate(obj, 0.0, obj.AtechSlideOut, done)
+
+    # ------------------------------------------------- move and swap (R300)
+    def _start_move(self):
+        """Move mode: the next port picked on the map is where the selected
+        module goes (empty port), or whom it swaps with (occupied port)."""
+        n = self._selected
+        o = self._occupied().get(n)
+        if o is None or self._anim is not None:
+            return
+        self.err.hide()
+        self.notice.hide()
+        self._clear_undo()
+        self._moving = (_doc_uid(o.Document), o.Name)
+        self.move_text.setText(
+            "Moving %s. Pick an empty port to move it there, or a port with "
+            "another module to swap the two." % self._short(o))
+        self.move_row.show()
+        self.refresh()
+
+    def _cancel_move(self):
+        self._moving = None
+        self.move_row.hide()
+        self.btn_move.setVisible(True)
+        self.map.moving = ()
+        self.map.update()
+
+    def _target_ports(self, ports_mod, o, n):
+        """Port sets o could take with port n picked: [n] for one connector;
+        for two, n with each same-column neighbour that is free or o's own,
+        each a tuple; [] when there is none."""
+        k = len(o.AtechPorts)
+        if k == 1:
+            return [(n,)]
+        p0 = self._ports.get(n)
+        if p0 is None:
+            return []
+        col = sorted((q for q in self._ports.values() if q.edge == p0.edge),
+                     key=lambda q: q.row_centre)
+        i = [q.number for q in col].index(n)
+        occ = ports_mod.occupied(o.Document)
+        out = []
+        for j in (i - 1, i + 1):
+            if 0 <= j < len(col):
+                m = col[j].number
+                if m in self._reserved:
+                    continue
+                if m not in occ or occ[m].Name == o.Name:
+                    out.append(tuple(sorted((n, m))))
+        return out
+
+    def _move_to(self, n):
+        """The pick in move mode (R300): move, swap, cancel or refuse."""
+        doc = self._current()
+        if doc is None or self._moving is None or self._anim is not None:
+            self._cancel_move()
+            return
+        uid, oname = self._moving
+        o = doc.getObject(oname)
+        if o is None or _doc_uid(doc) != uid:
+            self._cancel_move()
+            return
+        occ = self._occupied()
+        tgt = occ.get(n)
+        act, arg = move_action(o.AtechPorts, n, (tgt.Name, list(tgt.AtechPorts))
+                               if tgt is not None and tgt.Name != o.Name else None)
+        if act == "cancel":
+            self._cancel_move()
+            self.refresh()
+            return
+        if act == "refuse":
+            self._show_error(arg)
+            return
+        if act == "move" and n in self._reserved:
+            self._show_error("Port %d is reserved for %s, so no module can go "
+                             "there." % (n, self._reserved[n]))
+            return
+        self.err.hide()
+        shown = self._short(o)
+        import FreeCAD
+        try:
+            ports_mod, _ = _lib()
+            if act == "swap":
+                other = self._short(tgt)
+                txn = "Swap %s and %s" % (o.Label, tgt.Label)
+                FreeCAD.setActiveTransaction(txn)
+                try:
+                    ports_mod.swap(doc, o, tgt)
+                finally:
+                    FreeCAD.closeActiveTransaction()
+                text = "Swapped %s and %s" % (shown, other)
+            else:
+                txn = "Move %s" % o.Label
+                cands = self._target_ports(ports_mod, o, n)
+                if not cands:
+                    raise ports_mod.PortSpecError(
+                        "no free neighbour", kind="no_pair",
+                        module=o.AtechModule, port=n)
+                done, last = None, None
+                for ps in cands:
+                    # each try is its own transaction; a pair whose check
+                    # fails is rolled back (abort) before the next is tried
+                    FreeCAD.setActiveTransaction(txn)
+                    ok = False
+                    try:
+                        ports_mod.move(doc, o, ps if len(ps) > 1 else ps[0])
+                        res = check_doc(ports_mod, doc, only=[o.Name])[0].get(o.Name, {})
+                        ok = len(cands) == 1 or all(
+                            (v or {}).get("verdict") == ports_mod.PASS
+                            for v in res.values())
+                        last = None if ok else ports_mod.first_why(res)
+                    except Exception as exc:           # noqa: BLE001
+                        last = exc
+                    finally:
+                        FreeCAD.closeActiveTransaction(not ok)
+                    if ok:
+                        done = ps
+                        break
+                if done is None:
+                    if isinstance(last, Exception):
+                        raise last
+                    raise ports_mod.PortSpecError(
+                        "every pair fails: %s" % last, kind="pair_fails",
+                        module=o.AtechModule, port=n)
+                text = "Moved %s to port%s %s" % (
+                    shown, "s" if len(done) > 1 else "",
+                    " and ".join(str(p) for p in sorted(done)))
+        except Exception as exc:                       # noqa: BLE001
+            _log("move %s to %s: %r" % (oname, n, exc))
+            self._show_failure(exc, module=getattr(o, "AtechModule", None),
+                               port=n, action="moving")
+            self._cancel_move()
+            self.refresh()
+            return
+        self._cancel_move()
+        self._selected = n
+        self._hide_verdicts()
+        self.refresh()
+        self._show_check(doc=doc, only=o.Name)
+        self._offer_undo(doc, txn, shown, text)
+
+    # --------------------------------------- re-seat and cables (R301/R302)
+    def _reseat_all(self):
+        doc = self._current()
+        if doc is None or self._anim is not None:
+            return
+        self.err.hide()
+        self.notice.hide()
+        self._clear_undo()
+        import FreeCAD
+        txn = "Re-seat modules"
+        try:
+            ports_mod, _ = _lib()
+            FreeCAD.setActiveTransaction(txn)
+            try:
+                owners = {}
+                for name in ports_mod.stale_modules(doc)["cabled"]:
+                    m = doc.getObject(name)
+                    if m is not None:
+                        owners[name] = (m, cable_owners(doc, m))
+                rep = ports_mod.reseat_all(doc)
+                for m, own in owners.values():          # R512
+                    keep_cable_owners(doc, m, own)
+            finally:
+                FreeCAD.closeActiveTransaction()
+        except Exception as exc:                       # noqa: BLE001
+            _log("reseat all: %r" % (exc,))
+            self._show_failure(exc, action="re-seating")
+            return
+        n = len(rep["reseated"]) + len(rep["recabled"])
+        self.refresh()
+        if rep["failed"]:
+            names = [self._short(doc.getObject(k)) if doc.getObject(k) else k
+                     for k in sorted(rep["failed"])]
+            _report("re-seat all: %r" % (rep["failed"],))
+            self._show_error("%s could not be put back. The details are in the "
+                             "Report view." % " and ".join(names))
+        if n:
+            self._show_check(doc=doc, only=None)
+            parts = []
+            if rep["reseated"]:
+                k = len(rep["reseated"])
+                parts.append("re-seated %d module%s" % (k, "" if k == 1 else "s"))
+            if rep["recabled"]:
+                k = len(rep["recabled"])
+                parts.append("remade %d cable%s" % (k, "" if k == 1 else "s"))
+            self._offer_undo(doc, txn, "", " and ".join(parts).capitalize())
+
+    def _remake_cable(self):
+        o = self._occupied().get(self._selected)
+        if o is None or self._joint(o) != "cable" or self._anim is not None:
+            return
+        doc = o.Document
+        shown = self._short(o)
+        self.err.hide()
+        self._clear_undo()
+        import FreeCAD
+        txn = "Remake cable of %s" % o.Label
+        try:
+            ports_mod, _ = _lib()
+            FreeCAD.setActiveTransaction(txn)
+            try:
+                owners = cable_owners(doc, o)
+                ports_mod.remake_cable(doc, o)
+                keep_cable_owners(doc, o, owners)      # R512
+            finally:
+                FreeCAD.closeActiveTransaction()
+        except Exception as exc:                       # noqa: BLE001
+            _log("remake cable %s: %r" % (o.Name, exc))
+            self._show_failure(exc, module=getattr(o, "AtechModule", None),
+                               action="remaking the cable of")
+            return
+        self.refresh()
+        self._show_check(doc=doc, only=o.Name)
+        self._offer_undo(doc, txn, shown, "Remade the cable of %s" % shown)
+
+    # ------------------------------------------------- free parts (R305)
+    def _build_free_buttons(self):
+        for b in self._free_btns:
+            b.deleteLater()
+        self._free_btns = []
+        names = sorted(self._free_names, key=lambda n: display_name(n, self._specs))
+        for i, name in enumerate(names):
+            sp = self._specs.get(name) or {}
+            dims = sp.get("dimensions_mm") or {}
+            sub = " × ".join("%g" % dims[k] for k in ("x", "z", "y") if k in dims)
+            shown = display_name(name, self._specs)
+            b = QtWidgets.QPushButton("%s\n%s mm" % (shown, sub or "—"))
+            b.setObjectName("MModule")
+            b.setCursor(QtCore.Qt.PointingHandCursor)
+            b.setToolTip(sp.get("description") or shown)
+            b.setAccessibleName("Add %s beside the board" % shown)
+            b.clicked.connect(lambda _=False, n=name: self._add_free(n))
+            self.free_grid.addWidget(b, i // 2, i % 2)
+            self._free_btns.append(b)
+        vis = bool(names) and self._unavailable is None
+        self.free_label.setVisible(vis)
+        self.free_sub.setVisible(vis)
+
+    def _sync_free(self, doc):
+        from . import projects
+        try:
+            placed = projects.placed_free_parts(doc)
+        except Exception:                              # noqa: BLE001
+            placed = []
+        key = [(o.Name, o.Label) for o in placed]
+        if key == getattr(self, "_free_key", None):
+            return
+        self._free_key = key
+        for w in self._free_rows:
+            w.deleteLater()
+        self._free_rows = []
+        for o in placed:
+            row = QtWidgets.QWidget()
+            rl = QtWidgets.QHBoxLayout(row)
+            rl.setContentsMargins(8, 0, 0, 0)
+            rl.setSpacing(4)
+            shown = self._short(o)
+            lab = QtWidgets.QLabel("%s   ·   placed by hand" % shown)
+            lab.setObjectName("MPortSub")
+            lab.setTextFormat(QtCore.Qt.PlainText)
+            rm = QtWidgets.QPushButton("Remove")
+            rm.setObjectName("MLink")
+            rm.setCursor(QtCore.Qt.PointingHandCursor)
+            rm.setAccessibleName("Remove %s" % shown)
+            rm.clicked.connect(lambda _=False, k=o.Name: self._remove_free(k))
+            rl.addWidget(lab, 1)
+            rl.addWidget(rm)
+            self.free_list.addWidget(row)
+            self._free_rows.append(row)
+
+    def _add_free(self, name):
+        if self._anim is not None:
+            return
+        self.err.hide()
+        self.notice.hide()
+        self._clear_undo()
+        import FreeCAD
+        from . import projects
+        txn = "Add %s" % name
+        try:
+            _lib()
+            doc = _doc()
+            FreeCAD.setActiveTransaction(txn)
+            try:
+                obj = projects.place_free_part(doc, name)
+            finally:
+                FreeCAD.closeActiveTransaction()
+            try:
+                obj.ViewObject.ShapeColor = (0.55, 0.60, 0.72)
+            except Exception:                          # noqa: BLE001
+                pass
+        except Exception as exc:                       # noqa: BLE001
+            _log("free part %s: %r" % (name, exc))
+            self._show_failure(exc, module=name, action="adding")
+            return
+        self._first_frame(doc)
+        self.refresh()
+        shown = display_name(name, self._specs)
+        self._offer_undo(doc, txn, shown, "Added %s" % shown)
+
+    def _remove_free(self, oname):
+        doc = self._current()
+        o = doc.getObject(oname) if doc is not None else None
+        if o is None or self._anim is not None:
+            return
+        shown = self._short(o)
+        self._clear_undo()
+        import FreeCAD
+        txn = "Remove %s" % o.Label
+        try:
+            FreeCAD.setActiveTransaction(txn)
+            try:
+                doc.removeObject(oname)
+                doc.recompute()
+            finally:
+                FreeCAD.closeActiveTransaction()
+        except Exception as exc:                       # noqa: BLE001
+            _log("remove free part %s: %r" % (oname, exc))
+            self._show_failure(exc, action="removing")
+            return
+        self.refresh()
+        self._offer_undo(doc, txn, shown)
 
     def _animate(self, obj, start, end, done):
         """Slide along the measured prismatic axis: start -> end mm out."""
@@ -1169,7 +2318,7 @@ class ModulesPage(QtWidgets.QWidget):
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
             ports_mod, _ = _lib()
-            res = ports_mod.check(doc, only=[only] if only else None)
+            res, self._fitted = check_doc(ports_mod, doc, only=[only] if only else None)
         except Exception as exc:                       # noqa: BLE001
             _log("check: %r" % (exc,))
             self._show_failure(exc, action="checking")
@@ -1196,17 +2345,25 @@ class ModulesPage(QtWidgets.QWidget):
             if only and name != only:
                 continue
             o = doc.getObject(name)
+            if getattr(o, "AtechRole", None) == FREE_ROLE:
+                continue                # R305: a free part has no port to check
             label = self._short(o) if o is not None else name
+            cabled = o is not None and self._joint(o) == "cable"
             cells, whys = [], []
-            for key in CHECK_ORDER:
+            for key in (CABLED_ORDER if cabled else CHECK_ORDER):
                 r = verdicts.get(key) or {}
-                text, tok = verdict_words(key, r, name_of)
+                text, tok = verdict_words(key, r, name_of, cabled=cabled)
                 cells.append("<span style='color:%s;font-weight:600'>%s</span>"
                              % (t[tok], html.escape(text)))
                 why = fail_why(key, r, name_of)
                 if why:
                     whys.append("<span style='color:%s'>%s</span>"
                                 % (t["muted"], html.escape(why)))
+            if cabled:
+                ls = self._cables(o)
+                if ls:
+                    cells.append("<span style='color:%s'>%s</span>" % (
+                        t["muted"], html.escape(cable_words(ls).split(" · ", 1)[-1])))
             body = " &nbsp;·&nbsp; ".join(cells)
             if whys:
                 body += "<br>" + "<br>".join(whys)
@@ -1219,6 +2376,18 @@ class ModulesPage(QtWidgets.QWidget):
             where = ("port%s %s" % ("s" if len(ports) > 1 else "",
                                     ", ".join(str(p) for p in ports))) if ports else ""
             rows.append(check_all_block(label, where, body, t["muted"]))
+        if not only:
+            # R303: the power rule heads Check all
+            warn = power_warning(self._board_modules(doc))
+            if warn:
+                rows.insert(0, "<p style='margin-top:0px; margin-bottom:%dpx; "
+                            "color:%s; font-weight:600'>%s</p>"
+                            % (CHECK_ALL_GAP_PX, t["warn"], html.escape(warn)))
+        fitted = [lab for lab in (getattr(self, "_fitted", None) or ())]
+        if fitted and rows:
+            # R517: say which parts the slide paths were judged without
+            rows.append("<span style='color:%s'>%s</span>" % (
+                t["muted"], html.escape(fitted_note(fitted))))
         self._hide_verdicts()
         if not rows:
             return
@@ -1229,6 +2398,21 @@ class ModulesPage(QtWidgets.QWidget):
         self.all_label.setVisible(not only)
         self._verdict_uid = _doc_uid(doc)
         self._last_check = (doc, doc.Name, only, res)
+
+    @staticmethod
+    def _board_modules(doc):
+        """presets.yaml names of the modules on doc's board, one per module."""
+        seen, out = set(), []
+        try:
+            ports_mod, _ = _lib()
+            occ = ports_mod.occupied(doc)
+        except Exception:                              # noqa: BLE001
+            return out
+        for o in occ.values():
+            if o.Name not in seen:
+                seen.add(o.Name)
+                out.append(getattr(o, "AtechModule", "") or "")
+        return out
 
     @staticmethod
     def _check_key(doc, name):
@@ -1264,9 +2448,13 @@ class ModulesPage(QtWidgets.QWidget):
             _log("restyle verdicts: %r" % (exc,))
 
     # ------------------------------------------------------------ undo
-    def _offer_undo(self, doc, txn, shown):
+    def _offer_undo(self, doc, txn, shown, text=None):
+        """The inline Undo row for the newest page action (Remove; R304
+        Add; R300 Move/Swap; R301 Re-seat all), one undo transaction each.
+        text: what the row says (default "Removed <shown>")."""
         self._undo = (doc, doc.Name, txn, shown)
-        self.undo_text.setText("Removed %s  ·" % shown)
+        self.undo_text.setText("%s  ·" % (text or ("Removed %s" % shown)))
+        self.btn_undo.setAccessibleName("Undo: %s" % (text or ("Removed %s" % shown)))
         self.undo_row.show()
 
     def _clear_undo(self):
@@ -1287,9 +2475,9 @@ class ModulesPage(QtWidgets.QWidget):
             ok = False
         if not ok:
             # Something else was done since; undoing now would undo THAT.
-            self._show_error("%s can no longer be put back from here, because "
+            self._show_error("That can no longer be undone from here, because "
                              "the document has changed since. Use Edit > Undo "
-                             "instead." % shown)
+                             "instead.")
             return
         try:
             doc.undo()
@@ -1298,6 +2486,7 @@ class ModulesPage(QtWidgets.QWidget):
             _log("undo remove: %r" % (exc,))
             self._show_failure(exc, action="putting back")
             return
+        self._hide_verdicts()
         self.refresh()
 
     def _show_failure(self, exc, module=None, port=None, action="adding"):
@@ -1318,4 +2507,8 @@ class ModulesPage(QtWidgets.QWidget):
     def restyle(self):
         self.setStyleSheet(style.qss(PAGE_QSS))
         self._rerender_check()
+        # the cable icon is drawn in the theme's colour: draw the rows again
+        self._list_key = None
+        if self._ports and self._unavailable is None:
+            self.refresh()
         self.map.update()

@@ -36,7 +36,10 @@ measured is None, never a plausible substitute.
     request_size(request)   the one overall size a user's message gives
                             (R168: measured over all parts together)
     face_open(...)          per seated module, the share of rays from its
-                            working face that leave the product (R152)
+                            working face that leave the product (R152);
+                            the face is the module's own, in world (R240)
+    enclosure(...)          per Atech module, how much of it is inside the
+                            product's body (R241)
     socket_face(mesh, ...)  a connector's mouth direction, measured from
                             the module mesh (R164)
     thin_walls(parts)       the thinnest wall a sampled, time-capped ray
@@ -70,6 +73,29 @@ measured is None, never a plausible substitute.
                             resting on the desk (with the exact Z shift,
                             R126), containment, orientation (S36); parts
                             far from the board are not judged (R114)
+    face_open_problems      R270: a placed module that must be open, sealed,
+                            fails (quality mode); floors per kind (screen
+                            active area, ToF aperture, sound share)
+    thin_wall_problems      R270: a wall under 0.6 mm, re-measured exactly
+                            (wall_exact), proud details excused
+    through_intended        R270: intent.json "through_holes"
+    screw_pilots(parts)     R270: the pilot each screw ends in vs its size
+    board_retention(...)    R270: some part within 0.5 mm of the board
+    use_check_cache / save_check_cache
+                            R270: unchanged pairs' overlap results kept in
+                            the workspace between ./check runs
+    archetype_problems(...) R440: the request's archetype measured on owner
+                            images (ARCHETYPE_GATES: handheld screen region
+                            and grips, robot face window, speaker height and
+                            grille, vehicle length and wheels, lamp height
+                            and light, clock display, fan guard)
+    fastening(parts, code)  R441: housing parts that meet, joined by a screw
+                            through both, a snap / clip or a pin - or not
+    cable_holders(...)      R442: a cabled module held on two sides or more
+    confirm_mesh_overlap    R443: a sampled overlap's exact volume, the same
+                            on every run
+    thread_engagement       R444: a screw's overlap with the 0.85 d pilot it
+                            bites in is its thread, not an overlap
     fingerprint(shape)      a cheap identity for "did this body change?"
                             (geometry hash, not BREP text - see there)
     record_view(code)       AST rewrite: X.ViewObject.attr = v -> recorded,
@@ -84,7 +110,10 @@ import hashlib
 MIN_OVERLAP_MM3 = 0.01      # below this, "overlap" is contact noise (PRD S18)
 FRAGMENT_RATIO = 0.10       # smallest disjoint solid < 10 % of the largest
 FLOAT_GAP_MM = 0.5          # farther than this from every other body
-MAX_PAIRS_OBJECTS = 30      # pairwise checks are O(n^2): cap the inputs
+MAX_PAIRS_OBJECTS = 120     # pairwise checks are O(n^2): cap the inputs
+                            # (R250: was 30 - a 38-part toy car lost its last 8
+                            # parts; boxes are compared first, see check.py
+                            # OVERLAP_CAP and test_kit_round12 timings)
 MESH_SAMPLES = 1500         # mesh points tested against a solid, at most
 HEAVY_SAMPLES = 600         # ... against a heavy (mesh-derived) solid: its
                             # tessellation alone costs 0.55-0.75 s (MEASURED
@@ -144,6 +173,7 @@ def _optimal(shape):
 
 
 _TIGHT = {}                 # hashCode -> (shape, tight box)
+BOX_CACHE = 256             # R250: boxes kept (a box is a few floats)
 _BOUND = {}                 # hashCode -> (shape, BoundBox)
 
 
@@ -152,13 +182,15 @@ def tight(shape):
     Cached per shape and handed out as a copy (R129: 10 ms a call on the
     16 069-face board solid, asked several times per check)."""
     import FreeCAD as App
-    return App.BoundBox(_cached(_TIGHT, shape, _optimal))
+    # R250: 256 entries - at 16 a 31-part product cleared the store on every
+    # pass, and floating() alone re-measured boxes for 4 s on toy_car
+    return App.BoundBox(_cached(_TIGHT, shape, _optimal, size=BOX_CACHE))
 
 
 def _bound(shape):
     """shape.BoundBox, cached per shape (3 ms a call on the board solid)."""
     import FreeCAD as App
-    return App.BoundBox(_cached(_BOUND, shape, lambda s: s.BoundBox))
+    return App.BoundBox(_cached(_BOUND, shape, lambda s: s.BoundBox, size=BOX_CACHE))
 
 
 def dims(shape):
@@ -238,7 +270,10 @@ def _plane_type():
 
 
 _TESS = {}                  # hashCode -> (shape kept alive, points, triangles)
+TESS_CACHE = 128            # R250: shapes kept (101 tessellations, 3.9 s, on
+                            # toy_car's 31 parts when 16 were kept)
 EXACT_POINTS = 200          # fewer points than this on a light shape: all exact
+EXACT_WORK = 6000           # R250: ... and points x faces under this
 
 
 def _deflection(shape):
@@ -320,7 +355,7 @@ def _tess(shape):
     F = np.array(faces, dtype=int).reshape(-1, 3)
     T = P[F] if len(F) else np.zeros((0, 3, 3))
     if key is not None:
-        if len(_TESS) >= 16:
+        if len(_TESS) >= TESS_CACHE:   # R250: was 16 - a 31-part car re-tessellated
             _TESS.clear()
         _TESS[key] = (shape, P, T)
     return P, T
@@ -425,7 +460,7 @@ def _prepared(T, kind, make):
     if hit is not None and hit[0] is T:
         return hit[1]
     val = make()
-    if len(_PREP) >= 32:
+    if len(_PREP) >= TESS_CACHE:
         _PREP.clear()
     _PREP[k] = (T, val)
     return val
@@ -523,7 +558,12 @@ def points_inside(shape, pts, tol=0.01):
         except Exception:                               # noqa: BLE001
             return False
     is_heavy = heavy(shape)
-    if not is_heavy and (len(vecs) < EXACT_POINTS or tess_slow(shape)):
+    # R250: few points on a shape of few faces - OCCT exact per point; many
+    # points or many faces (90 points x a 403-face tyre: 1.1 s, 12 ms a
+    # point) - parity, with OCCT only for the points near the surface below
+    if not is_heavy and ((len(vecs) < EXACT_POINTS
+                          and len(vecs) * n_faces(shape) < EXACT_WORK)
+                         or tess_slow(shape)):
         return [exact(v) for v in vecs]
     import numpy as np
     Q = np.array([(v.x, v.y, v.z) for v in vecs], dtype=float)
@@ -799,8 +839,165 @@ def _solid_in_mesh(solid, mesh, limit=MESH_SAMPLES, tol=TOUCH_MM):
     return int(len(idx)), len(P), [round(float(c), 1) for c in P[idx].mean(axis=0)]
 
 
+# R443 (round 1): the sampled overlap test (a mesh, or a heavy shape)
+# gave the speaker's microphone a PASS on one run and "12 of 1458 points
+# inside" on the next - a few surface points 0.01-0.02 mm deep, found or
+# not as the sample set fell. A sampled hit on under CONFIRM_SHARE of its
+# points is now CONFIRMED before it is reported: an exact boolean common
+# volume for two shapes, else exact signed depths (OCCT's classification
+# and distToShape into the solid, parity and point-triangle distance into
+# the mesh) at the corners of deterministic triangles (the mesh's own, a
+# fresh tessellation of a COPY of the solid - never the triangulation an
+# earlier stage left on it), integrated linearly over each triangle into
+# a volume. Reported only over MIN_OVERLAP_MM3, like any boolean overlap.
+CONFIRM_SHARE = 0.05
+CONFIRM_POINTS = 1500       # samples per side tested exactly, at most
+CONFIRM_DEPTHS = 300        # inside points whose exact depth is measured, at most
+
+
+def _stride(P, cap):
+    return P[::max(1, -(-len(P) // cap))] if len(P) > cap else P
+
+
+def _pos_integral(T, S):
+    """Sum over triangles T (m,3,3) of the integral of max(0, s) - s linear
+    over each triangle, S (m,3) its values at the corners (closed form)."""
+    import numpy as np
+    if not len(T):
+        return 0.0
+    A = 0.5 * np.linalg.norm(np.cross(T[:, 1] - T[:, 0], T[:, 2] - T[:, 0]), axis=1)
+    S = np.sort(S, axis=1)[:, ::-1]                  # a >= b >= c
+    a, b, c = S[:, 0], S[:, 1], S[:, 2]
+    out = np.zeros(len(T))
+    allp = c >= 0
+    out[allp] = A[allp] * (a + b + c)[allp] / 3.0
+    one = (a > 0) & (b <= 0)
+    den = (a - b) * (a - c)
+    out[one] = A[one] * a[one] ** 3 / (3.0 * np.where(den[one] > 1e-15, den[one], 1e-15))
+    two = (b > 0) & (c < 0)
+    den2 = (c - a) * (c - b)
+    neg = A[two] * c[two] ** 3 / (3.0 * np.where(den2[two] > 1e-15, den2[two], 1e-15))
+    out[two] = A[two] * (a + b + c)[two] / 3.0 - neg
+    return float(np.maximum(out, 0.0).sum())
+
+
+def _fresh_tess(shape):
+    """(points, facets) of a fresh tessellation of a copy of `shape` (the
+    copy carries no triangulation, so the result does not depend on what
+    meshed the shape before)."""
+    import numpy as np
+    try:
+        c = shape.copy(True, False)
+    except TypeError:
+        c = shape.copy()
+    pts, fac = c.tessellate(_deflection(shape))
+    P = np.array([(p.x, p.y, p.z) for p in pts], dtype=float).reshape(-1, 3)
+    F = np.array(fac, dtype=int).reshape(-1, 3)
+    return P, F
+
+
+def _exact_depths(solid, Q):
+    """Exact distance of each point to the boundary of `solid` -
+    distToShape against the faces near the points only."""
+    import numpy as np
+    import FreeCAD as App
+    import Part
+    lo, hi = Q.min(axis=0) - 1.0, Q.max(axis=0) + 1.0
+    faces = []
+    for f in solid.Faces:
+        b = f.BoundBox
+        if b.XMax >= lo[0] and b.XMin <= hi[0] and b.YMax >= lo[1] and b.YMin <= hi[1] \
+                and b.ZMax >= lo[2] and b.ZMin <= hi[2]:
+            faces.append(f)
+    comp = Part.makeCompound(faces or solid.Faces)
+    out = np.zeros(len(Q))
+    for i, q in enumerate(Q):
+        try:
+            out[i] = comp.distToShape(Part.Vertex(App.Vector(*q)))[0]
+        except Exception:                               # noqa: BLE001
+            out[i] = 0.0
+    return out
+
+
+def _side_volume(P, F, lo, hi, inside_of, depth_of):
+    """R443: the volume between one body's surface (P, F) and the other's,
+    over the triangles with a corner inside the other: the signed depth
+    (inside +, outside -) integrated linearly over each triangle. None
+    when too many corners would need an exact depth (a big overlap)."""
+    import numpy as np
+    inb = np.nonzero(np.all((P >= lo) & (P <= hi), axis=1))[0]
+    if not len(inb):
+        return 0.0
+    if len(inb) > CONFIRM_POINTS:
+        inb = _stride(inb, CONFIRM_POINTS)
+    ins = np.zeros(len(P), dtype=bool)
+    ins[inb] = inside_of(P[inb])
+    tri = np.nonzero(ins[F].any(axis=1))[0]
+    if not len(tri):
+        return 0.0
+    vid = np.unique(F[tri])
+    if len(vid) > CONFIRM_DEPTHS:
+        return None
+    dep = np.zeros(len(P))
+    dep[vid] = depth_of(P[vid])
+    sgn = np.where(ins, 1.0, -1.0)
+    Ft = F[tri]
+    return _pos_integral(P[Ft], (dep * sgn)[Ft])
+
+
+def confirm_mesh_overlap(solid, mesh, tol=0.01):
+    """R443: the overlap volume (mm3) of a solid and a mesh from exact
+    depths - deterministic for the same geometry. The mesh's own
+    triangles with a corner inside the solid (OCCT's exact
+    classification), their corners' signed depths exact (distToShape),
+    integrated over each triangle; and the same for a fresh tessellation
+    of a copy of the solid against the mesh (parity, point-triangle
+    distance - exact on a polyhedron). Both sides seeing it: their mean;
+    one side: that one. A big overlap (more corners than CONFIRM_DEPTHS)
+    is returned as inf (it is real)."""
+    import numpy as np
+    import FreeCAD as App
+    sb, mb = tight(solid), mesh.BoundBox
+    lo = np.array([max(sb.XMin, mb.XMin), max(sb.YMin, mb.YMin), max(sb.ZMin, mb.ZMin)]) - 1.0
+    hi = np.array([min(sb.XMax, mb.XMax), min(sb.YMax, mb.YMax), min(sb.ZMax, mb.ZMax)]) + 1.0
+    if np.any(lo > hi):
+        return 0.0
+    pts, fac = mesh.Topology
+    MP = np.array([(p.x, p.y, p.z) for p in pts], dtype=float).reshape(-1, 3)
+    MF = np.array(fac, dtype=int).reshape(-1, 3)
+    if not len(MF):
+        return 0.0
+    MT = MP[MF]
+
+    def in_solid(Q):
+        return np.array([bool(solid.isInside(App.Vector(*q), tol, False)) for q in Q])
+    v1 = _side_volume(MP, MF, lo, hi, in_solid, lambda Q: _exact_depths(solid, Q))
+    SP, SF = _fresh_tess(solid)
+    v2 = 0.0
+    if len(SF):
+        def in_mesh(Q):
+            ins = _parity_inside(Q, MT)
+            d = _pt_tri_dist(Q, MT, limit=tol)
+            return ins & ~np.isfinite(d)
+        v2 = _side_volume(SP, SF, lo, hi, in_mesh, lambda Q: _pt_tri_dist(Q, MT))
+    if v1 is None or v2 is None:
+        return float("inf")
+    if v1 > 0 and v2 > 0:
+        return 0.5 * (v1 + v2)
+    return max(v1, v2)
+
+
+def confirm_shape_overlap(a, b):
+    """R443: the exact common volume of two shapes (mm3), or None when the
+    boolean fails."""
+    try:
+        return float(a.common(b).Volume)
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
 def overlaps(items, intended=(), min_volume=MIN_OVERLAP_MM3,
-             cap=MAX_PAIRS_OBJECTS):
+             cap=MAX_PAIRS_OBJECTS, confirm=None):
     """Pairwise intersections between bodies.
 
     items: dicts {"name", "label", "shape" (Part.Shape) or "mesh" (Mesh.Mesh,
@@ -811,7 +1008,11 @@ def overlaps(items, intended=(), min_volume=MIN_OVERLAP_MM3,
     "mesh_points_tested"} (a mesh, or a heavy shape judged on sampled
     surface points - R129: one boolean with the board solid costs 1-1.6 s).
     Boxes are the TIGHT ones: a loose BoundBox sent bodies 0.3 mm apart
-    into a boolean."""
+    into a boolean. confirm (R443; default: quality mode): a sampled hit
+    on under CONFIRM_SHARE of its points is confirmed by an exact volume
+    before it is reported - fast mode keeps the sampled verdict."""
+    if confirm is None:
+        confirm = quality_mode()
     singles, pairs = _norm_intended(intended)
     note = None
     if len(items) > cap:
@@ -826,6 +1027,14 @@ def overlaps(items, intended=(), min_volume=MIN_OVERLAP_MM3,
                 else it["mesh"].BoundBox
         return boxes[k]
     hits = []
+    fps = {}
+    store = _pair_store()                               # R270: {} without a workspace
+
+    def fp(it):
+        k = id(it)
+        if k not in fps:
+            fps[k] = item_fingerprint(it)
+        return fps[k]
     for i in range(len(items)):
         a = items[i]
         for j in range(i + 1, len(items)):
@@ -840,6 +1049,22 @@ def overlaps(items, intended=(), min_volume=MIN_OVERLAP_MM3,
                 continue
             if not ba.intersect(bb):
                 continue
+            # R270: an unchanged pair (both fingerprints, both labels) is
+            # not measured again - the boolean is most of a repeat ./check
+            key = None
+            if store is not None:
+                fa, fb = fp(a), fp(b)
+                if fa is None or fb is None:
+                    store["nofp"] = store.get("nofp", 0) + 1
+                else:
+                    key = _pair_key("overlap", a["label"], fa, b["label"], fb, min_volume,
+                                    "exact" if confirm else "sampled")
+                    if key in store["data"]:
+                        store["hits"] += 1
+                        if store["data"][key]:
+                            hits.append(dict(store["data"][key]))
+                        continue
+            n0 = len(hits)
             try:
                 if a.get("shape") is not None and b.get("shape") is not None:
                     if not a["shape"].Solids or not b["shape"].Solids:
@@ -847,9 +1072,22 @@ def overlaps(items, intended=(), min_volume=MIN_OVERLAP_MM3,
                     if heavy(a["shape"]) or heavy(b["shape"]):
                         n_in, n_t = _shape_points_inside(a["shape"], b["shape"])
                         if n_in:
-                            hits.append({"a": a["label"], "b": b["label"],
-                                         "mesh_points_inside": n_in,
-                                         "mesh_points_tested": n_t})
+                            hit = {"a": a["label"], "b": b["label"],
+                                   "mesh_points_inside": n_in, "mesh_points_tested": n_t}
+                            if confirm and n_in < CONFIRM_SHARE * n_t:
+                                # R443: a few points - the exact volume decides
+                                v = confirm_shape_overlap(a["shape"], b["shape"])
+                                if v is not None:
+                                    hit = dict(hit, volume_mm3=round(v, 3),
+                                               confirmed="exact boolean") \
+                                        if v > min_volume else None
+                            if hit:
+                                hits.append(hit)
+                        if key is None:
+                            continue
+                        store["data"][key] = hits[-1] if len(hits) > n0 else None
+                        store["dirty"] = True
+                        store["miss"] = store.get("miss", 0) + 1
                         continue
                     v = a["shape"].common(b["shape"]).Volume
                     if v > min_volume:
@@ -869,15 +1107,161 @@ def overlaps(items, intended=(), min_volume=MIN_OVERLAP_MM3,
                             solid["shape"], mesh_item["mesh"],
                             HEAVY_SAMPLES if heavy(solid["shape"]) else MESH_SAMPLES)
                         n_in, n_t = n2, n_t + t2
+                    hit = None
                     if n_in:
-                        hits.append({"a": a["label"], "b": b["label"],
-                                     "mesh_points_inside": n_in,
-                                     "mesh_points_tested": n_t})
+                        hit = {"a": a["label"], "b": b["label"],
+                               "mesh_points_inside": n_in, "mesh_points_tested": n_t}
                         if at is not None:
-                            hits[-1]["at"] = at
+                            hit["at"] = at
+                        if confirm and n_in < CONFIRM_SHARE * n_t:
+                            # R443: a few sampled points - their exact depths
+                            # decide (deterministic: the same geometry, the
+                            # same verdict on every run)
+                            try:
+                                v = confirm_mesh_overlap(solid["shape"], mesh_item["mesh"])
+                            except Exception:           # noqa: BLE001
+                                v = None
+                            if v is not None and v == float("inf"):
+                                hit["confirmed"] = "exact depths (too many to sum: real)"
+                            elif v is not None:
+                                hit = dict(hit, volume_mm3=round(v, 3),
+                                           confirmed="exact depths") \
+                                    if v > min_volume else None
+                    if hit:
+                        hits.append(hit)
             except Exception:                           # noqa: BLE001
                 continue
+            if key is not None:
+                store["data"][key] = hits[-1] if len(hits) > n0 else None
+                store["dirty"] = True
+                store["miss"] = store.get("miss", 0) + 1
     return hits, note
+
+
+# ------------------------------------------------- repeat-check cache (R270)
+# R270 (round 1: ./check took 141-225 s on spline shells, and every fix
+# round paid it again): the pairwise results of unchanged bodies are kept
+# in the workspace between ./check runs, keyed by both bodies' geometry
+# fingerprints and labels. check.py turns it on (use_check_cache); Studio's
+# own build never reads it. A changed body changes its fingerprint, so a
+# stale entry is never read; the file is capped and rewritten whole.
+CHECK_CACHE = ".atech_check_cache.json"
+CHECK_CACHE_MAX = 4000              # entries kept, at most
+CHECK_CACHE_VERSION = 2              # R443: 2 - sampled overlaps confirmed
+_CACHE = [None]                     # {"path", "data", "dirty", "hits"} or None
+
+
+def use_check_cache(workspace):
+    """R270: read the workspace's pair cache (check.py, once per run)."""
+    import json
+    import os
+    _CACHE[0] = None
+    if not workspace or not os.path.isdir(workspace):
+        return None
+    path = os.path.join(workspace, CHECK_CACHE)
+    data = {}
+    raw = _read_regular(path)
+    if raw is not None:
+        try:
+            got = json.loads(raw.decode("utf-8"))
+            if isinstance(got, dict) and got.get("v") == CHECK_CACHE_VERSION \
+                    and isinstance(got.get("pairs"), dict):
+                data = got["pairs"]
+        except (ValueError, UnicodeDecodeError):
+            data = {}
+    _CACHE[0] = {"path": path, "data": data, "dirty": False, "hits": 0}
+    return _CACHE[0]
+
+
+def check_cache_stats():
+    """R270: {"entries", "hits", "miss", "nofp"} of this run's pair cache."""
+    c = _CACHE[0]
+    if c is None:
+        return None
+    return {"entries": len(c["data"]), "hits": c["hits"], "miss": c.get("miss", 0),
+            "nofp": c.get("nofp", 0)}
+
+
+def save_check_cache():
+    """R270: write the pair cache back (only when something was added).
+    Never raises; returns the number of cache hits of this run."""
+    import json
+    import os
+    c = _CACHE[0]
+    if c is None:
+        return 0
+    if c["dirty"]:
+        data = c["data"]
+        if len(data) > CHECK_CACHE_MAX:
+            data = dict(list(data.items())[-CHECK_CACHE_MAX:])
+        try:
+            if os.path.islink(c["path"]):
+                os.unlink(c["path"])
+            tmp = c["path"] + ".tmp"
+            body = json.dumps({"v": CHECK_CACHE_VERSION, "pairs": data}, default=float)
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(body)
+            os.replace(tmp, c["path"])
+        except (OSError, TypeError, ValueError):
+            pass
+    return c["hits"]
+
+
+def _pair_store():
+    return _CACHE[0]
+
+
+def _pair_key(kind, la, fa, lb, fb, *extra):
+    return hashlib.sha1(repr((kind, la, fa, lb, fb) + tuple(extra)).encode()).hexdigest()
+
+
+CACHE_GRID_MM = 0.02         # face boxes quantised to this in the cache key
+
+
+def cache_fingerprint(shape):
+    """R270: the repeat-check cache's identity of a shape: topology counts,
+    box, placement and a hash over EVERY face (surface type, edge count,
+    the face's box on a CACHE_GRID_MM grid) - no volume, area, centre of
+    mass or vertex. MEASURED on the round-1 smart speaker, the same model
+    run twice: volumes 1-6 mm3 apart (OCCT's integration on B-splines) and
+    a spline seam's vertices 0.07 mm apart, the face boxes within 0.001 -
+    fingerprint() keyed all 32 pairs anew (0 hits). Every face counts: a
+    hole moved inside a 3000-face shell changes its face's box."""
+    def q(x):
+        return int(round(x / CACHE_GRID_MM))
+    try:
+        bb = shape.BoundBox
+        pl = shape.Placement
+        parts = []
+        for f in shape.Faces:
+            fb = f.BoundBox
+            parts.append("%s %d %d %d %d %d %d %d" % (
+                type(f.Surface).__name__, len(f.Edges), q(fb.XMin), q(fb.YMin),
+                q(fb.ZMin), q(fb.XMax), q(fb.YMax), q(fb.ZMax)))
+        return (len(shape.Solids), len(shape.Faces), len(shape.Edges),
+                tuple(q(x) for x in (bb.XMin, bb.YMin, bb.ZMin, bb.XMax, bb.YMax, bb.ZMax)),
+                tuple(round(x, 5) for x in tuple(pl.Base) + tuple(pl.Rotation.Q)),
+                hashlib.sha1("\n".join(sorted(parts)).encode()).hexdigest())
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
+def item_fingerprint(it):
+    """R270: cache_fingerprint() of an item's shape, or of its mesh
+    (points, facets, box) - the identity the repeat-check cache keys on."""
+    try:
+        if it.get("shape") is not None:
+            return cache_fingerprint(it["shape"])
+        m = it.get("mesh")
+        if m is None:
+            return None
+        bb = m.BoundBox
+        return ("mesh", int(m.CountPoints), int(m.CountFacets),
+                tuple(round(x, 4) for x in (bb.XMin, bb.YMin, bb.ZMin,
+                                            bb.XMax, bb.YMax, bb.ZMax)),
+                round(float(getattr(m, "Area", 0.0) or 0.0), 3))
+    except Exception:                                   # noqa: BLE001
+        return None
 
 
 def _sample_cap(solid):
@@ -911,6 +1295,11 @@ def _shape_points_inside(a, b, limit=HEAVY_SAMPLES):
 
 
 def overlap_text(hit):
+    if "volume_mm3" in hit and hit.get("confirmed"):
+        return "%s and %s overlap by %s mm3 (%d of %d sampled points inside, confirmed: %s%s)" % (
+            hit["a"], hit["b"], hit["volume_mm3"], hit.get("mesh_points_inside", 0),
+            hit.get("mesh_points_tested", 0), hit["confirmed"],
+            "; around (%s)" % ", ".join("%.1f" % c for c in hit["at"]) if hit.get("at") else "")
     if "volume_mm3" in hit:
         return "%s and %s overlap by %s mm3" % (hit["a"], hit["b"], hit["volume_mm3"])
     return "%s and %s intersect (%d of %d sampled mesh points inside%s)" % (
@@ -920,51 +1309,185 @@ def overlap_text(hit):
 
 
 # --------------------------------------------------------------- floating
-def floating(items, gap=FLOAT_GAP_MM, cap=MAX_PAIRS_OBJECTS):
+# R250: floating() on examples/toy_car.py (31 shapes) took 73-85 s, nearly
+# all of it in 59 distToShape calls against the 758-face body shell (2-6 s
+# each), and a full ./check went over quality mode's 180 s. Three cuts,
+# none of which changes a verdict (test_kit_round12.FloatingFast):
+#   * a pair is measured once, and a pair found within `gap` clears BOTH
+#     bodies (the distance is symmetric);
+#   * of a body's box-near neighbours the cheapest is measured first (any
+#     one within `gap` clears it), not the one whose box is nearest (the
+#     shell's box holds every part: box gap 0, cost 5 s);
+#   * a light pair is measured on its NEAR faces only (_near_distance): the
+#     faces of each whose box comes within `gap` of the other. The face
+#     pair that realises a distance <= gap always survives that cut, so a
+#     distance <= gap is exact and "> gap" is an exact verdict.
+# FLOAT_BUDGET_S bounds what is left: a body not measured in time is never
+# accused (floating is a warning; an unmeasured body is not reported).
+FLOAT_BUDGET_S = 45.0
+FLOAT_NEAR_FACES = 24       # a light pair with fewer faces in all: distToShape
+_FACE_BOXES = {}            # hashCode -> (shape kept alive, [(face, box)])
+
+
+def _face_boxes(shape):
+    return _cached(_FACE_BOXES, shape,
+                   lambda s: [(f, f.BoundBox) for f in s.Faces], size=64)
+
+
+def _box_of_faces(pairs):
+    import FreeCAD as App
+    bb = App.BoundBox()
+    for _f, b in pairs:
+        bb.add(b)
+    return bb
+
+
+def _inside_either(a, b):
+    """True when a vertex of one solid lies inside the other (distToShape
+    reads a body wholly inside another as distance 0; faces alone do not)."""
+    for s, o in ((a, b), (b, a)):
+        vs = s.Vertexes
+        if vs and o.Solids and points_inside(o, [vs[0].Point], 1e-6)[0]:
+            return True
+    return False
+
+
+def _near_distance(a, b, gap):
+    """R250: (d, trimmed) for a LIGHT pair. d <= gap: the exact distance
+    (trimmed False). d > gap: certainly farther than `gap`; d itself is
+    then only an upper bound when trimmed is True (faces were left out).
+    Faces are kept when their box is within `gap` of the other side's
+    kept faces, repeated until nothing more drops (a face pair <= gap
+    apart is never dropped: its boxes are <= gap apart)."""
+    import Part
+    pad = gap + 1e-6
+    fa, fb = _face_boxes(a), _face_boxes(b)
+    ba, bb = tight(a), tight(b)
+    trimmed = False
+    for _round in range(4):
+        nb = [p for p in fb if _bb_gap(p[1], ba) <= pad]
+        na = [p for p in fa if _bb_gap(p[1], bb) <= pad]
+        if len(na) == len(fa) and len(nb) == len(fb):
+            break
+        trimmed = True
+        fa, fb = na, nb
+        if not fa or not fb:
+            break
+        ba, bb = _box_of_faces(fa), _box_of_faces(fb)
+    if not fa or not fb:
+        return (0.0, False) if _inside_either(a, b) else (float("inf"), True)
+    if not trimmed:
+        return a.distToShape(b)[0], False
+    d = Part.makeCompound([p[0] for p in fa]).distToShape(
+        Part.makeCompound([p[0] for p in fb]))[0]
+    if d > gap and _inside_either(a, b):
+        return 0.0, False
+    return d, d > gap
+
+
+def _float_distance(a, b, gap):
+    """(d, exact, trimmed) for floating(): distance() for a heavy pair or a
+    face of many loops, else _near_distance on a big enough pair."""
+    na, nb = n_faces(a), n_faces(b)
+    if not na or not nb or na + nb < FLOAT_NEAR_FACES \
+            or heavy(a) or heavy(b) or _loop_heavy(a) or _loop_heavy(b):
+        d, ex = distance(a, b, limit=gap)
+        return d, ex, False
+    d, trimmed = _near_distance(a, b, gap)
+    return d, True, trimmed
+
+
+def floating(items, gap=FLOAT_GAP_MM, cap=MAX_PAIRS_OBJECTS, contacts=(),
+             skip=(), budget=FLOAT_BUDGET_S):
     """Bodies farther than `gap` from every other body. Only meaningful for
     something meant to be one assembly (a desk stand 30 mm below the desk);
     separate parts laid out apart are legitimately 'floating', so this is a
     warning, never a failure. Returns [{"label", "gap_mm", "exact"}]:
     exact=False means gap_mm is a lower bound (boxes apart). A distance to
     a heavy shape is sampled (R129), an upper bound: it can clear a body
-    of floating, never accuse it."""
+    of floating, never accuse it.
+    R250: `contacts` - (label, label) pairs already known to touch (the
+    overlap stage's hits): never measured again. `skip` - labels never
+    reported (they still count as neighbours). `budget` - seconds; a body
+    not settled by then is not reported (see FLOAT_BUDGET_S)."""
+    import time
+    t0 = time.time()
     items = [it for it in items[:cap] if it.get("shape") is not None]
     if len(items) < 2:
         return []
+    n = len(items)
     boxes = [tight(it["shape"]) for it in items]
+    faces = [n_faces(it["shape"]) for it in items]
+    by_label = {}
+    for k, it in enumerate(items):
+        by_label.setdefault(it["label"], []).append(k)
+    known = {}                  # (i, j), i < j -> (d, exact, trimmed) or None
+    for la, lb in contacts or ():
+        for i in by_label.get(la, ()):
+            for j in by_label.get(lb, ()):
+                if i != j:
+                    known[(min(i, j), max(i, j))] = (0.0, True, False)
+    settled = [False] * n       # a neighbour within gap, or cannot accuse
+    skip = set(skip or ())
     out = []
-    for i, a in enumerate(items):
+
+    def measure(i, j):
+        key = (min(i, j), max(i, j))
+        if key in known:
+            return known[key]
+        if time.time() - t0 > budget:
+            return "late"
+        try:
+            r = _float_distance(items[key[0]]["shape"], items[key[1]]["shape"], gap)
+        except Exception:                               # noqa: BLE001
+            r = None
+        known[key] = r
+        return r
+
+    for i in range(n):
+        if settled[i] or items[i]["label"] in skip:
+            continue
+        cands = sorted((_bb_gap(boxes[i], boxes[j]), j) for j in range(n) if j != i)
+        near = [j for g, j in cands if g <= gap]
+        if not near:
+            out.append({"label": items[i]["label"], "gap_mm": round(cands[0][0], 2),
+                        "exact": False})        # a lower bound: boxes are apart
+            continue
+        near.sort(key=lambda j: ((min(i, j), max(i, j)) not in known, faces[j]))
+        accuse, far = True, []
+        for j in near:
+            r = measure(i, j)
+            if r is None or r == "late":
+                accuse = False          # could not tell: never accuse
+                break
+            d, ex, trimmed = r
+            if d is None or (not ex and d > gap):
+                # judged by contact only, or a sampled upper bound: never
+                # accuse (R129)
+                accuse = False
+                break
+            if d <= gap:
+                settled[j] = True       # the distance is symmetric
+                accuse = False
+                break
+            far.append((j, d, trimmed))
+        settled[i] = True
+        if not accuse:
+            continue
+        # floating: report the exact smallest distance, as before R250 (a
+        # trimmed measure is only an upper bound - re-measured in full)
         best, exact = None, True
-        cands = []
-        for j, b in enumerate(items):
-            if i == j:
-                continue
-            cands.append((_bb_gap(boxes[i], boxes[j]), j))
-        cands.sort(key=lambda t: t[0])
-        for g, j in cands:
-            if g > gap:
-                if best is None:
-                    best, exact = g, False      # a lower bound: boxes are apart
-                break
-            try:
-                d, ex = distance(a["shape"], items[j]["shape"], limit=gap)
-            except Exception:                           # noqa: BLE001
-                best = None
-                break
-            if d is None:
-                # judged by contact only (R129): apart by a gap not
-                # measured - it may be under `gap`, so never accuse
-                best = None
-                break
-            if not ex and d > gap:
-                # a sampled distance is an upper bound: cannot say it floats
-                best = None
-                break
+        for j, d, trimmed in far:
+            if trimmed:
+                if time.time() - t0 > budget:
+                    d, exact = gap, False       # certainly farther than gap
+                else:
+                    try:
+                        d = items[i]["shape"].distToShape(items[j]["shape"])[0]
+                    except Exception:                   # noqa: BLE001
+                        d, exact = gap, False
             best = d if best is None else min(best, d)
-            if best <= gap:
-                break
-        if best is not None and best > gap:
-            out.append({"label": a["label"], "gap_mm": round(best, 2), "exact": exact})
+        out.append({"label": items[i]["label"], "gap_mm": round(best, 2), "exact": exact})
     return out
 
 
@@ -2395,6 +2918,26 @@ def _union(boxes):
         [max(b[i] for b in boxes) for i in range(3, 6)]
 
 
+def _body_box(m):
+    """R241: a module's mesh box without what stands proud of its case
+    along a working face (a motor shaft, a USB-C shell): those go through
+    the wall by design, so they do not 'stick out of the case'."""
+    import numpy as np
+    box = _mesh_box(m["mesh"])
+    try:
+        wd = working_dirs(*_module_meta(m))
+        if wd is None:
+            return box
+        P = _mesh_points(m["mesh"])
+        mask, _f = _proud_split(P, wd["faces"])
+        if mask is None or mask.all():
+            return box
+        Q = P[~mask]
+        return [float(v) for v in np.concatenate([Q.min(axis=0), Q.max(axis=0)])]
+    except Exception:                                   # noqa: BLE001
+        return box
+
+
 def _outside(inner, outer):
     """How far box `inner` sticks out of box `outer`, per side (mm)."""
     names = ("-x", "-y", "-z", "+x", "+y", "+z")
@@ -2441,7 +2984,13 @@ def atech_layout(parts, board, modules, intent=None, intended=()):
                       lowest point below it or floating above it fails with
                       the exact Z translation that fixes it (R126)
       containment     when the product's parts' box holds the board (a
-                      case), every module must be inside it too
+                      case), every module must be inside it too (its box
+                      without a shaft or socket shell standing proud of it,
+                      R241)
+      enclosure       R241: each module against the body itself
+                      (enclosure): outside it, sticking out of it, or
+                      against an open side fails; its working face may look
+                      out through an opening, flush with it
       orientation     the board's plane vs intent "board"
     Parts far from the board (an unrelated bracket in the same document)
     are not the product and are not judged here (R114).
@@ -2486,12 +3035,29 @@ def atech_layout(parts, board, modules, intent=None, intended=()):
             for m in modules:
                 if {m.get("label"), m.get("name")} & singles:
                     continue
-                out = _outside(_mesh_box(m["mesh"]), case)
+                out = _outside(_body_box(m), case)
                 side = max(out, key=out.get)
                 if out[side] > INSIDE_TOL_MM:
                     problems.append("%s sticks %.1f mm out of the case on %s: "
                                     "grow the case or move the module inside"
                                     % (m["label"], out[side], side))
+        # R241: each module against the body itself, not the parts' box
+        # (see enclosure). A ribbon cable is no body: left out even when
+        # the caller passed it (build.layout_check does).
+        body = [p for p in parts if not getattr(
+            _doc_object(None, p.get("label")), "AtechCableModule", None)]
+        try:
+            rows = enclosure(body, board, modules)
+        except Exception as exc:                        # noqa: BLE001
+            rows = []
+            facts["enclosure_error"] = repr(exc)[-300:]
+        facts["enclosure"] = rows
+        boxed_out = [m["label"] for m in modules if any(
+            p.startswith(m["label"] + " sticks ") for p in problems)]
+        for line in enclosure_problems(rows):
+            # the box test already named it: one line per module is enough
+            if not any(line.startswith(lb + " ") for lb in boxed_out):
+                problems.append(line)
     return problems, facts
 
 
@@ -2824,26 +3390,352 @@ def socket_face(mesh, board_normal, axes=None):
     return [round(float(x), 4) for x in best[1]], best[2]
 
 
-def face_open(parts, board, modules, far=FACE_FAR_MM, grid=FACE_GRID):
+def _doc_object(name=None, label=None):
+    """R240: the FreeCAD object of the active document by Name (or Label),
+    or None - for callers that pass only {"label", "name", "mesh"} (check.py
+    _layout and build.layout_check before R240)."""
+    try:
+        import FreeCAD
+        doc = FreeCAD.ActiveDocument
+    except Exception:                                   # noqa: BLE001
+        return None
+    if doc is None:
+        return None
+    o = doc.getObject(name) if name else None
+    if o is None and label:
+        try:
+            hits = doc.getObjectsByLabel(label)
+        except Exception:                               # noqa: BLE001
+            hits = []
+        o = hits[0] if hits else None
+    return o
+
+
+def _module_meta(m):
+    """R240: (library module name, its X, Y, Z in world) of a module item.
+    Taken from the item ("module", "axes") when the caller gave them, else
+    read off the document object it names (AtechModule, Placement)."""
+    name, axes = m.get("module"), m.get("axes")
+    if name and axes:
+        return str(name), axes
+    o = _doc_object(m.get("name"), m.get("label"))
+    if o is not None:
+        name = name or (str(getattr(o, "AtechModule", "") or "") or None)
+        if not axes:
+            try:
+                import FreeCAD
+                r = o.Placement.Rotation
+                axes = [list(r.multVec(FreeCAD.Vector(*e)))
+                        for e in ((1, 0, 0), (0, 1, 0), (0, 0, 1))]
+            except Exception:                           # noqa: BLE001
+                axes = None
+    return name, axes
+
+
+def working_dirs(module_name, axes):
+    """R240: a module's working faces in WORLD space, from the library's
+    measured frame (atech_ports.measure_module: r along the row, u away
+    from the board, d the slide axis; its "faces" - the side a socket or a
+    shaft stands proud of, else +u) rotated by the module's own axes. Not
+    the board's normal: a module cabled elsewhere (module_placement
+    face=...) faces wherever its placement turned it, and a DC motor works
+    along its shaft.
+
+    Returns {"up": unit [x, y, z] (+u in world), "faces": [{"word",
+    "dir", "proud_mm"}]} or None when the library or the axes are not
+    there (the caller falls back to the board normal, as before R240)."""
+    import numpy as np
+    if not module_name or not axes:
+        return None
+    try:
+        import atech_ports
+        feat = atech_ports.measure_module(str(module_name))
+    except Exception:                                   # noqa: BLE001
+        return None
+    A = np.asarray(axes, dtype=float).reshape(3, 3)     # rows: local X, Y, Z in world
+
+    def world(v):
+        w = A.T @ np.asarray(v, dtype=float)
+        return w / (np.linalg.norm(w) or 1.0)
+    faces = []
+    for f in feat.get("faces") or ():
+        faces.append({"word": f.get("word"), "dir": world(f["local"]),
+                      "proud_mm": f.get("proud_mm")})
+    return {"up": world(feat["u"]), "faces": faces}
+
+
+def _proud_split(P, faces):
+    """R240: the points of a module that stand proud of its case along a
+    working face that has a proud part (a USB-C shell, a motor shaft):
+    (mask of those points, the face) for the most proud face, or (None,
+    None)."""
+    import numpy as np
+    best = None
+    for f in faces or ():
+        if f.get("proud_mm") and (best is None or f["proud_mm"] > best["proud_mm"]):
+            best = f
+    if best is None:
+        return None, None
+    s = P @ best["dir"]
+    return s > s.max() - float(best["proud_mm"]) + SOCKET_REACH_MM, best
+
+
+# R250: what may stand in front of a working face without closing it.
+# (a) A see-through part - recorded view Transparency >= SEE_THROUGH_PCT
+#     (cad.transparency: glass 60, smoked 50, frosted 35; LEDs 20 stay
+#     opaque) - passes the rays of an OPTICAL module only: light shines and
+#     a screen or a distance sensor sees through a lens, a window or a
+#     diffuser. A button cannot be pressed, a speaker or a microphone heard,
+#     a temperature sensor ventilated or a plug put in through glass, so a
+#     transparent case still seals those.
+# (b) A declared cover - intent.json "covers": {"Cap_Plus": "button_p2",
+#     "Light_Ring": ["light_p1", "light_p6"]} (part label -> module label or
+#     labels): a key cap over a button, a lens or a light pipe over a light.
+#     It passes that module's rays only, and only when it really sits in
+#     front of that module's working face: a ray from the face meets it
+#     within COVER_MM of the face (otherwise a problem - the declaration
+#     cannot excuse a wall elsewhere).
+SEE_THROUGH_PCT = 30
+SEE_THROUGH_MODULES = ("light", "screen", "distance_sensor")
+COVER_MM = 3.0
+COVERS = "covers"           # the intent.json key
+FACE_GRID_FINE = 41         # R250: the grid of a face sealed on FACE_GRID
+# R250: a planar face with more than TESS_LOOPS_MAX loops (a 148-hole
+# speaker grille) is no longer left out of the probe: its loops are
+# discretised into 2-D polygons and a ray crosses it where an even-odd
+# point-in-face test puts the crossing inside the material. MEASURED
+# 2026-10-20: see test_kit_round12.R250ManyHoleFace (timing printed).
+HOLED_DEFLECTION_MM = 0.05  # polygon of a hole's edge: within this of the arc
+_VIEW_STORE = [None]        # the last view_recorder's store (check.py's _run)
+_HOLED = {}                 # hashCode -> (shape kept alive, (T, planes))
+
+
+def part_transparency(part, views=None):
+    """R250: the view Transparency (0..100) recorded for a face_open part,
+    or 0. Looked up in order: part["transparency"], part["view"]
+    ["Transparency"], views[label or name]["Transparency"], the document
+    object's real ViewObject (GUI), the last view_recorder's store (check.py
+    headless: obj.ViewObject.Transparency = ... is recorded there)."""
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    if part.get("transparency") is not None:
+        return num(part["transparency"]) or 0.0
+    v = (part.get("view") or {}).get("Transparency")
+    if v is not None:
+        return num(v) or 0.0
+    for key in (part.get("label"), part.get("name")):
+        if views and key in views:
+            v = (views[key] or {}).get("Transparency")
+            if v is not None:
+                return num(v) or 0.0
+    o = _doc_object(part.get("name"), part.get("label"))
+    if o is None:
+        return 0.0
+    vo = getattr(o, "ViewObject", None)
+    if vo is not None:
+        return num(getattr(vo, "Transparency", 0)) or 0.0
+    store = _VIEW_STORE[0]
+    if store:
+        v = (store.get(getattr(o, "Name", "")) or {}).get("Transparency")
+        return num(v) or 0.0
+    return 0.0
+
+
+def sanitize_covers(value):
+    """R250: intent.json "covers" -> ({part label: [module labels]},
+    [problems]). Absent -> ({}, [])."""
+    if value is None:
+        return {}, []
+    if not isinstance(value, dict):
+        return {}, ['intent.json "covers" must be an object {part label: module '
+                    'label or [module labels]}, e.g. {"Cap_Plus": "button_p2"}']
+    out, bad = {}, []
+    for part, mods in value.items():
+        if isinstance(mods, str):
+            mods = [mods]
+        if (not isinstance(part, str) or not isinstance(mods, list) or not mods
+                or not all(isinstance(m, str) and m for m in mods)):
+            bad.append('intent.json "covers": %r -> %r is not a part label -> module '
+                       'label (or a list of them)' % (part, mods))
+            continue
+        out[part] = list(mods)
+    return out, bad
+
+
+def _intent_covers():
+    """R250: "covers" of the workspace's intent.json when the caller passed
+    none - ./check's workspace is its script's folder (ATECH_CHECK_SCRIPT,
+    else the current directory). ({}, []) when there is no intent."""
+    import os
+    script = os.environ.get("ATECH_CHECK_SCRIPT")
+    ws = os.path.dirname(os.path.abspath(script)) if script else os.getcwd()
+    intent, _bad = read_intent(ws)
+    return sanitize_covers((intent or {}).get(COVERS))
+
+
+def _holed_face(face, deflection=HOLED_DEFLECTION_MM):
+    """R250: a planar face as {"o", "n", "u", "v", "seg" (k, 2, 2) 2-D loop
+    segments in (u, v)}, or None when it is not planar."""
+    import numpy as np
+    try:
+        surf = face.Surface
+        if type(surf).__name__ != "Plane":
+            return None
+        n = np.array(tuple(face.normalAt(0, 0)), dtype=float)
+        o = np.array(tuple(face.Vertexes[0].Point), dtype=float)
+    except Exception:                                   # noqa: BLE001
+        return None
+    B = _basis(n)
+    segs = []
+    for w in face.Wires:
+        try:
+            pts = w.discretize(Deflection=deflection)
+        except Exception:                               # noqa: BLE001
+            return None
+        P = np.array([tuple(p) for p in pts], dtype=float)
+        if len(P) < 2:
+            continue
+        P = np.vstack([P, P[:1]])
+        uv = np.stack([(P - o) @ B[0], (P - o) @ B[1]], axis=1)
+        segs.append(np.stack([uv[:-1], uv[1:]], axis=1))
+    if not segs:
+        return None
+    return {"o": o, "n": B[2], "u": B[0], "v": B[1], "seg": np.concatenate(segs)}
+
+
+def _tess_holed(shape):
+    """R250: (triangles (m,3,3), [planar holed faces]) of a shape that
+    _tess refuses (tess_slow): every face of up to TESS_LOOPS_MAX loops
+    tessellated on its own, every planar face with more loops as a
+    _holed_face. Raises SlowToTessellate when such a face is not planar."""
+    import numpy as np
+    try:
+        key = shape.hashCode()
+    except Exception:                                   # noqa: BLE001
+        key = None
+    hit = _HOLED.get(key) if key is not None else None
+    if hit is not None and hit[0].isSame(shape):
+        return hit[1]
+    dfl = _deflection(shape)
+    tris, planes = [], []
+    for f in shape.Faces:
+        if len(f.Wires) > TESS_LOOPS_MAX:
+            h = _holed_face(f)
+            if h is None:
+                raise SlowToTessellate("a curved face with %d boundary loops"
+                                       % len(f.Wires))
+            planes.append(h)
+            continue
+        pts, fac = f.tessellate(dfl)
+        if not fac:
+            continue
+        P = np.array([(p.x, p.y, p.z) for p in pts], dtype=float).reshape(-1, 3)
+        tris.append(P[np.array(fac, dtype=int).reshape(-1, 3)])
+    T = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
+    if key is not None:
+        if len(_HOLED) >= 8:
+            _HOLED.clear()
+        _HOLED[key] = (shape, (T, planes))
+    return T, planes
+
+
+def _cast_holed(planes, Q, d, far=None, eps=1e-4):
+    """R250: first hit of the rays Q + s*d, eps < s <= far, on the material
+    of planar holed faces (even-odd test against every loop: inside the
+    outer loop and outside every hole). Returns (s (n,), face index (n,))
+    like _cast."""
+    import numpy as np
+    n = len(Q)
+    dist = np.full(n, np.inf)
+    idx = np.full(n, -1, dtype=int)
+    d = np.asarray(d, dtype=float)
+    d = d / np.linalg.norm(d)
+    top = np.inf if far is None else float(far)
+    for k, h in enumerate(planes):
+        dn = float(d @ h["n"])
+        if abs(dn) < 1e-9:
+            continue
+        s = ((h["o"] - Q) @ h["n"]) / dn
+        ok = (s > eps) & (s <= top) & (s < dist)
+        if not ok.any():
+            continue
+        ii = np.nonzero(ok)[0]
+        X = Q[ii] + s[ii, None] * d - h["o"]
+        pu, pv = X @ h["u"], X @ h["v"]
+        a, b = h["seg"][:, 0], h["seg"][:, 1]
+        ay, by = a[:, 1][None, :], b[:, 1][None, :]
+        straddle = (ay > pv[:, None]) != (by > pv[:, None])
+        dy = np.where(by == ay, 1.0, by - ay)
+        xc = a[:, 0][None, :] + (pv[:, None] - ay) * (b[:, 0] - a[:, 0])[None, :] / dy
+        inside = (np.sum(straddle & (pu[:, None] < xc), axis=1) % 2) == 1
+        got = ii[inside]
+        dist[got] = s[got]
+        idx[got] = k
+    return dist, idx
+
+
+def _cover_gap(T, planes, FP, B, grid_q, d):
+    """R250: how far in front of a module's working face a cover is: the
+    smallest (hit - face) distance of rays from the face's grid, started at
+    the back of the module (so a cap resting ON the face is met at 0), on
+    the cover's own surface alone. None when no ray meets it."""
+    import numpy as np
+    pd = FP @ B[2]
+    back = float(pd.max() - pd.min()) + 1.0
+    Q = grid_q - (back + FACE_LIFT_MM) * B[2]
+    best = np.inf
+    if len(T):
+        s, _i = _cast(T, Q, d, far=back + FACE_LIFT_MM + COVER_MM + 50.0)
+        best = min(best, float(s.min()))
+    if planes:
+        s, _i = _cast_holed(planes, Q, d, far=back + FACE_LIFT_MM + COVER_MM + 50.0)
+        best = min(best, float(s.min()))
+    if not np.isfinite(best):
+        return None
+    return round(best - back - FACE_LIFT_MM, 2)
+
+
+def face_open(parts, board, modules, far=FACE_FAR_MM, grid=FACE_GRID,
+              views=None, covers=None):
     """R152 (D60: a "window over the light" cut in the end lid, the light's
     face 0/169 rays open, reported as success): per seated module, the
     fraction of a grid of rays from its working face, along its outward
     normal, that get out of the product without meeting one of its parts.
 
-    parts    [{"label", "shape"}]    the agent's parts
+    parts    [{"label", "shape", "name" (optional), "transparency" or
+             "view" (optional: the recorded view props)}]  the agent's parts
     board    {"label", "mesh"}
     modules  [{"label", "name", "module", "mesh", "axes" (optional: the
              module's X, Y, Z in world)}]
-    The working face (R164): for most kinds the module's face away from the
-    board, along the board's normal (a module lies flat on the board,
-    components outward); for a USB-C socket the connector mouth, measured
-    from the mesh (socket_face) - no mouth found: not judged ("face":
-    None). Only the product's parts (product_parts) block a ray - an
+    views    (R250, optional) {part label or Name: {"Transparency": ...}}:
+             check.py's recorded view props; without it see
+             part_transparency's fallbacks
+    covers   (R250, optional) intent.json "covers" {part label: module
+             label or [labels]}; None: read from ./check's workspace
+             intent.json
+    The working face (R164, R240): the module's own measured "up" (the
+    library frame, working_dirs) rotated by its axes - for a seated module
+    that is the board's normal, for a cabled one wherever module_placement
+    turned it; for a USB-C socket the connector mouth, measured from the
+    mesh (socket_face) - no mouth found: not judged ("face": None); for a
+    DC motor its shaft ("face": "shaft", reported, never judged). Without
+    the library or the axes, the board's normal, as before R240. Only the product's parts (product_parts) block a ray - an
     unrelated part elsewhere in the document is not in front of anything.
-    A part too slow to tessellate (tess_slow) is left out and named in
-    "unmeasured". Returns [{"label", "module", "kind", "face", "open",
-    "rays", "open_pct", "normal", "blocked_by", "unmeasured"}]; blocked_by:
-    the part most blocked rays meet first."""
+    R250: a see-through part (SEE_THROUGH_PCT) does not block an optical
+    module (SEE_THROUGH_MODULES); a declared cover does not block its
+    module when it sits within COVER_MM in front of the face (else the row
+    carries a "cover_problems" line); a planar face with too many holes to
+    tessellate is cast against exactly (_cast_holed). A part still too slow
+    (a curved holed face) is left out and named in "unmeasured".
+    Returns [{"label", "module", "kind", "face", "open", "rays",
+    "open_pct", "normal", "blocked_by", "unmeasured", "see_through",
+    "covered_by", "cover_problems", "near"}]; blocked_by: the part most
+    blocked rays meet first; see_through / covered_by: the parts the rays
+    were let through; near: the parts rays meet within COVER_MM. The first row also carries "covers_unmatched": problems for
+    declared covers naming no part or no module."""
     import numpy as np
     if board is None or not modules:
         return []
@@ -2851,18 +3743,28 @@ def face_open(parts, board, modules, far=FACE_FAR_MM, grid=FACE_GRID):
     if bn is None:
         return []
     bn = np.array(bn, dtype=float)
+    if covers is None:
+        covers, cover_bad = _intent_covers()
+    else:
+        covers, cover_bad = sanitize_covers(covers)
     BP = _mesh_points(board["mesh"])
     bc = BP.mean(axis=0)
     atech = [_mesh_box(board["mesh"])] + [_mesh_box(m["mesh"]) for m in modules]
     boxed = [_shape_box(p["shape"]) for p in parts]
     mine = sorted(product_parts(boxed, atech))
     tris, owner, unmeasured = [], [], []
+    planes, plane_own = [], []
     for i in mine:
         try:
             _P, T = _tess(parts[i]["shape"])
         except SlowToTessellate:
-            unmeasured.append(parts[i]["label"])
-            continue
+            try:
+                T, hp = _tess_holed(parts[i]["shape"])     # R250
+            except Exception:                           # noqa: BLE001
+                unmeasured.append(parts[i]["label"])
+                continue
+            planes += hp
+            plane_own += [i] * len(hp)
         except Exception:                               # noqa: BLE001
             continue
         if len(T):
@@ -2870,7 +3772,26 @@ def face_open(parts, board, modules, far=FACE_FAR_MM, grid=FACE_GRID):
             owner.append(np.full(len(T), i))
     T = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
     own = np.concatenate(owner) if owner else np.zeros(0, dtype=int)
+    plane_own = np.array(plane_own, dtype=int)
     tl, th = (T.min(axis=1), T.max(axis=1)) if len(T) else (None, None)
+    clear = {i for i in mine if part_transparency(parts[i], views) >= SEE_THROUGH_PCT}
+    by_label = {}
+    for i in mine:
+        by_label.setdefault(parts[i]["label"], i)
+    all_labels = {p["label"] for p in parts}
+    mod_labels = {m["label"] for m in modules}
+    for pl, mls in sorted(covers.items()):
+        if pl not in all_labels:
+            cover_bad.append('intent.json "covers" names %s, which is no part of the '
+                             'build' % pl)
+        elif pl not in by_label:
+            cover_bad.append('intent.json "covers" names %s, which is not part of the '
+                             'product (nowhere near the board or a module)' % pl)
+        for ml in mls:
+            if ml not in mod_labels:
+                cover_bad.append('intent.json "covers": %s -> %s, which is no Atech '
+                                 'module of the build (modules: %s)' % (
+                                     pl, ml, ", ".join(sorted(mod_labels))))
     out = []
     for m in modules:
         P = _mesh_points(m["mesh"])
@@ -2878,7 +3799,30 @@ def face_open(parts, board, modules, far=FACE_FAR_MM, grid=FACE_GRID):
             continue
         kind = module_kind(m.get("module"))
         face = FACE_OF.get(kind, "top")
-        if face == "socket":
+        mname, maxes = _module_meta(m)
+        wd = working_dirs(mname, maxes)
+        if wd is not None:
+            # R240: the module's OWN working face in world (cabled modules
+            # face wherever module_placement turned them). MEASURED on the
+            # test_kit_round12 car: a cabled distance_sensor facing -Y behind
+            # a 12 x 8 window in the front wall read 0 of 169 rays along +Z
+            # ("sealed in", a correct design failed); now 45 of 169 along -Y.
+            # The dc_motor read +Z (26 of 169); now its shaft, -X.
+            up = wd["up"]
+            mask, pf = _proud_split(P, wd["faces"])
+            if face == "socket":
+                d, FP = socket_face(m["mesh"], up, maxes)
+                if d is None:
+                    kind, face = None, None
+                    d, FP = up, P
+                else:
+                    d = np.array(d, dtype=float)
+            elif kind is None and pf is not None and mask.any():
+                # a DC motor: its shaft, along the shaft (reported, not judged)
+                face, d, FP = "shaft", pf["dir"], P[mask]
+            else:
+                d, FP = up, P
+        elif face == "socket":
             d, FP = socket_face(m["mesh"], bn, m.get("axes"))
             if d is None:
                 # no mouth measured: reported, never judged
@@ -2893,26 +3837,144 @@ def face_open(parts, board, modules, far=FACE_FAR_MM, grid=FACE_GRID):
         B = _basis(d)
         pu, pv, pd = FP @ B[0], FP @ B[1], FP @ B[2]
 
-        def axis(lo, hi):
+        def axis(lo, hi, k=grid):
             inset = min(FACE_INSET_MM, 0.25 * (hi - lo))
             lo, hi = lo + inset, hi - inset
-            return np.linspace(lo, hi, grid) if hi > lo else np.array([(lo + hi) / 2.0])
+            return np.linspace(lo, hi, k) if hi > lo else np.array([(lo + hi) / 2.0])
         gu, gv = np.meshgrid(axis(pu.min(), pu.max()), axis(pv.min(), pv.max()))
-        Q = (gu.reshape(-1, 1) * B[0] + gv.reshape(-1, 1) * B[1]
-             + (pd.max() + FACE_LIFT_MM) * B[2])
-        dist, idx = _cast(T, Q, d, far=far, tri_lo=tl, tri_hi=th)
+        G = gu.reshape(-1, 1) * B[0] + gv.reshape(-1, 1) * B[1]
+        Q = G + (pd.max() + FACE_LIFT_MM) * B[2]
+        # R250: the parts this module's rays pass through
+        through = set(clear) if str(mname or m.get("module") or "") in SEE_THROUGH_MODULES \
+            else set()
+        covered, cprob = [], []
+        for pl, mls in sorted(covers.items()):
+            if m["label"] not in mls or pl not in by_label:
+                continue
+            ci = by_label[pl]
+            cT, cpl = _tris_of(T, own, planes, plane_own, ci)
+            gap = _cover_gap(cT, cpl, FP, B, G + pd.max() * B[2], d)
+            if gap is None or gap > COVER_MM:
+                cprob.append(
+                    "%s is declared in intent.json \"covers\" as the cover of %s, but it "
+                    "is not in front of its %s: %s. A cover (key cap, lens, light pipe) "
+                    "must sit within %g mm in front of that face - move it there or "
+                    "take it out of \"covers\"" % (
+                        pl, m["label"], face_text({"face": face, "normal": d}),
+                        "no ray from the face meets it" if gap is None
+                        else "the nearest is %.2f mm off the face" % gap, COVER_MM))
+            else:
+                through.add(ci)
+                covered.append(pl)
+        if through:
+            kt = ~np.isin(own, sorted(through))
+            kp = ~np.isin(plane_own, sorted(through)) if len(plane_own) else plane_own > 0
+            Tm, ownm = T[kt], own[kt]
+            tlm, thm = (tl[kt], th[kt]) if tl is not None else (None, None)
+            plm = [h for h, k in zip(planes, kp) if k]
+            pom = plane_own[kp] if len(plane_own) else plane_own
+        else:
+            Tm, ownm, tlm, thm, plm, pom = T, own, tl, th, planes, plane_own
+        def cast(Q):
+            dist, idx = _cast(Tm, Q, d, far=far, tri_lo=tlm, tri_hi=thm)
+            hit_own = np.where(idx >= 0, ownm[np.maximum(idx, 0)] if len(ownm) else -1, -1)
+            if plm:
+                pdist, pidx = _cast_holed(plm, Q, d, far=far)
+                nearer = pdist < dist
+                dist = np.where(nearer, pdist, dist)
+                hit_own = np.where(nearer, pom[np.maximum(pidx, 0)], hit_own)
+            return dist, hit_own
+        dist, hit_own = cast(Q)
+        if not np.isinf(dist).any() and grid < FACE_GRID_FINE and kind:
+            # R250: sealed on the coarse grid - a pin-hole grille (1.2 mm
+            # holes over a microphone) can sit between its rays, so a finer
+            # grid has the last word before "sealed in" (still sealed: the
+            # coarse grid's row stands)
+            fu, fv = np.meshgrid(axis(pu.min(), pu.max(), FACE_GRID_FINE),
+                                 axis(pv.min(), pv.max(), FACE_GRID_FINE))
+            QF = (fu.reshape(-1, 1) * B[0] + fv.reshape(-1, 1) * B[1]
+                  + (pd.max() + FACE_LIFT_MM) * B[2])
+            fd, fh = cast(QF)
+            if np.isinf(fd).any():
+                Q, dist, hit_own = QF, fd, fh
         n_open = int(np.isinf(dist).sum())
+        # R270: what each kind needs open, measured over its OWN zone
+        # (open_need): the screen's active area, the ToF's aperture, a
+        # sound module's share on the fine grid
+        mod = str(mname or m.get("module") or "").strip().lower()
+        need = {}
+        if kind and n_open:
+            cu, cv = 0.5 * (pu.min() + pu.max()), 0.5 * (pv.min() + pv.max())
+            long_u = (pu.max() - pu.min()) >= (pv.max() - pv.min())
+            lift = (pd.max() + FACE_LIFT_MM) * B[2]
+
+            def rect_open(w, h, cell=1.0):
+                # open share of a w x h rectangle centred on the face
+                # (w along the face's longer side), on ~cell mm cells
+                if not long_u:
+                    w, h = h, w
+                ku, kv = max(3, int(round(w / cell))), max(3, int(round(h / cell)))
+                ru = cu - w / 2.0 + (np.arange(ku) + 0.5) * w / ku
+                rv = cv - h / 2.0 + (np.arange(kv) + 0.5) * h / kv
+                gu2, gv2 = np.meshgrid(ru, rv)
+                QR = gu2.reshape(-1, 1) * B[0] + gv2.reshape(-1, 1) * B[1] + lift
+                rd, _rh = cast(QR)
+                return round(100.0 * float(np.isinf(rd).sum()) / len(QR), 1)
+            if mod == "screen":
+                need["active_pct"] = rect_open(*SCREEN_ACTIVE_MM)
+            elif mod == "distance_sensor":
+                w, h = TOF_APERTURE_MM
+                a = rect_open(w, h, 0.5)
+                # the aperture may lie either way across a square face
+                need["aperture_pct"] = max(a, rect_open(h, w, 0.5)) if a < 100 else a
+            elif mod == "microphone":
+                need["zone_pct"] = rect_open(MIC_ZONE_MM[0], MIC_ZONE_MM[1], 0.4)
+            elif mod in SOUND_MIN_PCT and 100.0 * n_open / len(Q) < SOUND_MIN_PCT[mod] \
+                    and len(Q) < FACE_GRID_FINE ** 2:
+                # a pin-hole grille can fall between the coarse rays: the
+                # share is taken on the fine grid before it is judged
+                fu, fv = np.meshgrid(axis(pu.min(), pu.max(), FACE_GRID_FINE),
+                                     axis(pv.min(), pv.max(), FACE_GRID_FINE))
+                QF = fu.reshape(-1, 1) * B[0] + fv.reshape(-1, 1) * B[1] + lift
+                fd, _fh = cast(QF)
+                need["fine_pct"] = round(100.0 * float(np.isinf(fd).sum()) / len(QF), 1)
+        # R250: parts met within COVER_MM of the face - the candidates for a
+        # "covers" declaration the sealed-in line suggests
+        # (cast from the back of the module: a key cap resting 0.1 mm over
+        # the face holds the start of a ray lifted FACE_LIFT_MM)
+        near = []
+        if n_open == 0 and kind:
+            back = float(pd.max() - pd.min()) + 1.0
+            bd, bo = cast(G + (pd.min() - 1.0) * B[2])
+            close = bo[(bo >= 0) & (bd - back <= COVER_MM)]
+            near = sorted({parts[int(i)]["label"] for i in close
+                           if not parts[int(i)].get("cable")})     # R270
         blocked = None
-        hit = idx[idx >= 0]
+        hit = hit_own[hit_own >= 0]
         if len(hit):
-            vals, counts = np.unique(own[hit], return_counts=True)
+            vals, counts = np.unique(hit, return_counts=True)
             blocked = parts[int(vals[counts.argmax()])]["label"]
         out.append({"label": m["label"], "module": m.get("module"),
                     "kind": kind, "face": face, "open": n_open,
                     "rays": len(Q), "open_pct": round(100.0 * n_open / len(Q), 1),
                     "normal": [round(float(x), 3) for x in d],
-                    "blocked_by": blocked, "unmeasured": list(unmeasured)})
+                    "blocked_by": blocked, "unmeasured": list(unmeasured),
+                    "see_through": sorted(parts[i]["label"] for i in through
+                                          if i in clear and parts[i]["label"] not in covered),
+                    "covered_by": covered, "cover_problems": cprob, "near": near})
+        out[-1].update(need)                            # R270
+        out[-1]["face_mm"] = [round(float(pu.max() - pu.min()), 2),
+                              round(float(pv.max() - pv.min()), 2)]
+    if out:
+        out[0]["covers_unmatched"] = cover_bad
     return out
+
+
+def _tris_of(T, own, planes, plane_own, i):
+    """R250: (triangles, holed planes) of part index i."""
+    tri = T[own == i] if len(own) else T[:0]
+    pl = [h for h, k in zip(planes, plane_own) if k == i]
+    return tri, pl
 
 
 def normal_text(n):
@@ -2923,7 +3985,7 @@ def normal_text(n):
     return "(%.2f, %.2f, %.2f)" % tuple(n)
 
 
-FACE_WORDS = {"top": "working face", "socket": "socket mouth"}
+FACE_WORDS = {"top": "working face", "socket": "socket mouth", "shaft": "shaft"}   # R240: shaft
 
 
 def face_text(row):
@@ -2932,22 +3994,123 @@ def face_text(row):
                         normal_text(row["normal"]))
 
 
-def face_open_problems(rows, request):
-    """(problems, warnings) from face_open rows: a module whose kind needs
-    an opening, 0 % open, named by the request -> a problem; with no
-    request to read -> a warning (the kind alone cannot say the user wanted
-    it seen - a sealed temperature sensor may be deliberate). A USB-C
-    socket is judged along its mouth (R164): a slot over the module's
-    cover does not let a plug in."""
+# R270 (round-1 showcase, 2026-10-20): "a toy car" names no light, ToF,
+# button or USB-C, so its sealed headlights, blind ToF, buried horn button
+# and walled-in USB-C were only WARNINGs and the turn ended on CHECK PASS.
+# In quality mode a module the agent PLACED whose kind needs an opening is
+# a PROBLEM when sealed, named or not (an orientation or temperature module
+# keeps the old rule); fast mode keeps the request-named rule. Each kind
+# also has a floor of what must be open (MEASURED module data:
+# reference/ATECH_PRODUCTS.md):
+PLACED_OPEN = ("light", "distance_sensor", "screen", "button", "speaker",
+               "microphone", "usbc")
+SCREEN_ACTIVE_MM = (25.6, 13.5)     # the screen module's active area, centred
+SCREEN_MIN_PCT = 90.0               # ...this share of it seen through the window
+TOF_APERTURE_MM = (10.0, 6.0)       # the ToF needs an open aperture this big
+TOF_MIN_PCT = 85.0                  # ...this share of it open (centred), on
+                                    # 0.5 mm cells: examples/toy_car.py's
+                                    # 6.6 mm grille slot reads 90 % on 1 mm
+                                    # cells (a row lost to a 0.8 mm offset)
+SOUND_MIN_PCT = {"microphone": 3.0, "speaker": 3.0}   # % of the face's rays
+# The microphone's working area is its MEMS port mid-plate ("no explicit
+# port in the mesh", ATECH_PRODUCTS.md), not its 39.5 x 19.5 board: its
+# share is taken over this zone centred on the face (0.4 mm cells). The
+# catalogue's 7-hole grille (d 7, holes 1.2) opens ~5 % of it, ~1 % of the
+# whole plate; a stray gap at the plate's edge opens none of it.
+MIC_ZONE_MM = (12.0, 12.0)
+MODE_ENV = "ATECH_PROMPT_MODE"
+
+
+def quality_mode():
+    """R270: True unless $ATECH_PROMPT_MODE says "fast" (Studio's default
+    is quality: build.quality_mode)."""
+    import os
+    return (os.environ.get(MODE_ENV) or "").strip().lower() != "fast"
+
+
+def _open_floor(r):
+    """R270: the floor line for a face_open row that is open but below
+    what its kind needs (or None)."""
+    mod = str(r.get("module") or "").strip().lower()
+    where = face_text(r)
+    if mod == "screen" and r.get("active_pct") is not None \
+            and r["active_pct"] < SCREEN_MIN_PCT:
+        return ("%s (a screen): the window shows only %g %% of its %g x %g mm active "
+                "area (rays from its %s; needs >= %g %%). Open a window of at least "
+                "%g x %g mm centred on the screen (a recessed bezel 0.8-1.5 mm round "
+                "it), or put a clear lens (cad.transparency 'glass' / 'smoked') "
+                "in it" % (r["label"], r["active_pct"], SCREEN_ACTIVE_MM[0],
+                           SCREEN_ACTIVE_MM[1], where, SCREEN_MIN_PCT,
+                           SCREEN_ACTIVE_MM[0] + 1.5, SCREEN_ACTIVE_MM[1] + 1.5))
+    if mod == "distance_sensor" and r.get("aperture_pct") is not None \
+            and r["aperture_pct"] < TOF_MIN_PCT:
+        return ("%s (a ToF distance sensor): only %g %% of the %g x %g mm aperture "
+                "centred on its %s is open (needs >= %g %%) - the sensor cannot see "
+                "past the wall. Cut an OPEN aperture of at least %g x %g mm (no "
+                "glass) centred in front of it, e.g. a grille slot 6.6 x 23" % (
+                    r["label"], r["aperture_pct"], TOF_APERTURE_MM[0],
+                    TOF_APERTURE_MM[1], where, TOF_MIN_PCT, TOF_APERTURE_MM[0],
+                    TOF_APERTURE_MM[1]))
+    if mod in SOUND_MIN_PCT:
+        zone = mod == "microphone" and r.get("zone_pct") is not None
+        pct = r["zone_pct"] if zone else r.get("fine_pct", r.get("open_pct"))
+        if pct is not None and pct < SOUND_MIN_PCT[mod]:
+            return ("%s (a %s): only %g %% of the rays from %s get out (needs >= "
+                    "%g %%) - it cannot %s through that. Open more of the wall in "
+                    "front of it: cad.speaker_grille(wall, centre, normal, d, ...) with a "
+                    "larger d or holes, or a slot pattern over the module" % (
+                        r["label"], mod, pct,
+                        "the middle %g x %g mm of its %s (the mic port)" % (
+                            MIC_ZONE_MM[0], MIC_ZONE_MM[1], where) if zone
+                        else "its " + where, SOUND_MIN_PCT[mod],
+                        "be heard" if mod == "speaker" else "hear"))
+    return None
+
+
+def face_open_problems(rows, request, mode=None):
+    """(problems, warnings) from face_open rows. A module whose kind needs
+    an opening, 0 % open: R270 quality mode (mode None: quality_mode()) -
+    a PROBLEM for every module the agent placed of a PLACED_OPEN kind,
+    whether or not the request names it; an intent.json "covers" entry
+    (covered_by) exempts it. Other kinds (temperature sensor) and fast mode:
+    a problem when the request names the kind, a warning when there is no
+    request to read (the kind alone cannot say the user wanted it seen). A
+    USB-C socket is judged along its mouth (R164): a slot over the module's
+    cover does not let a plug in. R270, quality mode: an open but too small
+    opening (_open_floor: screen active area, ToF aperture, sound share) is
+    a PROBLEM too. R250: every cover_problems / covers_unmatched line of
+    the rows is a problem (a declared cover that is not in front of its
+    module's face, or names nothing)."""
+    quality = quality_mode() if mode is None else (str(mode).lower() != "fast")
     problems, warnings = [], []
     for r in rows:
-        if not r["kind"] or r["open"] > 0:
+        # R250: a declared cover that is no cover always fails
+        problems += list(r.get("covers_unmatched") or ())
+        problems += list(r.get("cover_problems") or ())
+    for r in rows:
+        if not r["kind"]:
+            continue
+        mod = str(r.get("module") or "").strip().lower()
+        placed = quality and mod in PLACED_OPEN and not r.get("covered_by")
+        if r["open"] > 0:
+            if placed:
+                floor = _open_floor(r)
+                if floor:
+                    problems.append(floor)
             continue
         named = request_names(r["kind"], request)
         fix = ("Cut the opening in front of the socket mouth (%s), not over the "
                "module's cover" % normal_text(r["normal"])
                if r.get("face") == "socket"
                else "Cut the opening in front of that face, not elsewhere")
+        if r.get("near") and r.get("face") != "socket":
+            # R250: a part right on the face may be its key cap / lens
+            fix += ("; or, if %s is this module's key cap, lens or light pipe, "
+                    "declare it in intent.json: \"covers\": {%s} (it must sit within "
+                    "%g mm in front of the face)" % (
+                        " / ".join(r["near"]), ", ".join(
+                            "\"%s\": \"%s\"" % (n, r["label"]) for n in r["near"]),
+                        COVER_MM))
         line = ("%s (a %s) is sealed in: 0 of %d rays from its %s get out of the "
                 "product within %g mm%s. %s" % (
                     r["label"], r["kind"], r["rays"], face_text(r),
@@ -2955,9 +4118,259 @@ def face_open_problems(rows, request):
                     if r["blocked_by"] else "", fix))
         if named:
             problems.append(line + " (the request asks for a %s)" % r["kind"])
+        elif placed:
+            # R270: placed, so it is part of the product - a blind sensor,
+            # an unlit light or an unreachable socket is a defect
+            what = {"usbc": "a USB-C socket no plug can reach",
+                    "button": "a button no finger can press",
+                    "light": "a light nobody can see", "screen": "a screen nobody can see",
+                    "speaker": "a speaker nobody can hear",
+                    "microphone": "a microphone that cannot hear",
+                    "distance_sensor": "a distance sensor that cannot see out"}[mod]
+            problems.append(line + " (you placed it: %s is a defect, asked for or not "
+                            "- open it, or take the module out)" % what)
         elif named is None:
             warnings.append(line)
     return problems, warnings
+
+
+# ----------------------------------------------- module enclosure (R241)
+# R241 (showcase baseline, 2026-10-19): the box-only containment test
+# (atech_layout: every module inside the union BOX of the parts, and only
+# when the board is inside it) cannot see a module that sits outside the
+# body but inside the box of all parts - beside a case, under a far-out
+# wheel or antenna, poking up through a window - and it never ran at all
+# when the board stuck out of that box. So each module is now probed on its
+# own: rays from a sample of its mesh points along its six axis directions
+# against the product's parts. A point is OUTSIDE when two of its rays at
+# right angles (other than along a working face) leave the product without
+# meeting a part; a module that sees out one way past every part, the board
+# and the other modules, over ENCLOSE_SIDE_PCT of it, sits against an open
+# side. The working face may look out (an opening in front of it) and a
+# point within ENCLOSE_FLUSH_MM of that face may see out sideways (a face
+# flush with the opening); a USB-C shell or a motor shaft that stands proud
+# of the module's case is left out (it goes through the wall by design).
+ENCLOSE_FAR_MM = 2000.0     # a ray that meets no part within this is out
+ENCLOSE_POINTS = 240        # mesh points sampled per module, at most
+ENCLOSE_FLUSH_MM = 0.5      # a working face this far proud of the opening is "flush"
+ENCLOSE_OUT_PCT = 5.0       # more of the module's points outside -> not inside
+ENCLOSE_SIDE_PCT = 90.0     # this share seeing out one (non-working) way -> open
+                            # side. MEASURED: an open end 98-100 %, an open top
+                            # 100 %; test_agent_kit's nightlight light beside a
+                            # 7 x 15 vent in the end lid 56 % (a hole beside a
+                            # module is no open side)
+ENCLOSE_SKEW = (0.0017, 0.0023, 0.0031)  # off-axis tilt: no ray runs exactly
+                                         # along a wall's plane or an edge
+ENCLOSE_DIRS = ("+X", "+Y", "+Z", "-X", "-Y", "-Z")
+
+
+def _mesh_tris(mesh):
+    """(m,3,3) world triangles of a Mesh (Feature.Mesh is world already)."""
+    import numpy as np
+    try:
+        pts, fac = mesh.Topology
+    except Exception:                                   # noqa: BLE001
+        return np.zeros((0, 3, 3))
+    if not len(fac):
+        return np.zeros((0, 3, 3))
+    P = np.array([(p.x, p.y, p.z) for p in pts], dtype=float).reshape(-1, 3)
+    return P[np.array(fac, dtype=int).reshape(-1, 3)]
+
+
+def _voxel_pick(P, cap):
+    """At most `cap` points of P spread over it (one per voxel, the voxel
+    doubled until few enough)."""
+    import numpy as np
+    if len(P) <= cap:
+        return P
+    h = max(float(np.ptp(P, axis=0).max()) / 40.0, 0.5)
+    while True:
+        k = np.floor((P - P.min(axis=0)) / h).astype(np.int64)
+        _u, idx = np.unique(k, axis=0, return_index=True)
+        if len(idx) <= cap:
+            return P[np.sort(idx)]
+        h *= 1.5
+
+
+def _dir_name(v):
+    """'+X' ... '-Z' of the world axis nearest v."""
+    k = max(range(3), key=lambda i: abs(v[i]))
+    return ("+" if v[k] > 0 else "-") + "XYZ"[k]
+
+
+def enclosure(parts, board, modules, far=ENCLOSE_FAR_MM, cap=ENCLOSE_POINTS):
+    """R241: per Atech module, how much of it lies inside the product.
+
+    parts    [{"label", "shape"}]  the agent's DESIGNED parts (no cables:
+             a ribbon encloses nothing)
+    board    {"label", "mesh"}
+    modules  [{"label", "name", "mesh", "module"?, "axes"?}] - module and
+             axes are read off the document object when not given
+    Only the product's parts (product_parts) count. Returns [{"label",
+    "module", "points", "judged", "outside", "outside_pct", "escape_pct"
+    {dir: pct of points whose ray that way meets no part}, "side_pct"
+    {dir: ... nor the board or another module}, "allowed" [dir], "out_box"
+    [6] | None}] - nothing when there
+    is no part (a hardware-only draft is not judged). A planar face with
+    too many holes to tessellate is cast against exactly (R250, _cast_holed);
+    a part still too slow is left out; the rows name it in "unmeasured"."""
+    import numpy as np
+    if board is None or not modules or not parts:
+        return []
+    atech = [_mesh_box(board["mesh"])] + [_mesh_box(m["mesh"]) for m in modules]
+    boxed = [_shape_box(p["shape"]) for p in parts]
+    mine = sorted(product_parts(boxed, atech))
+    tris, unmeasured, planes = [], [], []
+    for i in mine:
+        try:
+            _P, T = _tess(parts[i]["shape"])
+        except SlowToTessellate:
+            # R250: a one-piece case with a 169-hole grille was left out
+            # whole, and every module read "OUTSIDE the product" (MEASURED,
+            # test_kit_round12 PANEL: 156 of 156 points of the light);
+            # its planar holed faces are cast against exactly now
+            try:
+                T, hp = _tess_holed(parts[i]["shape"])
+            except Exception:                           # noqa: BLE001
+                unmeasured.append(parts[i]["label"])
+                continue
+            planes += hp
+        except Exception:                               # noqa: BLE001
+            continue
+        if len(T):
+            tris.append(T)
+    if not tris and not planes:
+        return []
+    T = np.concatenate(tris) if tris else np.zeros((0, 3, 3))
+    tl, th = (T.min(axis=1), T.max(axis=1)) if len(T) else (None, None)
+    # the board and the other modules shield a module's side (an opening
+    # far across the product, in line with it, is no open side of it)
+    meshes = [board["mesh"]] + [m["mesh"] for m in modules]
+    mt = [_mesh_tris(x) for x in meshes]
+    MT = np.concatenate(mt) if mt else np.zeros((0, 3, 3))
+    mown = np.concatenate([np.full(len(t), i) for i, t in enumerate(mt)]) if mt \
+        else np.zeros(0, dtype=int)
+    _tilt, bn = board_tilt(board["mesh"])
+    bc = _mesh_points(board["mesh"]).mean(axis=0)
+    skew = np.asarray(ENCLOSE_SKEW, dtype=float)
+    out = []
+    for mi, m in enumerate(modules):
+        P = _mesh_points(m["mesh"])
+        if not len(P):
+            continue
+        mname, maxes = _module_meta(m)
+        wd = working_dirs(mname, maxes)
+        if maxes:
+            A = np.asarray(maxes, dtype=float).reshape(3, 3)
+        else:
+            A = np.eye(3)
+        dirs = [A[k] for k in range(3)] + [-A[k] for k in range(3)]
+        if wd is not None:
+            faces = [f["dir"] for f in wd["faces"]] or [wd["up"]]
+            mask, _pf = _proud_split(P, wd["faces"])
+            if mask is not None:
+                P = P[~mask]
+        elif bn is not None:
+            s = float(np.dot(P.mean(axis=0) - bc, bn))
+            faces = [np.asarray(bn, dtype=float) * (1.0 if s >= 0 else -1.0)]
+        else:
+            faces = []
+        allowed = [any(float(np.dot(d, f)) > 0.9 for f in faces) for d in dirs]
+        Q = _voxel_pick(P, cap)
+        flush = np.zeros(len(Q), dtype=bool)
+        for f in faces:
+            s = Q @ np.asarray(f, dtype=float)
+            flush |= s >= s.max() - ENCLOSE_FLUSH_MM
+        E = np.zeros((len(Q), 6), dtype=bool)      # past every part
+        S = np.zeros((len(Q), 6), dtype=bool)      # ... and every other Atech mesh
+        others = MT[mown != mi + 1]
+        for k, d in enumerate(dirs):
+            if allowed[k]:
+                continue
+            dd = d + skew
+            dist, _idx = _cast(T, Q, dd, far=far, tri_lo=tl, tri_hi=th)
+            if planes:
+                dist = np.minimum(dist, _cast_holed(planes, Q, dd, far=far)[0])
+            E[:, k] = np.isinf(dist)
+            esc = np.nonzero(E[:, k])[0]
+            if len(esc):
+                d2, _i2 = _cast(others, Q[esc], dd, far=far)
+                S[esc, k] = np.isinf(d2)
+        J = ~flush
+        nj = int(J.sum())
+        # outside: it sees out two ways at right angles (beside the body,
+        # or above its surface). Only two OPPOSITE ways (both ends of an
+        # open tube) is an open side, judged below - not "outside"
+        # (MEASURED: examples/atech_case.py, open at both X ends, read
+        # "OUTSIDE" with any-two-ways)
+        perp = np.zeros(len(Q), dtype=bool)
+        for a in range(6):
+            for b in range(a + 1, 6):
+                if b != a + 3:
+                    perp |= E[:, a] & E[:, b]
+        outside = J & perp
+        n_out = int(outside.sum())
+        side, escape = {}, {}
+        for k, d in enumerate(dirs):
+            if not allowed[k] and nj:
+                side[_dir_name(d)] = round(100.0 * float(S[J, k].sum()) / nj, 1)
+                escape[_dir_name(d)] = round(100.0 * float(E[J, k].sum()) / nj, 1)
+        ob = None
+        if n_out:
+            O = Q[outside]
+            ob = [round(float(v), 2) for v in list(O.min(axis=0)) + list(O.max(axis=0))]
+        out.append({"label": m["label"], "module": mname, "points": len(Q),
+                    "judged": nj, "outside": n_out,
+                    "outside_pct": round(100.0 * n_out / nj, 1) if nj else 0.0,
+                    "side_pct": side, "escape_pct": escape,
+                    "allowed": [_dir_name(d) for k, d in enumerate(dirs)
+                                if allowed[k]],
+                    "out_box": ob, "unmeasured": list(unmeasured)})
+    return out
+
+
+def enclosure_problems(rows):
+    """R241: problem lines from enclosure rows. A module with more than
+    ENCLOSE_OUT_PCT of its points outside the product is outside it (all
+    of it) or sticks out of it; one that sees out ENCLOSE_SIDE_PCT or more
+    one way other than its working face sits against an open side.
+    INTENDED_OVERLAPS never excuses this (an overlap declaration says
+    nothing about where the module is)."""
+    problems = []
+    for r in rows:
+        if not r["judged"]:
+            continue
+        work = ("its working face (%s) may look out through an opening, flush "
+                "with it" % ", ".join(r["allowed"]) if r["allowed"]
+                else "it has no working face to show")
+        if r["outside_pct"] > ENCLOSE_OUT_PCT:
+            esc = r.get("escape_pct") or r["side_pct"]
+            ways = sorted(esc, key=lambda k: -esc[k])
+            ways = [w for w in ways if esc[w] > 0][:3]
+            b = r["out_box"]
+            where = (" (the outside part spans x %.1f..%.1f, y %.1f..%.1f, z %.1f..%.1f)"
+                     % (b[0], b[3], b[1], b[4], b[2], b[5])) if b else ""
+            if r["outside_pct"] >= 90.0:
+                what = "is OUTSIDE the product"
+            else:
+                what = "sticks out of the product's body"
+            problems.append(
+                "%s %s: %d of %d sampled points of it see out of the product "
+                "toward %s past no part%s. Every Atech module must be inside "
+                "the body - %s, nothing else of it may stick out. Grow or reshape "
+                "the body around it, or move the module inside"
+                % (r["label"], what, r["outside"], r["judged"], ", ".join(ways) or "?",
+                   where, work))
+            continue
+        for w, pct in sorted(r["side_pct"].items(), key=lambda t: -t[1]):
+            if pct >= ENCLOSE_SIDE_PCT:
+                problems.append(
+                    "%s is not enclosed on its %s side: %.0f %% of it sees out "
+                    "that way past no part (an open end, or an opening that is "
+                    "not in front of its working face). Close that side - %s"
+                    % (r["label"], w, pct, work))
+                break
+    return problems
 
 
 # ------------------------------------------------- minimum wall (R154)
@@ -3014,7 +4427,7 @@ def side_walls(values):
 
 
 def thin_walls(parts, budget_s=WALL_BUDGET_S, samples=WALL_SAMPLES,
-               probe=WALL_PROBE_MM, seed=0):
+               probe=WALL_PROBE_MM, seed=0, per_part_seed=False):
     """R154 (D62: a jar lid's grip flutes left 0.4 mm over the thread
     groove, unseen): the thinnest wall a cheap probe can MEASURE.
 
@@ -3032,7 +4445,10 @@ def thin_walls(parts, budget_s=WALL_BUDGET_S, samples=WALL_SAMPLES,
     "samples", "side"}], "min": that row or None, "samples", "seconds",
     "complete"}; "side" (R194, when measured) is side_walls() of the rays
     from the part's side faces: the side walls' own thickness, normal to
-    the wall."""
+    the wall. R270: per_part_seed - each part's samples drawn from its own
+    `seed` (a part's result then does not depend on the parts before it,
+    so it can be cached per part); a part the time cap cut short carries
+    "partial": True."""
     import time
     import numpy as np
     t0 = time.time()
@@ -3043,6 +4459,9 @@ def thin_walls(parts, budget_s=WALL_BUDGET_S, samples=WALL_SAMPLES,
         if time.time() - t0 > budget_s:
             complete = False
             break
+        if per_part_seed:
+            rng = np.random.default_rng(seed)
+        cut_short = False
         try:
             _P, T = _tess(p["shape"])
         except SlowToTessellate as exc:
@@ -3077,12 +4496,13 @@ def thin_walls(parts, budget_s=WALL_BUDGET_S, samples=WALL_SAMPLES,
         _u, grp = np.unique(keys, axis=0, return_inverse=True)
         grp = np.asarray(grp).reshape(-1)
         order = np.argsort(-np.bincount(grp))
-        best = (np.inf, None)
+        best = (np.inf, None, None)
         done = 0
         side = []
         for gi in order:
             if time.time() - t0 > budget_s:
                 complete = False
+                cut_short = True
                 break
             sel = np.nonzero(grp == gi)[0]
             d = -Nc[sel].mean(axis=0)
@@ -3111,18 +4531,21 @@ def thin_walls(parts, budget_s=WALL_BUDGET_S, samples=WALL_SAMPLES,
                 if len(dd):
                     k = int(dd.argmin())
                     if dd[k] < best[0]:
-                        best = (float(dd[k]), C[sel][got][par][k])
+                        best = (float(dd[k]), C[sel][got][par][k], d)   # R270: + dir
             done += len(sel)
         total += done
         if best[1] is not None:
             rows.append({"label": p["label"], "mm": round(best[0], 2),
                          "at": [round(float(x), 2) for x in best[1]],
+                         "dir": [round(float(x), 4) for x in best[2]],
                          "samples": done})
         else:
             rows.append({"label": p["label"], "mm": None, "at": None, "samples": done})
         sw = side_walls(side)
         if sw:
             rows[-1]["side"] = sw
+        if cut_short:
+            rows[-1]["partial"] = True                  # R270
     found = [r for r in rows if r["mm"] is not None]
     return {"parts": rows, "min": min(found, key=lambda r: r["mm"]) if found else None,
             "samples": total, "seconds": round(time.time() - t0, 3),
@@ -4297,10 +5720,27 @@ def joint_probe(parts, request=None, cap=MAX_PAIRS_OBJECTS):
         return [], [], []
     boxes = [tight(p["shape"]) for p in parts]
     pair = {}
+    store = _pair_store()                               # R270: repeat-check cache
+    fps = {}
+
+    def fp(i):
+        if i not in fps:
+            fps[i] = cache_fingerprint(parts[i]["shape"])
+        return fps[i]
 
     def contact(i, j):
         """(touch True/False/None, depth: None = they share volume)"""
         key = (min(i, j), max(i, j))
+        if key not in pair and store is not None:
+            fa, fb = fp(key[0]), fp(key[1])
+            if fa is not None and fb is not None:
+                ck = _pair_key("joint", parts[key[0]]["label"], fa,
+                               parts[key[1]]["label"], fb)
+                got = store["data"].get(ck)
+                if isinstance(got, list) and len(got) == 2:
+                    store["hits"] += 1
+                    pair[key] = (got[0], got[1])
+                    return pair[key]
         if key not in pair:
             a, b = parts[key[0]]["shape"], parts[key[1]]["shape"]
             # the booleans first (15-20 ms each on the doorbell's case and
@@ -4318,6 +5758,11 @@ def joint_probe(parts, request=None, cap=MAX_PAIRS_OBJECTS):
             except Exception:                           # noqa: BLE001
                 t, d = None, 0.0
             pair[key] = (t, d)
+            if store is not None and fp(key[0]) is not None and fp(key[1]) is not None:
+                store["data"][_pair_key("joint", parts[key[0]]["label"], fp(key[0]),
+                                        parts[key[1]]["label"], fp(key[1]))] = [t, d]
+                store["dirty"] = True
+                store["miss"] = store.get("miss", 0) + 1
         return pair[key]
     rows, problems, notes = [], [], []
     for i, p in enumerate(parts):
@@ -4388,6 +5833,398 @@ def joint_probe(parts, request=None, cap=MAX_PAIRS_OBJECTS):
     return rows, problems, notes
 
 
+# --------------------------------------------- R270 checker gates (WS3)
+# Round 1 (2026-10-20) ended turns on CHECK PASS with a 0.28 mm wall, a
+# 52 mm wheel-well bore through both walls of the body, screws whose pilot
+# was the screw's own diameter and a board nothing held. Each is now a
+# PROBLEM in quality mode (quality_mode()), measured here.
+WALL_PROBLEM_MM = 0.6       # a confirmed wall under this fails (FDM: 1.5 lines)
+WALL_EXACT_STEP = 0.01      # exact re-measure: point-in-solid every 0.01 mm
+WALL_EXACT_SPAN = 1.2       # ...over this much of the ray
+
+
+def wall_exact(shape, at, d, span=WALL_EXACT_SPAN, step=WALL_EXACT_STEP):
+    """R270: the wall thickness at a thin_walls() spot measured on the
+    exact shape (not its tessellation): the first run of material along
+    unit `d` from 0.05 mm before `at`, point-in-solid every `step` mm.
+    None when no material is found; `span` when the run does not end
+    within it (thick there)."""
+    import numpy as np
+    a = np.asarray(at, dtype=float)
+    dd = np.asarray(d, dtype=float)
+    dd = dd / (np.linalg.norm(dd) or 1.0)
+    t = np.arange(-0.05, span + step / 2, step)
+    pts = [tuple(a + dd * x) for x in t]
+    inside = np.asarray(points_inside(shape, pts, 1e-4), dtype=bool)
+    idx = np.nonzero(inside)[0]
+    if not len(idx):
+        return None
+    i0 = idx[0]
+    out = np.nonzero(~inside[i0:])[0]
+    if not len(out):
+        return round(float(span), 2)
+    j = i0 + out[0]
+
+    def edge(lo, hi, lo_in):
+        # bisect the boundary between t=lo and t=hi (lo_in: lo is inside)
+        for _k in range(7):
+            mid = 0.5 * (lo + hi)
+            if bool(points_inside(shape, [tuple(a + dd * mid)], 1e-4)[0]) == lo_in:
+                lo = mid
+            else:
+                hi = mid
+        return 0.5 * (lo + hi)
+    t_in = edge(t[i0 - 1], t[i0], False) if i0 > 0 else t[0]
+    t_out = edge(t[j - 1], t[j], True)
+    return round(float(t_out - t_in), 2)
+
+
+DETAIL_EDGE_MM = 1.5        # a free edge this close beside a thin run...
+DETAIL_BASE_MM = 1.2        # ...and material this thick along the ray just
+                            # past it: a proud detail (an embossed letter's
+                            # stroke, a fin) on a thicker base, not a wall
+
+
+def _run_along(shape, m, u, reach, step=0.05):
+    """Distance from m along unit u to where material ends (reach: none)."""
+    import numpy as np
+    t = np.arange(step, reach + step / 2, step)
+    ins = np.asarray(points_inside(shape, [tuple(m + u * x) for x in t], 1e-4), dtype=bool)
+    out = np.nonzero(~ins)[0]
+    return float(t[out[0]]) if len(out) else float(reach)
+
+
+def wall_is_detail(shape, at, d, t):
+    """R270: True when the thin run at `at` along `d` (t mm) is a proud
+    detail - a raised letter's stroke, a fin, a rib - not a wall: across
+    the run, a free edge lies within DETAIL_EDGE_MM one way (the top of the
+    stroke), and DETAIL_BASE_MM the other way the material is thick along
+    `d` (the base it stands on). A wall thinned by a cut stays thin past
+    its edge, so it is still a wall. MEASURED on examples/toy_car.py: the
+    embossed "4x4" (0.5 mm proud, strokes 0.55 wide) read as a 0.55 mm
+    wall; the round-1 toy car's 0.27 mm sliver stays a wall."""
+    import math
+    import numpy as np
+    a = np.asarray(at, dtype=float)
+    dd = np.asarray(d, dtype=float)
+    dd = dd / (np.linalg.norm(dd) or 1.0)
+    m = a + dd * (0.5 * t)
+    if not points_inside(shape, [tuple(m)], 1e-4)[0]:
+        return False
+    B = _basis(dd)
+    best = None
+    for k in range(8):
+        ang = 2 * math.pi * k / 8
+        u = math.cos(ang) * B[0] + math.sin(ang) * B[1]
+        e = _run_along(shape, m, u, DETAIL_EDGE_MM)
+        if best is None or e < best[0]:
+            best = (e, u)
+    if best is None or best[0] >= DETAIL_EDGE_MM:
+        return False
+    m2 = m - best[1] * (best[0] + DETAIL_BASE_MM)
+    if not points_inside(shape, [tuple(m2)], 1e-4)[0]:
+        return False
+    run = _run_along(shape, m2, dd, 3.0) + _run_along(shape, m2, -dd, 3.0)
+    return run >= 2.0 * DETAIL_BASE_MM
+
+
+def thin_wall_problems(walls, shapes, floor=WALL_PROBLEM_MM):
+    """R270: PROBLEM lines for thin_walls() rows under `floor`, each
+    re-measured on the exact shape first (wall_exact) - a tessellation
+    chord on a fillet is not a wall. `shapes`: {label: shape}. Returns
+    (problems, confirmed rows [{"label", "mm", "exact_mm", "at"}])."""
+    problems, rows = [], []
+    for r in (walls or {}).get("parts") or ():
+        if r.get("mm") is None or r["mm"] >= floor or r["label"] not in shapes:
+            continue
+        exact = r["mm"]
+        if r.get("dir") is not None and r.get("at") is not None:
+            try:
+                e = wall_exact(shapes[r["label"]], r["at"], r["dir"])
+            except Exception:                           # noqa: BLE001
+                e = None
+            if e is not None:
+                exact = e
+        if exact >= floor:
+            continue
+        try:
+            detail = r.get("dir") is not None and wall_is_detail(
+                shapes[r["label"]], r["at"], r["dir"], exact)
+        except Exception:                               # noqa: BLE001
+            detail = False
+        rows.append({"label": r["label"], "mm": r["mm"], "exact_mm": exact,
+                     "at": r["at"], "detail": bool(detail)})
+        if detail:
+            continue
+        problems.append(
+            "%s: a wall only %.2f mm thick near (%s) - under %.1f mm it does not "
+            "print (it is less than 2 extrusion lines) and breaks in the hand. "
+            "Thicken the wall there (>= %.1f mm, 1.6+ for a shell), or move the "
+            "cut, groove or pocket that thins it" % (
+                r["label"], exact, ", ".join("%.1f" % v for v in r["at"]), floor,
+                WALL_FLOOR_MM))
+    return problems, rows
+
+
+THROUGH_KEY = "through_holes"   # intent.json: bores meant to cross every wall
+# Under this diameter a bore through both walls stays a WARNING: a hinge
+# pin, an axle or a light-pipe hole is nearly always meant to cross both
+# (MEASURED: the R202 hinge fixtures' 2 mm pin bores, R181's 3 mm holes);
+# round 1's wheel-well bore was 52 mm, a wrongly drilled vent or window is
+# far over this.
+THROUGH_PROBLEM_MIN_MM = 6.0
+
+
+def through_is_problem(intent, label, d_mm):
+    """R270: a bore through more than one wall that fails the check -
+    THROUGH_PROBLEM_MIN_MM or wider and not listed in "through_holes"."""
+    return float(d_mm) >= THROUGH_PROBLEM_MIN_MM and \
+        not through_intended(intent, label, d_mm)
+
+
+def through_intended(intent, label, d_mm, tol=0.15):
+    """R270: True when intent.json "through_holes" lists this bore - a part
+    label (every through bore of it), a diameter in mm (any part), or
+    {"part": label, "d_mm": d} (either key may be left out)."""
+    want = (intent or {}).get(THROUGH_KEY) if isinstance(intent, dict) else None
+    if want is None:
+        return False
+    if not isinstance(want, list):
+        want = [want]
+    for w in want:
+        if isinstance(w, str) and w == label:
+            return True
+        if isinstance(w, (int, float)) and not isinstance(w, bool) \
+                and abs(float(w) - float(d_mm)) <= tol:
+            return True
+        if isinstance(w, dict):
+            p_ok = w.get("part") in (None, label)
+            d = w.get("d_mm")
+            d_ok = d is None or (isinstance(d, (int, float)) and not isinstance(d, bool)
+                                 and abs(float(d) - float(d_mm)) <= tol)
+            if p_ok and d_ok and (w.get("part") is not None or d is not None):
+                return True
+    return False
+
+
+def through_problem_text(label, b):
+    """R270: the wall_crossing line as a PROBLEM, with the way out."""
+    return (wall_crossing_text(label, b).replace(
+        "; a hole meant to pass through them all is fine as it is", "")
+        + ". It is a PROBLEM now: a bore through both walls of a body opens the "
+        "far wall too (the 52 mm wheel-well bore of round 1). Cut each side on "
+        "its own (through=\"wall\"), or - if it really must cross every wall (an "
+        "axle tube) - list it in intent.json: \"%s\": [\"%s\"] or [%g]" % (
+            THROUGH_KEY, label, b["d_mm"]))
+
+
+# Screws (R270). A thread-forming screw needs a pilot under its nominal
+# size to bite: ~0.85 d in printed plastic (M2.5 -> 2.1 mm), or a heat-set
+# insert pocket (~1.4 d). A pilot of d or more (a tapped-hole size, or the
+# clearance hole) holds nothing.
+SCREW_RE = r"^screw"            # part labels that are screws (case-insensitive)
+SCREW_SIZES = (1.6, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0)
+PILOT_RATIO = 0.85              # what to drill for a thread-forming screw
+INSERT_RATIO = 1.3              # a pocket this much over d is an insert's
+
+
+def _cyl_faces(shape):
+    for f in shape.Faces:
+        s = f.Surface
+        if type(s).__name__ == "Cylinder":
+            yield f, s
+
+
+def _screw_axis(shape):
+    """(nominal d, axis unit (numpy), a point on it, tip point) of a screw
+    part: its narrowest cylinder is the shank (cad.screw: d - 0.1), the
+    head is where the part reaches out of it; None when no shank."""
+    import numpy as np
+    best = None
+    for f, s in _cyl_faces(shape):
+        if s.Radius < 0.4 or f.Area < 1e-3:
+            continue
+        if best is None or s.Radius < best[1].Radius - 1e-6:
+            best = (f, s)
+    if best is None:
+        return None
+    f, s = best
+    ax = np.array(tuple(s.Axis), dtype=float)
+    ax /= np.linalg.norm(ax) or 1.0
+    c = np.array(tuple(s.Center), dtype=float)
+    shank = np.array([tuple(v.Point) for v in f.Vertexes] or [tuple(s.Center)], dtype=float)
+    try:
+        shank = np.vstack([shank, np.array([tuple(p) for e in f.Edges
+                                            for p in e.discretize(8)], dtype=float)])
+    except Exception:                                   # noqa: BLE001
+        pass
+    ts = (shank - c) @ ax
+    allp = np.array([tuple(v.Point) for v in shape.Vertexes], dtype=float)
+    rel = allp - c
+    ta = rel @ ax
+    rad = np.linalg.norm(rel - np.outer(ta, ax), axis=1)
+    head = ta[rad > s.Radius * 1.3 + 0.2]
+    if len(head):
+        tip_t = ts.min() if abs(head.mean() - ts.min()) > abs(head.mean() - ts.max()) \
+            else ts.max()
+    else:
+        tip_t = ts.max()
+    d = 2.0 * s.Radius + 0.1
+    near = min(SCREW_SIZES, key=lambda x: abs(x - d))
+    nominal = near if abs(near - d) <= 0.15 else round(2.0 * s.Radius, 2)
+    toward_head = -1.0 if tip_t == ts.max() else 1.0
+    return nominal, ax, c, c + ax * tip_t, toward_head
+
+
+def screw_pilots(parts):
+    """R270: for each screw part (label ^screw), the pilot it ends in - the
+    narrowest concave cylinder of another part, coaxial with its shank,
+    around the point 0.5 mm back from its tip. [{"screw", "nominal_mm",
+    "pilot_mm", "in", "verdict"}]: verdict "bites" (pilot < d), "insert"
+    (pilot >= INSERT_RATIO x d: a heat-set insert pocket), "no bite"
+    (d <= pilot < INSERT_RATIO x d), "not judged" (no coaxial bore at the
+    tip - a nut, or the shank in solid material, which OVERLAP reports)."""
+    import re
+    import numpy as np
+    import FreeCAD as App
+    rows = []
+    screws = [p for p in parts if re.search(SCREW_RE, str(p["label"]), re.I)]
+    others = [p for p in parts if not re.search(SCREW_RE, str(p["label"]), re.I)]
+    for sp in screws:
+        try:
+            got = _screw_axis(sp["shape"])
+        except Exception:                               # noqa: BLE001
+            got = None
+        if got is None:
+            continue
+        nominal, ax, c, tip, back = got
+        probe = tip + ax * back * 0.5
+        pv = App.Vector(*probe)
+        best = None
+        for op in others:
+            sh = op["shape"]
+            try:
+                bb = tight(sh)
+                if not bb.isInside(pv):
+                    continue
+                for f, s in _cyl_faces(sh):
+                    a2 = np.array(tuple(s.Axis), dtype=float)
+                    a2 /= np.linalg.norm(a2) or 1.0
+                    if abs(float(a2 @ ax)) < 0.999:
+                        continue
+                    c2 = np.array(tuple(s.Center), dtype=float)
+                    rel = probe - c2
+                    if np.linalg.norm(rel - (rel @ a2) * a2) > 0.15:
+                        continue
+                    if s.Radius < 0.3 * nominal or s.Radius > 1.6 * nominal:
+                        continue
+                    vt = np.array([tuple(v.Point) for v in f.Vertexes], dtype=float)
+                    if not len(vt):
+                        continue
+                    tt = (vt - c2) @ a2
+                    pt = rel @ a2
+                    if pt < tt.min() - 0.25 or pt > tt.max() + 0.25:
+                        continue
+                    if best is None or s.Radius < best[0]:
+                        best = (s.Radius, op["label"])
+            except Exception:                           # noqa: BLE001
+                continue
+        row = {"screw": sp["label"], "nominal_mm": nominal}
+        if best is None:
+            row.update(pilot_mm=None, verdict="not judged")
+        else:
+            pd = round(2.0 * best[0], 2)
+            row.update(pilot_mm=pd, **{"in": best[1]})
+            row["verdict"] = ("bites" if pd < nominal - 0.02 else
+                              "insert" if pd >= INSERT_RATIO * nominal else "no bite")
+        rows.append(row)
+    return rows
+
+
+def pilot_text(row):
+    d = row["nominal_mm"]
+    return ("%s (M%g) ends in a %.2f mm pilot in %s - at or over the screw's own %g mm, "
+            "so the thread has nothing to cut into and the screw spins loose. Drill "
+            "the pilot %.1f mm (%.2f x d, thread-forming into plastic), or make it a "
+            "heat-set insert pocket (~%.1f mm)" % (
+                row["screw"], d, row["pilot_mm"], row["in"], d,
+                round(PILOT_RATIO * d, 1), PILOT_RATIO, round(1.4 * d + 0.1, 1)))
+
+
+RETAIN_MM = 0.5             # a part this close to the board holds it
+
+
+def board_retention(parts, board, gap=RETAIN_MM, samples=4000):
+    """R270: what holds the Atech board: designed parts within `gap` mm of
+    the board's mesh, sampled on the parts' surface near the board's box.
+    {"retained": bool, "above": [labels], "ledge": [labels]} - "above": on
+    the side the board's normal points to (its modules' side), "ledge":
+    under it. A board nothing comes near floats in the case."""
+    import numpy as np
+    tilt, bn = board_tilt(board["mesh"])
+    BT = _mesh_tris(board["mesh"])
+    out = {"retained": False, "above": [], "ledge": []}
+    if bn is None or not len(BT):
+        out["retained"] = None
+        return out
+    bn = np.asarray(bn, dtype=float)
+    bc = BT.reshape(-1, 3).mean(axis=0)
+    lo, hi = BT.reshape(-1, 3).min(axis=0) - gap, BT.reshape(-1, 3).max(axis=0) + gap
+    rng = np.random.default_rng(0)
+    for p in parts:
+        try:
+            b = _shape_box(p["shape"])
+        except Exception:                               # noqa: BLE001
+            continue
+        if any(b[k] > hi[k] or b[k + 3] < lo[k] for k in range(3)):
+            continue
+        try:
+            _P, T = _tess(p["shape"])
+        except Exception:                               # noqa: BLE001
+            continue
+        if not len(T):
+            continue
+        tl, th = T.min(axis=1), T.max(axis=1)
+        keep = np.all((th >= lo) & (tl <= hi), axis=1)
+        T = T[keep]
+        if not len(T):
+            continue
+        area = np.linalg.norm(np.cross(T[:, 1] - T[:, 0], T[:, 2] - T[:, 0]), axis=1)
+        if area.sum() <= 0:
+            continue
+        n = min(samples, max(200, 4 * len(T)))
+        pick = rng.choice(len(T), size=n, replace=True, p=area / area.sum())
+        r1, r2 = rng.random(n), rng.random(n)
+        flip = r1 + r2 > 1
+        r1[flip], r2[flip] = 1 - r1[flip], 1 - r2[flip]
+        Tc = T[pick]
+        Q = Tc[:, 0] + r1[:, None] * (Tc[:, 1] - Tc[:, 0]) + r2[:, None] * (Tc[:, 2] - Tc[:, 0])
+        Q = np.vstack([Q, T.reshape(-1, 3)])
+        inb = np.all((Q >= lo) & (Q <= hi), axis=1)
+        Q = Q[inb]
+        if not len(Q):
+            continue
+        dist = _pt_tri_dist(Q, BT, limit=gap)
+        near = Q[np.isfinite(dist)]
+        if not len(near):
+            continue
+        side = (near - bc) @ bn
+        if (side >= 0).any():
+            out["above"].append(p["label"])
+        if (side < 0).any():
+            out["ledge"].append(p["label"])
+    out["retained"] = bool(out["above"] or out["ledge"])
+    return out
+
+
+def retention_text(board_label):
+    return ("%s: nothing holds the board - no part of yours comes within %g mm of it "
+            "(no ledge under its edge, no rib, clip or boss over it), so it rattles "
+            "loose in the case. Add a ledge 0.1 mm under the board's long edges and a "
+            "rib or a lid boss 0.1-0.3 mm over it (examples/toy_car.py: the board "
+            "cradle; desk_robot.py: ledges top and bottom)" % (board_label, RETAIN_MM))
+
+
 # ------------------------------------------------------------ fingerprint
 def fingerprint(shape):
     """A cheap identity: rounded volume, area, face/vertex counts, the
@@ -4425,33 +6262,72 @@ def fingerprint(shape):
 VIEW_FN = "__atech_view__"
 
 
+def _is_view_target(t):
+    return (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Attribute)
+            and t.value.attr == "ViewObject")
+
+
 class _ViewRewrite(ast.NodeTransformer):
-    """X.ViewObject.attr = value   ->   __atech_view__(X, 'attr', value)"""
+    """X.ViewObject.attr = value   ->   __atech_view__(X, 'attr', value)
+
+    R242: also
+      a.ViewObject.attr = b.ViewObject.attr = v   (one value, every target
+                                                   recorded; a plain target
+                                                   assigned as before)
+      any other X.ViewObject   ->   __atech_view__(X): a stand-in that
+                                   records what is set on it (vo =
+                                   o.ViewObject; vo.ShapeColor = c), is
+                                   truthy (if o.ViewObject: ...), reads back
+                                   what was set, and takes hide()/show()
+    The right-hand side is evaluated once, after the line's own calls, as
+    Python does (cad.color("rubber") runs, its value is recorded)."""
 
     def __init__(self):
         super().__init__()
         self.rewritten = 0
+        self._tmp = 0
+
+    def _record(self, t, value):
+        return ast.Expr(ast.Call(func=ast.Name(VIEW_FN, ast.Load()),
+                                 args=[self.visit(t.value.value), ast.Constant(t.attr),
+                                       value], keywords=[]))
 
     def visit_Assign(self, node):
-        self.generic_visit(node)
-        if len(node.targets) != 1:
+        if not any(_is_view_target(t) for t in node.targets):
+            self.generic_visit(node)
             return node
-        t = node.targets[0]
-        if (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Attribute)
-                and t.value.attr == "ViewObject"):
-            call = ast.Call(func=ast.Name(VIEW_FN, ast.Load()),
-                            args=[t.value.value, ast.Constant(t.attr), node.value],
-                            keywords=[])
+        node.value = self.visit(node.value)
+        if len(node.targets) == 1:
             self.rewritten += 1
-            return ast.copy_location(ast.Expr(call), node)
+            return ast.copy_location(self._record(node.targets[0], node.value), node)
+        self._tmp += 1
+        tmp = "__atech_view_value_%d__" % self._tmp
+        out = [ast.Assign(targets=[ast.Name(tmp, ast.Store())], value=node.value)]
+        for t in node.targets:
+            if _is_view_target(t):
+                self.rewritten += 1
+                out.append(self._record(t, ast.Name(tmp, ast.Load())))
+            else:
+                out.append(ast.Assign(targets=[self.visit(t)],
+                                      value=ast.Name(tmp, ast.Load())))
+        return [ast.copy_location(n, node) for n in out]
+
+    def visit_Attribute(self, node):
+        if node.attr == "ViewObject" and isinstance(node.ctx, ast.Load):
+            self.rewritten += 1
+            return ast.copy_location(ast.Call(
+                func=ast.Name(VIEW_FN, ast.Load()), args=[self.visit(node.value)],
+                keywords=[]), node)
+        self.generic_visit(node)
         return node
 
 
 def record_view(code, counts=None):
-    """The code as an AST with every direct `X.ViewObject.attr = v` turned
-    into a recorder call. Line numbers stay the agent's. Headless only: in
-    the GUI the real ViewObject exists. `counts` (a dict) gets
-    counts["rewritten"] = how many lines were turned into recorder calls."""
+    """The code as an AST with every `X.ViewObject.attr = v` turned into a
+    recorder call and every other `X.ViewObject` into a recording stand-in
+    (R242, see _ViewRewrite). Line numbers stay the agent's. Headless only:
+    in the GUI the real ViewObject exists. `counts` (a dict) gets
+    counts["rewritten"] = how many places were rewritten."""
     rw = _ViewRewrite()
     tree = rw.visit(ast.parse(code))
     ast.fix_missing_locations(tree)
@@ -4462,16 +6338,79 @@ def record_view(code, counts=None):
 
 VIEW_KEYS = ("ShapeColor", "Transparency", "LineColor", "PointColor",
              "DiffuseColor", "Visibility", "DisplayMode", "LineWidth")
+# what a stand-in ViewObject reads back before anything was set (FreeCAD's
+# own defaults for a Part::Feature)
+VIEW_DEFAULTS = {"ShapeColor": (0.8, 0.8, 0.8, 0.0), "Transparency": 0,
+                 "LineColor": (0.098, 0.098, 0.098, 0.0),
+                 "PointColor": (0.098, 0.098, 0.098, 0.0), "DiffuseColor": [],
+                 "Visibility": True, "DisplayMode": "Flat Lines", "LineWidth": 2.0}
+_NOARG = object()
+
+
+class _NoOp(object):
+    """Anything a stand-in ViewObject does not know: callable, attribute
+    access and assignment do nothing."""
+
+    def __call__(self, *a, **k):
+        return None
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return self
+
+    def __setattr__(self, name, value):
+        pass
+
+    def __bool__(self):
+        return True
+
+
+class _ViewStandIn(object):
+    """R242: what `X.ViewObject` is headless - see _ViewRewrite."""
+
+    def __init__(self, rec, obj, store):
+        object.__setattr__(self, "_rec", rec)
+        object.__setattr__(self, "_obj", obj)
+        object.__setattr__(self, "_store", store)
+
+    def __setattr__(self, name, value):
+        self._rec(self._obj, name, value)
+
+    def __getattr__(self, name):
+        if name.startswith("__"):
+            raise AttributeError(name)
+        if name in ("hide", "show"):
+            vis = name == "show"
+            return lambda *a, **k: self._rec(self._obj, "Visibility", vis)
+        got = self._store.get(getattr(self._obj, "Name", None) or "", {})
+        if name in got:
+            return got[name]
+        if name in VIEW_DEFAULTS:
+            return VIEW_DEFAULTS[name]
+        return _NoOp()
+
+    def __bool__(self):
+        return True
 
 
 def view_recorder(store):
     """The function installed as __atech_view__: keeps JSON-safe values of
-    the display properties Studio can carry over, per object Name."""
-    def rec(obj, attr, value):
+    the display properties Studio can carry over, per object Name. Called
+    with the object alone, it returns the object's stand-in ViewObject
+    (R242). R250: the store is also kept as the last one made, for
+    face_open's see-through parts (part_transparency)."""
+    _VIEW_STORE[0] = store
+
+    def rec(obj, attr=_NOARG, value=_NOARG):
+        if attr is _NOARG:
+            real = getattr(obj, "ViewObject", None)
+            return real if real is not None else _ViewStandIn(rec, obj, store)
         name = getattr(obj, "Name", None)
         if not name or attr not in VIEW_KEYS:
-            return
+            return None
         store.setdefault(name, {})[attr] = _jsonable(value)
+        return None
     return rec
 
 
@@ -4484,3 +6423,1387 @@ def _jsonable(v):
         return [float(x) for x in v]
     except Exception:                                   # noqa: BLE001
         return str(v)
+
+
+# ============================================ R440 archetype gates (WS4)
+# R440 (round 1, 2026-10-20): a sealed car, a blank-faced robot, a slab
+# speaker and a postage-stamp handheld all ended on CHECK PASS - the
+# archetype rules (build.ARCHETYPES) were prompt text and NOTE lines only.
+# Each rule a judge scored as fatal is MEASURED here on orthographic owner
+# images of the build (review.ortho_image: which body a pixel's ray meets
+# first, and where), and is a PROBLEM in quality mode that names the
+# number and the fix. Keyed by the user's words in build.ARCHETYPES'
+# categories (test_check_gates_r280 holds the two tables equal).
+ARCHETYPE_GATES = (
+    ("vehicle", ("car", "truck", "tank", "boat", "vehicle", "rover",
+                 "buggy", "4x4", "bus", "tractor", "train", "kart"), "vehicle"),
+    ("robot or character", ("robot", "character", "pet", "creature",
+                            "mascot", "animal", "droid", "buddy"), "robot"),
+    ("speaker", ("speaker", "radio", "soundbar", "boombox"), "speaker"),
+    ("handheld", ("handheld", "controller", "gamepad", "remote", "console",
+                  "game", "pager", "tamagotchi"), "handheld"),
+    ("lamp", ("lamp", "lantern", "nightlight", "night light", "desk light"), "lamp"),
+    ("clock", ("clock", "alarm", "timer"), "clock"),
+    ("fan", ("fan",), "fan"),
+    ("weather station", ("weather", "thermometer", "barometer", "station"), None),
+)
+HANDHELD_SCREEN_MIN = 0.30      # dark screen region / front face, at least
+HANDHELD_THICK_MAX_MM = 32.0    # body thickness where held, under
+HANDHELD_GRIP_SHARE = 0.30      # the grips: the outer 30 % at each end
+ROBOT_WINDOW_MIN_MM = 35.0      # the face window, at least this wide
+ROBOT_WINDOW_TOP = 0.45         # ...its centre in the top 45 % of the height
+SPEAKER_HEIGHT_MIN = 0.40       # height / footprint (its narrow side)
+SPEAKER_GRILLE_MIN = 0.15       # grille open area / the top (or side band)
+SPEAKER_BAND_MIN = 0.40         # a side band is at least 40 % of the height
+VEHICLE_LENGTH_MIN = 1.5        # length / width
+VEHICLE_WHEEL_END = 0.25        # a wheel within 25 % of each end
+LAMP_HEIGHT_MIN = 1.6           # height / foot diameter
+LAMP_FOOT_SLICE = 0.08          # the foot: the bottom 8 % (>= 2 mm) of the height
+CLOCK_DISPLAY_MIN = 0.35        # display / front face
+FAN_GUARD_MIN = 0.50            # guard opening / front face
+FAN_RECESS_MM = 8.0             # ...a pixel this far behind the front is open
+DARK_LUM = 0.30                 # a colour darker than this reads as screen glass
+SEE_THROUGH_MIN = 30.0          # % transparency: a lens / smoked glass
+ARCH_PX_MIN = 0.35              # mm per pixel, at least
+ARCH_PX_N = 420                 # pixels along the longest side, at most
+OPEN_DEPTH_MM = 1.5             # a pixel this far under the closed skin is open
+OPEN_CLOSE_MM = 3.0             # ...the skin closed over holes this wide (half)
+WHEEL_WORDS = ("wheel", "wheels", "tyre", "tyres", "tire", "tires", "track",
+               "tracks", "tread", "treads")
+WHEEL_NOT = ("arch", "arches", "well", "wells", "fender", "fenders", "guard",
+             "flare", "flares", "cover", "spare", "hub", "cap", "trim")
+DIAL_WORDS = ("dial", "display", "clockface", "lcd", "screen")
+ROTOR_WORDS = ("blade", "blades", "rotor", "impeller", "propeller", "fan")
+DIFFUSER_WORDS = ("shade", "globe", "diffuser", "lens", "lampshade", "bulb", "window")
+
+
+def archetype_of(request):
+    """R440: (label, gate key) of the ARCHETYPE_GATES row whose words the
+    user's message uses - the first row in table order, as
+    build._archetype_of - or (None, None)."""
+    import re
+    low = (request or "").lower()
+    for label, words, gate in ARCHETYPE_GATES:
+        if any(re.search(r"(?<![a-z0-9])%s(?![a-z0-9])" % re.escape(w), low) for w in words):
+            return label, gate
+    return None, None
+
+
+def _tokens(label):
+    import re
+    return [t for t in re.split(r"[^a-z]+", str(label or "").lower()) if t]
+
+
+def _rgb(part):
+    """The part's chosen colour (view ShapeColor, or "color"), or None."""
+    c = (part.get("view") or {}).get("ShapeColor")
+    if c is None:
+        c = part.get("color")
+    try:
+        return tuple(float(x) for x in tuple(c)[:3]) if c is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _lum(c):
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+
+ARCH_LOOPS_MAX = 2500          # R440: a face of more holes is left out (said so)
+
+
+def _tess_anyway(shape):
+    """Triangles of a shape _tess refuses (a face of many holes), or None."""
+    import numpy as np
+    try:
+        pts, faces = shape.tessellate(_deflection(shape))
+    except Exception:                                   # noqa: BLE001
+        return None
+    P = np.array([(p.x, p.y, p.z) for p in pts], dtype=float).reshape(-1, 3)
+    F = np.array(faces, dtype=int).reshape(-1, 3)
+    return P[F] if len(F) else None
+
+
+def _arch_scene(parts, mods):
+    """The build as one triangle soup for the owner images: designed
+    parts (ribbon cables kept, flagged), the board and the modules.
+    {"T", "O", "objs": [{"label", "kind", "module", "dark", "see", "rgb",
+    "P" (its points)}], "box": (lo, hi) of the designed bodies, "skipped"}."""
+    import numpy as np
+    objs, Ts, Os, skipped = [], [], [], []
+    for p in parts:
+        sh = p.get("shape")
+        if sh is None:
+            continue
+        try:
+            P, T = _tess(sh)
+        except SlowToTessellate:
+            # R440: a grille plate is exactly what the speaker gate looks
+            # at; review.png tessellates it anyway (OCCT keeps the
+            # triangulation on the shape, so the sheet reuses this one)
+            T = _tess_anyway(sh) if busiest_face_loops(sh) <= ARCH_LOOPS_MAX else None
+            if T is None:
+                skipped.append(p.get("label"))
+                continue
+        except Exception:                               # noqa: BLE001
+            continue
+        if not len(T):
+            continue
+        rgb = _rgb(p)
+        tr = part_transparency(p)
+        k = len(objs)
+        objs.append({"label": p.get("label"), "kind": "cable" if p.get("cable") else "part",
+                     "module": None, "rgb": rgb, "transparency": tr,
+                     "dark": rgb is not None and _lum(rgb) < DARK_LUM,
+                     "see": tr >= SEE_THROUGH_MIN, "P": T.reshape(-1, 3)})
+        Ts.append(T)
+        Os.append(np.full(len(T), k))
+    for m in mods:
+        if m.get("mesh") is None:
+            continue
+        T = _mesh_tris(m["mesh"])
+        if not len(T):
+            continue
+        k = len(objs)
+        role = m.get("role") or "module"
+        objs.append({"label": m.get("label"), "kind": "board" if role == "board" else "module",
+                     "name": m.get("name"), "module": m.get("module"), "axes": m.get("axes"),
+                     "rgb": None, "transparency": 0.0,
+                     "dark": str(m.get("module") or "") == "screen", "see": False,
+                     "P": T.reshape(-1, 3)})
+        Ts.append(T)
+        Os.append(np.full(len(T), k))
+    if not Ts:
+        return None
+    body = [o["P"] for o in objs if o["kind"] == "part"]
+    if not body:
+        return None
+    B = np.vstack(body)
+    return {"T": np.concatenate(Ts), "O": np.concatenate(Os), "objs": objs,
+            "box": (B.min(axis=0), B.max(axis=0)), "skipped": skipped, "_img": {}}
+
+
+def _arch_image(sc, v, up=(0.0, 0.0, 1.0), back=False):
+    """The owner image of the scene seen from v (cached per direction)."""
+    import numpy as np
+    import review
+    key = (tuple(round(float(x), 4) for x in v), tuple(up), back)
+    if key in sc["_img"]:
+        return sc["_img"][key]
+    r, u, _v = review.ortho_frame(v, up)
+    lo, hi = sc["box"]
+    C = np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1])
+                  for z in (lo[2], hi[2])])
+    xs, ys = C @ r, C @ u
+    span = max(xs.max() - xs.min(), ys.max() - ys.min(), 1.0)
+    px = max(ARCH_PX_MIN, span / ARCH_PX_N)
+    img = review.ortho_image(sc["T"], sc["O"], v, up, px,
+                             (xs.min(), ys.min()), (xs.max(), ys.max()), back=back)
+    sc["_img"][key] = img
+    return img
+
+
+def _to_px(img, P):
+    """Pixel (col, row) of world points P (n,3) in `img`."""
+    import numpy as np
+    r, u, _v = img["frame"]
+    x0, y0 = img["lo"]
+    P = np.asarray(P, float).reshape(-1, 3)
+    return (np.floor((P @ r - x0) / img["px"]).astype(int),
+            np.floor((P @ u - y0) / img["px"]).astype(int))
+
+
+def _px_world(img, rows, cols):
+    """World points of pixel centres on the picture plane (depth 0)."""
+    import numpy as np
+    r, u, _v = img["frame"]
+    x0, y0 = img["lo"]
+    x = x0 + (np.asarray(cols) + 0.5) * img["px"]
+    y = y0 + (np.asarray(rows) + 0.5) * img["px"]
+    return np.outer(x, r) + np.outer(y, u)
+
+
+def _shift(A, s, axis, fill):
+    import numpy as np
+    out = np.full_like(A, fill)
+    if s > 0:
+        sl_o = [slice(None)] * 2
+        sl_i = [slice(None)] * 2
+        sl_o[axis], sl_i[axis] = slice(s, None), slice(None, -s)
+        out[tuple(sl_o)] = A[tuple(sl_i)]
+    elif s < 0:
+        sl_o = [slice(None)] * 2
+        sl_i = [slice(None)] * 2
+        sl_o[axis], sl_i[axis] = slice(None, s), slice(-s, None)
+        out[tuple(sl_o)] = A[tuple(sl_i)]
+    else:
+        out[...] = A
+    return out
+
+
+def _filter(A, k, op, fill):
+    """Separable square (2k+1) max / min filter (op np.maximum / minimum)."""
+    out = A
+    for axis in (0, 1):
+        acc = out.copy()
+        for s in range(1, k + 1):
+            acc = op(acc, _shift(out, s, axis, fill))
+            acc = op(acc, _shift(out, -s, axis, fill))
+        out = acc
+    return out
+
+
+def _flood(mask, seeds):
+    """The 4-connected parts of `mask` that hold a seed pixel."""
+    import numpy as np
+    try:
+        from scipy import ndimage
+        lab, _n = ndimage.label(mask)
+        ids = np.unique(lab[seeds & mask])
+        ids = ids[ids > 0]
+        return np.isin(lab, ids)
+    except Exception:                                   # noqa: BLE001
+        pass
+    cur = seeds & mask
+    for _i in range(4 * sum(mask.shape)):
+        nxt = cur.copy()
+        nxt[1:, :] |= cur[:-1, :]
+        nxt[:-1, :] |= cur[1:, :]
+        nxt[:, 1:] |= cur[:, :-1]
+        nxt[:, :-1] |= cur[:, 1:]
+        nxt &= mask
+        if (nxt == cur).all():
+            break
+        cur = nxt
+    return cur
+
+
+def _ids(sc, test):
+    import numpy as np
+    return np.array([i for i, o in enumerate(sc["objs"]) if test(o)], dtype=int)
+
+
+def _open_mask(sc, img, extra=()):
+    """R440: the pixels of `img` that look INTO the product: the first hit
+    is an Atech part (the ray passed the shell), a part named in `extra`,
+    or a surface more than OPEN_DEPTH_MM under the skin closed over holes
+    up to 2 x OPEN_CLOSE_MM wide (a grille hole, a slot)."""
+    import numpy as np
+    own, dep = img["owner"], img["depth"]
+    sil = own >= 0
+    inner = _ids(sc, lambda o: o["kind"] in ("board", "module", "cable")
+                 or o["label"] in extra)
+    k = max(1, int(round(OPEN_CLOSE_MM / img["px"])))
+    D = np.where(sil, dep, -1e9)
+    clo = _filter(_filter(D, k, np.maximum, -1e9), k, np.minimum, -1e9)
+    deep = sil & (clo > -1e8) & (clo - D > OPEN_DEPTH_MM)
+    return sil & (np.isin(own, inner) | deep)
+
+
+def _module_dir(m, word=None):
+    """A module's working direction in world (unit numpy) - its face named
+    `word` (a DC motor's "shaft"), else its +u (away from the board)."""
+    import numpy as np
+    wd = working_dirs(m.get("module"), m.get("axes"))
+    if not wd:
+        return None
+    faces = list(wd.get("faces") or ())
+    words = (word,) if isinstance(word, str) else tuple(word or ())
+    for f in faces:
+        if words and f.get("word") in words:
+            return np.asarray(f["dir"], float)
+    if words:
+        # R440: the library names a DC motor's proud face "out", not
+        # "shaft" - the face that stands proud is the working one
+        proud = [f for f in faces if (f.get("proud_mm") or 0) > 0]
+        if proud:
+            return np.asarray(max(proud, key=lambda f: f["proud_mm"])["dir"], float)
+    return np.asarray(wd["up"], float)
+
+
+def _screen_patch(sc, img, k):
+    """R440: the dark screen region round screen object k in `img`: the
+    4-connected dark / see-through / screen pixels that hold the screen's
+    own footprint (cover glass + bezel mask + the screen itself)."""
+    import numpy as np
+    own = img["owner"]
+    darkish = _ids(sc, lambda o: o["dark"] or o["see"])
+    mask = np.isin(own, darkish) | (own == k)
+    c, r = _to_px(img, sc["objs"][k]["P"])
+    H, W = own.shape
+    seeds = np.zeros_like(mask)
+    c0, c1 = max(0, c.min()), min(W - 1, c.max())
+    r0, r1 = max(0, r.min()), min(H - 1, r.max())
+    if c0 <= c1 and r0 <= r1:
+        seeds[r0:r1 + 1, c0:c1 + 1] = True
+    return _flood(mask, seeds & mask)
+
+
+def _area(mask, img):
+    return float(mask.sum()) * img["px"] ** 2
+
+
+def _extent_mm(img, mask, axis_vec):
+    """Extent of `mask`'s pixels along a world direction (mm)."""
+    import numpy as np
+    rows, cols = np.nonzero(mask)
+    if not len(rows):
+        return 0.0, None
+    W = _px_world(img, rows, cols) @ np.asarray(axis_vec, float)
+    return float(W.max() - W.min() + img["px"]), W
+
+
+def _horizontal(v):
+    import numpy as np
+    h = np.cross([0.0, 0.0, 1.0], v)
+    n = np.linalg.norm(h)
+    return h / n if n > 1e-6 else np.array([1.0, 0.0, 0.0])
+
+
+def _screens(sc):
+    return [i for i, o in enumerate(sc["objs"]) if o["kind"] == "module"
+            and str(o.get("module") or "") == "screen"]
+
+
+def _front_of(sc, k):
+    """View direction (toward the viewer) of the screen object k."""
+    o = sc["objs"][k]
+    return _module_dir({"module": o["module"], "axes": o.get("axes")})
+
+
+def _gate_screen_share(sc, need, what, fix):
+    """(facts, problem or None, note) - the dark screen region's share of
+    the front face; None facts when there is no screen to measure."""
+    scr = _screens(sc)
+    if not scr:
+        return None, None, "no screen module - the %s share is not measured" % what
+    k = scr[0]
+    v = _front_of(sc, k)
+    if v is None:
+        return None, None, "the screen's facing is unknown - not measured"
+    img = _arch_image(sc, v, _up_for(v))
+    sil = img["owner"] >= 0
+    patch = _screen_patch(sc, img, k)
+    face, pa = _area(sil, img), _area(patch, img)
+    share = pa / face if face > 0 else 0.0
+    facts = {"screen": sc["objs"][k]["label"], "screen_region_mm2": round(pa),
+             "front_mm2": round(face), "screen_share": round(share, 3),
+             "front": [round(float(x), 3) for x in v]}
+    if share >= need:
+        return facts, None, "%s %d %% of the front face (>= %d %%)" % (
+            what, round(100 * share), round(100 * need))
+    want = need * face
+    w, _W = _extent_mm(img, sil, img["frame"][0])
+    h, _H = _extent_mm(img, sil, img["frame"][1])
+    aspect = (w / h) if h > 0 else 1.6
+    ww = (want * aspect) ** 0.5
+    return facts, ("%s round %s is %d %% of the front face (%.0f of %.0f mm2, seen "
+                   "from %s) - under %d %%, it reads as a postage stamp. %s: at least "
+                   "%.0f mm2, e.g. %.0f x %.0f mm" % (
+                       what, sc["objs"][k]["label"], round(100 * share), pa, face,
+                       _dir_name(v), round(100 * need), fix, want, ww, want / ww)), None
+
+
+def _up_for(v):
+    import numpy as np
+    return (0.0, 1.0, 0.0) if abs(float(np.asarray(v)[2])) > 0.8 else (0.0, 0.0, 1.0)
+
+
+def _gate_handheld(sc, request):
+    import numpy as np
+    out = {"problems": [], "notes": [], "facts": {}}
+    facts, bad, ok = _gate_screen_share(
+        sc, HANDHELD_SCREEN_MIN, "the dark screen region (cover glass + black bezel mask)",
+        "Grow the cover glass and its black printed bezel mask over the face (a "
+        "handheld's screen glass is 40 % of the front) - the mask may run past the "
+        "window, the window stays over the active area")
+    if facts:
+        out["facts"].update(facts)
+    (out["problems"].append(bad) if bad else out["notes"].append(ok))
+    # thickness where held: the outer HANDHELD_GRIP_SHARE at each end of
+    # the long side of the face
+    v = np.asarray(facts["front"]) if facts else None
+    if v is None:
+        lo, hi = sc["box"]
+        k = int(np.argmin(hi - lo))
+        v = np.eye(3)[k]
+    up = _up_for(v)
+    fr = _arch_image(sc, v, up)
+    bk = _arch_image(sc, v, up, back=True)
+    sil = (fr["owner"] >= 0) & (bk["owner"] >= 0)
+    th = np.where(sil, fr["depth"] - bk["depth"], np.nan)
+    rows, cols = np.nonzero(sil)
+    if not len(rows):
+        return out
+    long_c = np.ptp(cols) >= np.ptp(rows)
+    t = cols if long_c else rows
+    a, b = t.min(), t.max()
+    g = HANDHELD_GRIP_SHARE * (b - a)
+    ends = []
+    for sel in (t <= a + g, t >= b - g):
+        vals = th[rows[sel], cols[sel]]
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            ends.append(float(np.median(vals)))
+    if not ends:
+        return out
+    held = max(ends)
+    out["facts"]["held_thickness_mm"] = round(held, 1)
+    if held >= HANDHELD_THICK_MAX_MM:
+        out["problems"].append(
+            "the body is %.1f mm thick where held (the median over the grips, the outer "
+            "%d %% at each end) - %g mm or more and the hands cannot close round it, it "
+            "reads as a brick. Thin the grips to 20-28 mm: bring the back in toward the "
+            "board, crown the back and taper the grip bellies" % (
+                held, round(100 * HANDHELD_GRIP_SHARE), HANDHELD_THICK_MAX_MM))
+    else:
+        out["notes"].append("%.0f mm thick where held (< %g mm)" % (held, HANDHELD_THICK_MAX_MM))
+    return out
+
+
+def _gate_robot(sc, request):
+    import numpy as np
+    out = {"problems": [], "notes": [], "facts": {}}
+    scr = _screens(sc)
+    if not scr:
+        out["notes"].append("no screen module - the face window is not measured (a robot's "
+                            "face reads blank without screen eyes or lights)")
+        return out
+    k = scr[0]
+    v = _front_of(sc, k)
+    if v is None:
+        out["notes"].append("the screen's facing is unknown - not measured")
+        return out
+    img = _arch_image(sc, v, _up_for(v))
+    patch = _screen_patch(sc, img, k)
+    hz = _horizontal(v)
+    width, Wp = _extent_mm(img, patch, hz)
+    lo, hi = sc["box"]
+    H = float(hi[2] - lo[2]) or 1.0
+    rows, cols = np.nonzero(patch)
+    cz = float(_px_world(img, rows, cols)[:, 2].mean()) if len(rows) else None
+    # an upright view: the picture's u is world z, so a pixel's height is
+    # its row; a face looking up has no height on the picture - use the
+    # screen's own centre
+    if cz is None or abs(float(v[2])) > 0.8:
+        cz = float(sc["objs"][k]["P"][:, 2].mean())
+    frac = (cz - float(lo[2])) / H
+    out["facts"].update({"screen": sc["objs"][k]["label"], "window_mm": round(width, 1),
+                         "window_height_frac": round(frac, 3)})
+    if width < ROBOT_WINDOW_MIN_MM:
+        out["problems"].append(
+            "the face window round %s is %.0f mm wide - under %g mm the robot reads "
+            "blank-faced. Make the screen's smoked visor (and its black mask) %g mm "
+            "wide or more across the head: the screen is the eyes" % (
+                sc["objs"][k]["label"], width, ROBOT_WINDOW_MIN_MM, ROBOT_WINDOW_MIN_MM))
+    if frac < 1.0 - ROBOT_WINDOW_TOP:
+        out["problems"].append(
+            "the face window round %s sits %d %% up the robot's %.0f mm height - a "
+            "face sits in the head, the top %d %%. Move the screen up into the head "
+            "(its centre %.0f mm above the desk or higher), or make the head bigger "
+            "(40 %% of the height)" % (
+                sc["objs"][k]["label"], round(100 * frac), H, round(100 * ROBOT_WINDOW_TOP),
+                float(lo[2]) + (1.0 - ROBOT_WINDOW_TOP) * H))
+    if not out["problems"]:
+        out["notes"].append("face window %.0f mm wide (>= %g), %d %% up (top %d %%)" % (
+            width, ROBOT_WINDOW_MIN_MM, round(100 * frac), round(100 * ROBOT_WINDOW_TOP)))
+    return out
+
+
+def _side_band(sc, img, opn, H):
+    """Open share of a side view over the band of rows its open pixels
+    span (at least SPEAKER_BAND_MIN of the height)."""
+    import numpy as np
+    sil = img["owner"] >= 0
+    rows, _c = np.nonzero(opn)
+    if not len(rows):
+        return 0.0
+    r0, r1 = rows.min(), rows.max()
+    need = int(np.ceil(SPEAKER_BAND_MIN * H / img["px"]))
+    if r1 - r0 + 1 < need:
+        mid = (r0 + r1) // 2
+        r0, r1 = mid - need // 2, mid - need // 2 + need - 1
+    band = np.zeros_like(sil)
+    band[max(0, r0):max(0, r1 + 1), :] = True
+    reg = sil & band
+    return float((opn & reg).sum()) / max(1.0, float(reg.sum()))
+
+
+def _gate_speaker(sc, request):
+    import numpy as np
+    out = {"problems": [], "notes": [], "facts": {}}
+    lo, hi = sc["box"]
+    H = float(hi[2] - lo[2])
+    foot = float(min(hi[0] - lo[0], hi[1] - lo[1])) or 1.0
+    ratio = H / foot
+    out["facts"]["height_ratio"] = round(ratio, 3)
+    if ratio < SPEAKER_HEIGHT_MIN:
+        out["problems"].append(
+            "the speaker is %.0f mm tall on a %.0f mm footprint (%.2f x) - under %.1f x "
+            "it is a slab. Make it %.0f mm tall or more (a column or a deep puck), or "
+            "narrow the footprint" % (H, foot, ratio, SPEAKER_HEIGHT_MIN,
+                                      np.ceil(SPEAKER_HEIGHT_MIN * foot)))
+    top = _arch_image(sc, (0.0, 0.0, 1.0), (0.0, 1.0, 0.0))
+    opn = _open_mask(sc, top)
+    sil = top["owner"] >= 0
+    top_share = float(opn.sum()) / max(1.0, float(sil.sum()))
+    side_share, side_dir = 0.0, None
+    for v in ((0, -1, 0), (1, 0, 0), (0, 1, 0), (-1, 0, 0)):
+        img = _arch_image(sc, v)
+        s = _side_band(sc, img, _open_mask(sc, img), H)
+        if s > side_share:
+            side_share, side_dir = s, v
+    out["facts"].update({"grille_top_share": round(top_share, 3),
+                         "grille_side_share": round(side_share, 3)})
+    best = max(top_share, side_share)
+    if best < SPEAKER_GRILLE_MIN:
+        out["problems"].append(
+            "the grille's open area is %d %% of the top (%d %% of the best side band) - "
+            "under %d %% the speaker reads as a closed box with a few pin holes. Make the "
+            "grille the hero: holes or slots over %d %% of the top (cad.speaker_grille / "
+            "cad.grille over most of it, 2-3 mm holes at 3.5-4.5 mm pitch) or a "
+            "perforated band round the side" % (
+                round(100 * top_share), round(100 * side_share),
+                round(100 * SPEAKER_GRILLE_MIN), round(100 * SPEAKER_GRILLE_MIN)))
+    if not out["problems"]:
+        out["notes"].append("%.2f x tall, grille %d %% open (%s)" % (
+            ratio, round(100 * best), "top" if top_share >= side_share
+            else "side " + _dir_name(side_dir)))
+    return out
+
+
+def _wheels(parts, z0, H):
+    rows = []
+    for p in parts:
+        tk = _tokens(p.get("label"))
+        if not any(t in WHEEL_WORDS for t in tk) or any(t in WHEEL_NOT for t in tk):
+            continue
+        try:
+            bb = tight(p["shape"])
+        except Exception:                               # noqa: BLE001
+            continue
+        if bb.ZMin > z0 + max(2.0, 0.12 * H):           # not on the ground (a spare)
+            continue
+        rows.append((p["label"], bb))
+    return rows
+
+
+def _gate_vehicle(sc, request, parts):
+    import re
+    out = {"problems": [], "notes": [], "facts": {}}
+    lo, hi = sc["box"]
+    dx, dy = float(hi[0] - lo[0]), float(hi[1] - lo[1])
+    k = 0 if dx >= dy else 1
+    L, Wd = max(dx, dy), min(dx, dy) or 1.0
+    ratio = L / Wd
+    out["facts"]["length_ratio"] = round(ratio, 3)
+    if ratio < VEHICLE_LENGTH_MIN:
+        out["problems"].append(
+            "the vehicle is %.0f mm long and %.0f mm wide (%.2f x) - under %.1f x it "
+            "reads as a box on wheels. Stretch it to %.0f mm or more (a nose and a "
+            "tail past the wheels) or narrow the body" % (
+                L, Wd, ratio, VEHICLE_LENGTH_MIN, VEHICLE_LENGTH_MIN * Wd))
+    body = [p for p in parts if not p.get("cable") and p.get("shape") is not None]
+    whl = _wheels(body, float(lo[2]), float(hi[2] - lo[2]))
+    if not whl:
+        if re.search(r"\b(boat|ship|yacht|hovercraft)\b", (request or "").lower()):
+            out["notes"].append("a boat: no wheels expected")
+        else:
+            out["problems"].append(
+                "no wheel or track on the ground - nothing labelled Wheel_*, Tyre_* or "
+                "Track_* reaches the desk. A vehicle stands on its wheels: four at the "
+                "corners (two tracks for a tank), labelled so")
+        return out
+    a0 = float(lo[k])
+    pos = []
+    front = rear = False
+    for label, bb in whl:
+        mn, mx = (bb.XMin, bb.XMax) if k == 0 else (bb.YMin, bb.YMax)
+        t0, t1 = (mn - a0) / L, (mx - a0) / L
+        if t1 - t0 >= 0.5:                              # a track runs the length
+            front |= t0 <= VEHICLE_WHEEL_END
+            rear |= t1 >= 1.0 - VEHICLE_WHEEL_END
+        else:
+            c = 0.5 * (t0 + t1)
+            front |= c <= VEHICLE_WHEEL_END
+            rear |= c >= 1.0 - VEHICLE_WHEEL_END
+        pos.append(round(0.5 * (t0 + t1), 3))
+    out["facts"]["wheel_positions"] = sorted(pos)
+    if not (front and rear):
+        out["problems"].append(
+            "the wheels sit at %s of the length (0 = one end, 1 = the other) - a wheel "
+            "within %d %% of %s is missing: the stance reads wrong. Put the axles near the "
+            "ends (overhangs of 10-20 %% of the length)" % (
+                ", ".join("%.2f" % x for x in sorted(pos)), round(100 * VEHICLE_WHEEL_END),
+                "each end" if not (front or rear) else "one end"))
+    if not out["problems"]:
+        out["notes"].append("%.2f x long, wheels at %s" % (
+            ratio, ", ".join("%.2f" % x for x in sorted(pos))))
+    return out
+
+
+def _gate_lamp(sc, request, parts):
+    import numpy as np
+    out = {"problems": [], "notes": [], "facts": {}}
+    lo, hi = sc["box"]
+    H = float(hi[2] - lo[2])
+    P = np.vstack([o["P"] for o in sc["objs"] if o["kind"] == "part"])
+    low = P[P[:, 2] <= lo[2] + max(2.0, LAMP_FOOT_SLICE * H)]
+    foot = float(max(np.ptp(low[:, 0]), np.ptp(low[:, 1]))) if len(low) else 0.0
+    ratio = H / foot if foot > 0 else 0.0
+    out["facts"].update({"height_ratio": round(ratio, 3), "foot_mm": round(foot, 1)})
+    if foot > 0 and ratio < LAMP_HEIGHT_MIN:
+        out["problems"].append(
+            "the lamp is %.0f mm tall on a %.0f mm foot (%.2f x) - under %.1f x it reads "
+            "as a jar. Raise the light on a stem or column to %.0f mm or more, or "
+            "narrow the foot" % (H, foot, ratio, LAMP_HEIGHT_MIN, LAMP_HEIGHT_MIN * foot))
+    top = lo[2] + 2.0 * H / 3.0
+    lit = []
+    for o in sc["objs"]:
+        glow = (o["kind"] == "module" and str(o.get("module") or "") == "light") or (
+            o["kind"] == "part" and (o["see"] or any(t in DIFFUSER_WORDS
+                                                     for t in _tokens(o["label"]))))
+        if glow and float(o["P"][:, 2].mean()) >= top:
+            lit.append(o["label"])
+    out["facts"]["light_top"] = lit
+    if not lit:
+        out["problems"].append(
+            "no light in the top third (above %.0f mm): no light module, shade or "
+            "diffuser sits there - a lamp's light is high in its head. Put the shade "
+            "/ globe (see-through, over a cabled light) at the top" % top)
+    if not out["problems"]:
+        out["notes"].append("%.2f x tall, light high (%s)" % (ratio, ", ".join(lit[:3])))
+    return out
+
+
+def _gate_clock(sc, request, parts):
+    import numpy as np
+    out = {"problems": [], "notes": [], "facts": {}}
+    if _screens(sc):
+        facts, bad, ok = _gate_screen_share(
+            sc, CLOCK_DISPLAY_MIN, "the display (the screen behind its glass and mask)",
+            "Make the display the hero: a smoked lens and black mask over half the front, "
+            "the screen centred in it")
+        out["facts"].update(facts or {})
+        (out["problems"].append(bad) if bad else out["notes"].append(ok))
+        return out
+    dial = _ids(sc, lambda o: o["kind"] == "part"
+                and any(t in DIAL_WORDS for t in _tokens(o["label"])))
+    if not len(dial):
+        out["notes"].append("no screen module and no part labelled Dial / Display - the "
+                            "display share is not measured")
+        return out
+    best, bdir = 0.0, None
+    for v in ((0, -1, 0), (1, 0, 0), (0, 1, 0), (-1, 0, 0)):
+        img = _arch_image(sc, v)
+        sil = img["owner"] >= 0
+        s = float(np.isin(img["owner"], dial).sum()) / max(1.0, float(sil.sum()))
+        if s > best:
+            best, bdir = s, v
+    out["facts"]["dial_share"] = round(best, 3)
+    if best < CLOCK_DISPLAY_MIN:
+        out["problems"].append(
+            "the dial is %d %% of the front face - under %d %% the clock reads as a box "
+            "with a label. Make the dial / display face half the front" % (
+                round(100 * best), round(100 * CLOCK_DISPLAY_MIN)))
+    else:
+        out["notes"].append("dial %d %% of the front (%s)" % (round(100 * best), _dir_name(bdir)))
+    return out
+
+
+def _fan_front(sc, img, sil, rot):
+    """R504: the guard's front - the nearest depth over the ROTOR's own
+    footprint in `img` (its points' pixel box), not over the whole
+    silhouette: a desk fan's foot stands forward of the guard, and with the
+    global front every pixel of a SOLID guard read as "far behind the
+    front", i.e. open (MEASURED: a fully closed guard scored 91 %). Without
+    a rotor (or none of it in the picture): the whole silhouette's front."""
+    import numpy as np
+    dep = img["depth"]
+    if not sil.any():
+        return 0.0
+    H, W = sil.shape
+    box = np.zeros_like(sil)
+    for o in sc["objs"]:
+        if o["kind"] != "part" or o["label"] not in rot or not len(o["P"]):
+            continue
+        c, r = _to_px(img, o["P"])
+        c0, c1 = max(0, int(c.min())), min(W - 1, int(c.max()))
+        r0, r1 = max(0, int(r.min())), min(H - 1, int(r.max()))
+        if c0 <= c1 and r0 <= r1:
+            box[r0:r1 + 1, c0:c1 + 1] = True
+    m = box & sil
+    return float(dep[m].max()) if m.any() else float(dep[sil].max())
+
+
+def _gate_fan(sc, request, parts):
+    import numpy as np
+    out = {"problems": [], "notes": [], "facts": {}}
+    rot = tuple(o["label"] for o in sc["objs"] if o["kind"] == "part"
+                and any(t in ROTOR_WORDS for t in _tokens(o["label"])))
+    motors = [o for o in sc["objs"] if o["kind"] == "module"
+              and str(o.get("module") or "") == "dc_motor"]
+    dirs = []
+    if motors:
+        d = _module_dir({"module": motors[0]["module"], "axes": motors[0].get("axes")},
+                        ("shaft", "out"))
+        if d is not None:
+            dirs = [tuple(d)]                           # the blades: along the shaft
+    dirs = dirs or [(0, -1, 0), (1, 0, 0), (0, 1, 0), (-1, 0, 0)]
+    best, bdir = 0.0, None
+    for v in dirs:
+        img = _arch_image(sc, v, _up_for(v))
+        sil = img["owner"] >= 0
+        opn = _open_mask(sc, img, rot)
+        # a guard's wide gaps show the rotor's chamber far behind the face:
+        # deeper than FAN_RECESS_MM under the front is open too
+        dep = img["depth"]
+        front = _fan_front(sc, img, sil, rot)
+        opn |= sil & (dep < front - FAN_RECESS_MM)
+        k = max(1, int(round(OPEN_CLOSE_MM / img["px"])))
+        o8 = opn.astype(float)
+        guard = _filter(_filter(o8, k, np.maximum, 0.0), k, np.minimum, 0.0) > 0.5
+        s = float((guard & sil).sum()) / max(1.0, float(sil.sum()))
+        if s > best:
+            best, bdir = s, v
+    out["facts"]["guard_share"] = round(best, 3)
+    if best < FAN_GUARD_MIN:
+        out["problems"].append(
+            "the guard opening is %d %% of the front face - under %d %% the fan reads as "
+            "a box with vents. Make the rotor's guard (open bars over the blades) %d %% "
+            "of the front or more, on a slimmer stand" % (
+                round(100 * best), round(100 * FAN_GUARD_MIN), round(100 * FAN_GUARD_MIN)))
+    else:
+        out["notes"].append("guard opening %d %% of the front (%s)" % (
+            round(100 * best), _dir_name(bdir)))
+    return out
+
+
+def archetype_problems(parts, mods, request, mode=None):
+    """R440: the measured archetype gates for the user's request.
+
+    parts: the agent's bodies [{"label", "shape", "view" (recorded view
+    props), "cable": bool}]; mods: the Atech meshes [{"label", "name",
+    "mesh", "module", "axes", "role"}]. Returns {"archetype", "facts",
+    "problems", "warnings", "notes", "misses"}. R500: "problems" is ALWAYS
+    empty - the gates judge style, not function, and never block a design.
+    R600 (the user, 2026-10-26: "it overfits too much to be a box now"):
+    "warnings" is ALWAYS empty too - a miss is one plain NOTE line (quality
+    mode: "a design note, not a gate"; fast mode: "not judged"), so the
+    agent is never pulled toward the numbers; "misses" lists them for
+    callers that want them. An archetype with no measured gate (weather
+    station) or a request naming none: nothing."""
+    label, gate = archetype_of(request)
+    res = {"archetype": label, "facts": {}, "problems": [], "warnings": [], "notes": [],
+           "misses": []}
+    if label is None:
+        return res
+    if gate is None:
+        res["notes"].append("ARCHETYPE %s: no measured gate - judge it on review.png" % label)
+        return res
+    sc = _arch_scene(parts, mods)
+    if sc is None:
+        res["notes"].append("ARCHETYPE %s: nothing to measure" % label)
+        return res
+    fn = {"handheld": _gate_handheld, "robot": _gate_robot, "speaker": _gate_speaker}
+    if gate in fn:
+        got = fn[gate](sc, request)
+    else:
+        got = {"vehicle": _gate_vehicle, "lamp": _gate_lamp, "clock": _gate_clock,
+               "fan": _gate_fan}[gate](sc, request, parts)
+    res["facts"] = got["facts"]
+    if sc["skipped"]:
+        res["facts"]["not_drawn"] = sc["skipped"]
+    head = "ARCHETYPE %s: " % label
+    quality = quality_mode() if mode is None else mode == "quality"
+    # R500 (lead decision): the archetype gates judge STYLE, not function -
+    # they never block a design. R600: nor do they warn - every mode gets
+    # one NOTE line; "problems" and "warnings" stay empty.
+    res["warnings"] = []
+    res["misses"] = [head + p for p in got["problems"]]
+    if got["problems"]:
+        tail = (" (a design note, not a gate)" if quality else
+                " (fast mode: not judged)")
+    else:
+        tail = " - the archetype's silhouette and hero pass"
+    res["notes"] = [head + "; ".join(got["problems"] + got["notes"]) + tail]
+    return res
+
+
+# ================================== R441 fastening / R442 holders (WS4)
+# R441 (round 1): the toy car's body sat on its chassis and its hardtop on
+# the body with nothing holding either - a lip locates a part, it does not
+# hold it. Every pair of HOUSING parts that meet must be joined by a
+# fastener that reaches both: a screw, a pin, a snap or clip - or the
+# part is captured between two parts that are.
+HOUSING_DIAG = 0.35         # a housing part's box diagonal / the product's, at least
+MEET_MM = 0.3               # two parts this close meet
+FASTENER_REACH_MM = 1.0     # a fastener this close to both parts joins them
+                            # (a screw shank in a clearance or insert bore)
+FASTENER_WORDS = ("screw", "screws", "bolt", "bolts", "pin", "pins", "dowel", "dowels",
+                  "rivet", "rivets", "peg", "pegs", "clip", "clips", "snap", "snaps",
+                  "latch", "latches", "catch", "catches", "hook", "hooks", "magnet",
+                  "magnets", "nut", "nuts", "hinge", "hinges", "axle", "standoff")
+SNAP_CALLS = ("snap_fit_pair(", "snap_fit_cantilever(")
+NEAR_SAMPLES = 6000         # surface points per part side, at most
+
+
+def _tris(shape):
+    """Triangles of a shape (the slow-to-tessellate ones too, when they
+    stay under ARCH_LOOPS_MAX), or an empty array."""
+    import numpy as np
+    try:
+        return _tess(shape)[1]
+    except SlowToTessellate:
+        if busiest_face_loops(shape) <= ARCH_LOOPS_MAX:
+            T = _tess_anyway(shape)
+            if T is not None:
+                return T
+    except Exception:                                   # noqa: BLE001
+        pass
+    return np.zeros((0, 3, 3))
+
+
+def _in_box(T, lo, hi):
+    import numpy as np
+    if not len(T):
+        return T
+    return T[np.all((T.max(axis=1) >= lo) & (T.min(axis=1) <= hi), axis=1)]
+
+
+def _surface_points(T):
+    """Vertices and centroids of triangles T (n,3)."""
+    import numpy as np
+    if not len(T):
+        return np.zeros((0, 3))
+    P = np.vstack([T.reshape(-1, 3), T.mean(axis=1)])
+    P = np.unique(np.round(P, 4), axis=0)
+    if len(P) > NEAR_SAMPLES:
+        P = P[::-(-len(P) // NEAR_SAMPLES)]
+    return P
+
+
+def near_mm(a, b, reach, Ta=None, Tb=None):
+    """R441: the gap between two bodies' surfaces, MEASURED on their
+    tessellations (within each other's box + reach; vertices and triangle
+    centroids of each against the other's triangles), or inf when it is
+    more than `reach`. a / b: Part shapes (or None with Ta / Tb given)."""
+    import numpy as np
+    Ta = _tris(a) if Ta is None else Ta
+    Tb = _tris(b) if Tb is None else Tb
+    if not len(Ta) or not len(Tb):
+        return float("inf")
+    la, ha = Ta.reshape(-1, 3).min(axis=0), Ta.reshape(-1, 3).max(axis=0)
+    lb, hb = Tb.reshape(-1, 3).min(axis=0), Tb.reshape(-1, 3).max(axis=0)
+    if np.any(la > hb + reach) or np.any(lb > ha + reach):
+        return float("inf")
+    best = float("inf")
+    sides = []
+    for S, O, lo, hi in ((Ta, Tb, lb, hb), (Tb, Ta, la, ha)):
+        P = _surface_points(_in_box(S, lo - reach, hi + reach))
+        Oc = _in_box(O, P.min(axis=0) - reach, P.max(axis=0) + reach) if len(P) else O[:0]
+        if len(P) and len(Oc):
+            sides.append((P, Oc))
+    # a coarse pass first: most pairs that meet show it on a few points
+    for stride in (16, 1):
+        for P, Oc in sides:
+            d = _pt_tri_dist(P[::stride], Oc, limit=reach)
+            if len(d) and np.isfinite(d).any():
+                best = min(best, float(d[np.isfinite(d)].min()))
+        if best <= reach and stride > 1:
+            return best
+    return best
+
+
+def contact_points(Ta, Tb, reach):
+    """R441: the surface points of each of two triangle sets within
+    `reach` of the other (n,3) - where two parts meet."""
+    import numpy as np
+    out = []
+    for S, O in ((Ta, Tb), (Tb, Ta)):
+        if not len(S) or not len(O):
+            continue
+        lo = O.reshape(-1, 3).min(axis=0) - reach
+        hi = O.reshape(-1, 3).max(axis=0) + reach
+        P = _surface_points(_in_box(S, lo, hi))
+        if not len(P):
+            continue
+        Oc = _in_box(O, P.min(axis=0) - reach, P.max(axis=0) + reach)
+        d = _pt_tri_dist(P, Oc, limit=reach)
+        out.append(P[np.isfinite(d)])
+    return np.vstack(out) if out else np.zeros((0, 3))
+
+
+def _cyl_convex(f, s):
+    """True when cylinder face f bulges out (a pin), False for a bore."""
+    import numpy as np
+    try:
+        u0, u1, v0, v1 = f.ParameterRange
+        u, v = 0.5 * (u0 + u1), 0.5 * (v0 + v1)
+        p = np.array(tuple(f.valueAt(u, v)), dtype=float)
+        n = np.array(tuple(f.normalAt(u, v)), dtype=float)
+    except Exception:                                   # noqa: BLE001
+        return None
+    ax = np.array(tuple(s.Axis), dtype=float)
+    ax /= np.linalg.norm(ax) or 1.0
+    rel = p - np.array(tuple(s.Center), dtype=float)
+    rad = rel - (rel @ ax) * ax
+    return bool(n @ rad > 0)
+
+
+PIN_CLEAR_MM = 0.3          # a pin this much under its hole still locates
+PIN_ENGAGE_MM = 1.0         # ...and runs this far along it
+PIN_ARC_DEG = 330.0         # a round pin / bore, not a lip's rounded corner
+PIN_R_MAX = 4.0             # a pin is a dowel (<= 8 mm); a round lip is no pin
+
+
+def pinned(a, b):
+    """R441: True when a pin of one part (a round convex cylinder, r 0.5 -
+    PIN_R_MAX mm)
+    stands in a bore of the other on its axis (the bore at most
+    PIN_CLEAR_MM bigger, PIN_ENGAGE_MM of length shared) - a dowel, a
+    hinge pin or a peg moulded on, through the other's hole."""
+    import math
+    import numpy as np
+
+    def cyls(shape, convex):
+        """Round pins / bores: coaxial faces of one radius whose arcs sum
+        to PIN_ARC_DEG or more (a lip's rounded corner is a quarter arc)."""
+        rows = []
+        for f, s in _cyl_faces(shape):
+            if not 0.5 <= s.Radius <= PIN_R_MAX or _cyl_convex(f, s) is not convex:
+                continue
+            ax = np.array(tuple(s.Axis), dtype=float)
+            ax /= np.linalg.norm(ax) or 1.0
+            c = np.array(tuple(s.Center), dtype=float)
+            vt = np.array([tuple(v.Point) for v in f.Vertexes] or [tuple(s.Center)], dtype=float)
+            t = (vt - c) @ ax
+            try:
+                u0, u1 = f.ParameterRange[:2]
+                arc = math.degrees(abs(u1 - u0))
+            except Exception:                           # noqa: BLE001
+                arc = 0.0
+            for g in rows:
+                rel = c - g[2]
+                if abs(g[0] - s.Radius) < 1e-3 and abs(float(ax @ g[1])) > 0.9999 and \
+                        np.linalg.norm(rel - (rel @ g[1]) * g[1]) < 1e-3:
+                    k = float(rel @ g[1])
+                    g[3] = min(g[3], t.min() + k)
+                    g[4] = max(g[4], t.max() + k)
+                    g[5] += arc
+                    break
+            else:
+                rows.append([s.Radius, ax, c, t.min(), t.max(), arc])
+        return [tuple(g[:5]) for g in rows if g[5] >= PIN_ARC_DEG]
+    for x, y in ((a, b), (b, a)):
+        pins, holes = cyls(x, True), cyls(y, False)
+        for r, ax, c, t0, t1 in pins:
+            for r2, ax2, c2, u0, u1 in holes:
+                if abs(float(ax @ ax2)) < 0.999 or not (r - 0.05 <= r2 <= r + PIN_CLEAR_MM):
+                    continue
+                rel = c2 - c
+                if np.linalg.norm(rel - (rel @ ax) * ax) > 0.15:
+                    continue
+                k = float(rel @ ax)
+                s0, s1 = sorted((u0 * float(ax @ ax2) + k, u1 * float(ax @ ax2) + k))
+                if min(t1, s1) - max(t0, s0) >= PIN_ENGAGE_MM:
+                    return True
+    return False
+
+
+def _is_fastener(label):
+    import re
+    return bool(re.search(SCREW_RE, str(label or ""), re.I)) or any(
+        t in FASTENER_WORDS for t in _tokens(label))
+
+
+TRIM_WORDS = ("foot", "feet", "gasket", "seal", "trim", "badge", "bezel", "lens",
+              "lenses", "glass", "window", "windows", "windscreen", "windshield",
+              "mask", "visor", "cap", "caps", "button", "buttons", "key", "keys",
+              "knob", "grille", "ring", "gallery", "finial", "pipe", "led", "light",
+              "lights", "logo", "label", "tyre", "rim", "insert", "liner", "pad",
+              "pads", "bumper", "plunger", "antenna", "ear", "ears", "arm", "arms")
+INSERT_INSIDE = 0.9         # an insert: this share of its box inside another's
+INSERT_VOLUME = 0.25        # ...and under this share of that part's volume
+
+
+def _box_inside_share(a, b):
+    """Share of box a's volume inside box b."""
+    x = max(0.0, min(a.XMax, b.XMax) - max(a.XMin, b.XMin))
+    y = max(0.0, min(a.YMax, b.YMax) - max(a.YMin, b.YMin))
+    z = max(0.0, min(a.ZMax, b.ZMax) - max(a.ZMin, b.ZMin))
+    va = a.XLength * a.YLength * a.ZLength
+    return (x * y * z) / va if va > 0 else 0.0
+
+
+def housing_parts(parts):
+    """R441: (housing, big, boxes) of a build. BIG: not a cable, a
+    fastener or a wheel, box diagonal >= HOUSING_DIAG of the product's.
+    HOUSING - the shells, halves, chassis and lids that make up its body:
+    a big part that is not see-through (a lens / glass is an insert), not
+    a trim piece by label (bezel, cap, foot, gasket ...) and not an INSERT
+    (its box INSERT_INSIDE inside another big part's, and under
+    INSERT_VOLUME of its volume)."""
+    body = [p for p in parts if p.get("shape") is not None and not p.get("cable")]
+    boxes, vols = {}, {}
+    for p in body:
+        try:
+            boxes[p["label"]] = tight(p["shape"])
+            vols[p["label"]] = float(p["shape"].Volume)
+        except Exception:                               # noqa: BLE001
+            pass
+    if not boxes:
+        return [], [], boxes
+    allb = None
+    for bb in boxes.values():
+        allb = bb if allb is None else allb.united(bb)
+    diag = allb.DiagonalLength or 1.0
+    big = [p for p in body if p["label"] in boxes and not _is_fastener(p["label"])
+           and not any(t in WHEEL_WORDS for t in _tokens(p["label"]))
+           and boxes[p["label"]].DiagonalLength >= HOUSING_DIAG * diag]
+    out = []
+    for p in big:
+        la = p["label"]
+        if any(t in TRIM_WORDS for t in _tokens(la)) or part_transparency(p) >= SEE_THROUGH_MIN:
+            continue
+        insert = any(q["label"] != la and _box_inside_share(boxes[la], boxes[q["label"]])
+                     >= INSERT_INSIDE and vols[la] < INSERT_VOLUME * vols[q["label"]]
+                     for q in big)
+        if not insert:
+            out.append(p)
+    return out, big, boxes
+
+
+def _bored_on_axis(shape, point, d, tol=0.3):
+    """R505: True when `shape` has a round bore (a concave cylinder face) on
+    the line (point, d) - a hinge knuckle's pin bore on the declared axis."""
+    import numpy as np
+    p0 = np.asarray(point, float)
+    u = np.asarray(d, float)
+    u = u / (np.linalg.norm(u) or 1.0)
+    for f, s in _cyl_faces(shape):
+        if s.Radius > PIN_R_MAX or _cyl_convex(f, s) is not False:
+            continue
+        ax = np.array(tuple(s.Axis), dtype=float)
+        ax /= np.linalg.norm(ax) or 1.0
+        if abs(float(ax @ u)) < 0.999:
+            continue
+        rel = np.array(tuple(s.Center), dtype=float) - p0
+        if np.linalg.norm(rel - (rel @ u) * u) <= tol:
+            return True
+    return False
+
+
+def fastening(parts, code="", cap=40, motions=()):
+    """R441: housing parts that meet and that nothing joins.
+
+    parts: the agent's bodies [{"label", "shape", "cable", "view"}]
+    (housing_parts picks the housing and the big parts). A pair of big
+    parts that meets (MEET_MM) is JOINED when a fastener part (a screw /
+    pin / clip ... label) comes within FASTENER_REACH_MM of both, or bores
+    of both line up (a screw or pin path through both, as joint_probe), or
+    model.py calls cad.snap_fit_pair (one call excuses one pair), or a pin
+    of one stands in a bore of the other (pinned). Bores in line with no
+    screw in them join nothing. Joined parts form groups; a connected set
+    of other parts that meets a group on OPPOSITE sides is clamped in its
+    stack (a shell between a base and a top screwed together). R505: a part
+    intent.json "motion" declares (read_motion rows in `motions`) is joined
+    to a part it meets when BOTH carry a bore on its axis - the hinge's
+    knuckles (cad.pin_hinge: the pin is bought, not modelled). Every pair
+    of HOUSING parts that meets across two groups is loose. Returns {"housing", "joined": [[a, b, how]],
+    "loose": [{"part", "meets"}]}."""
+    housing, big, boxes = housing_parts(parts)
+    big = big[:cap]
+    hl = {p["label"] for p in housing}
+    out = {"housing": [p["label"] for p in housing], "joined": [], "loose": []}
+    if len(housing) < 2:
+        return out
+    body = [p for p in parts if p.get("shape") is not None and not p.get("cable")]
+    fasteners = [p for p in body if p["label"] in boxes and _is_fastener(p["label"])]
+    T = {p["label"]: _tris(p["shape"]) for p in big + fasteners}
+    dfl = {p["label"]: _deflection(p["shape"]) for p in big + fasteners}
+
+    def close(a, b, reach):
+        if _bb_gap(boxes[a], boxes[b]) > reach:
+            return False
+        r = reach + dfl[a] + dfl[b]
+        return near_mm(None, None, r, T[a], T[b]) <= r
+    meets = [(a["label"], b["label"]) for i, a in enumerate(big)
+             for b in big[i + 1:] if close(a["label"], b["label"], MEET_MM)]
+    reach = {}
+    for f in fasteners:
+        for h in big:
+            if close(f["label"], h["label"], FASTENER_REACH_MM):
+                reach.setdefault(f["label"], set()).add(h["label"])
+    shape_of = {p["label"]: p["shape"] for p in big}
+    snaps = sum((code or "").count(c) for c in SNAP_CALLS)
+    group = {h: frozenset([h]) for h in shape_of}
+
+    def merge(a, b):
+        g = group[a] | group[b]
+        for x in g:
+            group[x] = g
+    for (a, b) in meets:
+        how = next(("%s through both" % f for f, hs in sorted(reach.items())
+                    if a in hs and b in hs), None)
+        if how is None:
+            try:
+                if pinned(shape_of[a], shape_of[b]):
+                    how = "a pin of one in a bore of the other"
+            except Exception:                           # noqa: BLE001
+                pass
+        if how is None:
+            for m in motions or ():
+                if m.get("part") not in (a, b):
+                    continue
+                try:
+                    if _bored_on_axis(shape_of[a], m["point"], m["dir"]) and \
+                            _bored_on_axis(shape_of[b], m["point"], m["dir"]):
+                        how = "a hinge: both bored on %s's declared motion axis" % m["part"]
+                        break
+                except Exception:                       # noqa: BLE001
+                    pass
+        if how is None and snaps > 0 and a in hl and b in hl:
+            snaps -= 1
+            how = "cad.snap_fit_pair in model.py (taken as this pair's snaps)"
+        if how:
+            out["joined"].append([a, b, how])
+            merge(a, b)
+    # captured: the parts of one group G and a connected set C of others
+    # that meets G on OPPOSITE sides (a shell between a base and a top
+    # screwed together, a ring stacked on it) are clamped in one stack
+    rch = MEET_MM + 2 * max(dfl.values() or [0.0])
+    where = {}
+    for (a, b) in meets:
+        P = contact_points(T[a], T[b], rch)
+        if len(P):
+            where[(a, b)] = where[(b, a)] = P.mean(axis=0)
+    grew = True
+    while grew:
+        grew = False
+        for g in sorted({group[h] for h in shape_of}, key=lambda x: sorted(x)):
+            rest = [h for h in shape_of if h not in g]
+            comp = {h: frozenset([h]) for h in rest}
+            for (a, b) in meets:
+                if a in comp and b in comp and comp[a] != comp[b]:
+                    m = comp[a] | comp[b]
+                    for x in m:
+                        comp[x] = m
+            for c in {comp[h] for h in rest}:
+                pts = [where[(a, b)] for (a, b) in meets if (a in c and b in g)
+                       or (b in c and a in g) if (a, b) in where]
+                if len(pts) < 2:
+                    continue
+                import numpy as np
+                cb = None
+                for h in c:
+                    cb = boxes[h] if cb is None else cb.united(boxes[h])
+                ctr = np.array([cb.Center.x, cb.Center.y, cb.Center.z])
+                half = np.maximum(np.array([cb.XLength, cb.YLength, cb.ZLength]) / 2, 1e-6)
+                q = (np.array(pts) - ctr) / half
+                k = np.abs(q).argmax(axis=1)
+                sides = {(int(kk), bool(q[i, kk] > 0)) for i, kk in enumerate(k)}
+                if any((kk, not sg) in sides for kk, sg in sides):
+                    merge(next(iter(g)), next(iter(c)))
+                    grew = True
+                    break
+            if grew:
+                break
+    vol = {h: boxes[h].XLength * boxes[h].YLength * boxes[h].ZLength for h in shape_of}
+    seen = set()
+    for (a, b) in meets:
+        if a not in hl or b not in hl or group[a] == group[b]:
+            continue
+        # name the smaller side's part: that is what lifts off
+        small, other = (a, b) if vol[a] <= vol[b] else (b, a)
+        key = frozenset([group[a], group[b]])
+        if key in seen:
+            continue
+        seen.add(key)
+        out["loose"].append({"part": small, "meets": [other]})
+    return out
+
+
+def fastening_text(row):
+    other = row["meets"][0]
+    return ("fastening: %s meets %s but nothing joins them - no screw through both, no "
+            "snap or clip, no pin (a lip or a ledge only locates it: it lifts off). Add "
+            "2-4 screws through %s into bosses on %s (cad.screw_boss + cad.screw: the "
+            "boss drills the 0.85 x d thread-forming pilot), snap hooks "
+            "(cad.snap_fit_pair(%s, %s)), or a pin through both" % (
+                row["part"], " and ".join(row["meets"]), row["part"], other, other,
+                row["part"]))
+
+
+# R442 (round 1): cabled modules hung on their ribbons - a light behind a
+# lens with nothing behind it, a sensor floating in the nose. A seated
+# module is held by the board (board_retention); a CABLED one needs its
+# own holder: material within HOLDER_MM on two sides or more, or a part
+# named as a cradle / holder / clip round it.
+HOLDER_MM = 0.5
+HOLDER_WORDS = ("cradle", "cradles", "holder", "holders", "clip", "clips", "bracket",
+                "brackets", "mount", "mounts", "pocket", "socket", "sleeve", "carrier")
+SIDE_NAMES = ("-X", "+X", "-Y", "+Y", "-Z", "+Z")
+HOLDER_STEP_MM = 1.0        # contact points every 1 mm over a part's faces
+HOLDER_EDGE = 0.2           # a point this near a box edge faces no one side
+
+
+def _dense_points(T, step, cap=40000):
+    """Points over triangles T every `step` mm (barycentric grid per
+    triangle, its corners included) - deterministic."""
+    import numpy as np
+    if not len(T):
+        return np.zeros((0, 3))
+    e = np.max(np.linalg.norm(T - np.roll(T, 1, axis=1), axis=2), axis=1)
+    out = [T.reshape(-1, 3)]
+    for n in np.unique(np.clip(np.ceil(e / step).astype(int), 1, 40)):
+        if n < 2:
+            continue
+        sel = T[np.ceil(e / step).clip(1, 40).astype(int) == n]
+        ij = [(i, j) for i in range(n + 1) for j in range(n + 1 - i)]
+        W = np.array([(i / n, j / n, 1 - (i + j) / n) for i, j in ij])
+        out.append((W[None, :, :, None] * sel[:, None, :, :]).sum(axis=2).reshape(-1, 3))
+    P = np.vstack(out)
+    return P[::-(-len(P) // cap)] if len(P) > cap else P
+
+
+def cable_holders(parts, mods, cabled):
+    """R442: per cabled module, the sides of it some part comes within
+    HOLDER_MM of. parts: the agent's bodies [{"label", "shape", "cable"}];
+    mods: the module meshes [{"label", "name", "mesh", "axes"}]; cabled:
+    the module Names a ribbon cable serves. Sides are the module's own
+    (its axes: local -X ... +Z). Returns [{"module", "sides": {side:
+    [labels]}, "cradle": label or None, "held": bool}]."""
+    import numpy as np
+    rows = []
+    body = [p for p in parts if p.get("shape") is not None and not p.get("cable")]
+    for m in mods:
+        if m.get("name") not in cabled or m.get("mesh") is None:
+            continue
+        MT = _mesh_tris(m["mesh"])
+        if not len(MT):
+            continue
+        MP = np.unique(np.round(MT.reshape(-1, 3), 4), axis=0)
+        A = np.asarray(m.get("axes") or np.eye(3), float).reshape(3, 3)
+        c = 0.5 * (MP.min(axis=0) + MP.max(axis=0))
+        loc = (MP - c) @ A.T
+        half = np.maximum(np.abs(loc).max(axis=0), 1e-6)
+        c = c + A.T @ (0.5 * (loc.max(axis=0) + loc.min(axis=0)))
+        half = np.maximum(0.5 * (loc.max(axis=0) - loc.min(axis=0)), 1e-6)
+        lo, hi = MP.min(axis=0) - HOLDER_MM, MP.max(axis=0) + HOLDER_MM
+        sides, cradle = {}, None
+        for p in body:
+            T = _in_box(_tris(p["shape"]), lo - 1.0, hi + 1.0)
+            if not len(T):
+                continue
+            tol = _deflection(p["shape"])
+            near = []
+            dm = _pt_tri_dist(MP, T, limit=HOLDER_MM + tol)
+            near.append(MP[np.isfinite(dm)])
+            PP = _dense_points(T, HOLDER_STEP_MM)
+            PP = PP[np.all((PP >= lo) & (PP <= hi), axis=1)]
+            if len(PP):
+                dp = _pt_tri_dist(PP, _in_box(MT, lo - 1.0, hi + 1.0), limit=HOLDER_MM + tol)
+                near.append(PP[np.isfinite(dp)])
+            Q = np.vstack(near)
+            if not len(Q):
+                continue
+            if any(t in HOLDER_WORDS for t in _tokens(p["label"])):
+                cradle = cradle or p["label"]
+            # the side of the module's box a contact point faces; a point
+            # near an edge or a corner (two sides nearly as far out) is
+            # nobody's - a lens in front reaches round the front's edges
+            q = ((Q - c) @ A.T) / half
+            aq = np.abs(q)
+            order = np.sort(aq, axis=1)
+            sure = order[:, -1] - order[:, -2] > HOLDER_EDGE
+            k = aq.argmax(axis=1)
+            for kk, sg in set(zip(k[sure].tolist(), (q[np.arange(len(q)), k] > 0)[sure].tolist())):
+                sides.setdefault(SIDE_NAMES[2 * kk + int(sg)], []).append(p["label"])
+        rows.append({"module": m["label"], "sides": {s: sorted(set(v)) for s, v in sides.items()},
+                     "cradle": cradle, "held": bool(cradle) or len(sides) >= 2})
+    return rows
+
+
+def holder_text(row):
+    got = ", ".join("%s %s" % (s, "/".join(v)) for s, v in sorted(row["sides"].items()))
+    return ("holder: %s is cabled and held on %d side%s only (%s) - nothing else comes "
+            "within %g mm of it, so it hangs on its ribbon and rattles. Give it a holder: "
+            "ribs or a pocket 0.1-0.3 mm off on two opposite sides (one behind it, "
+            "against the lens or wall in front), or a cradle / clip part round it" % (
+                row["module"], len(row["sides"]), "" if len(row["sides"]) == 1 else "s",
+                got or "nothing at all", HOLDER_MM))
+
+
+# ============================== R444 thread engagement (WS4)
+# R444: cad.screw_boss drills the thread-forming pilot (0.85 x d), so a
+# cad.screw (shank d - 0.1) in it shares the thread's annulus with the
+# boss - that is the thread biting, not an overlap. An OVERLAP between a
+# screw and the part its pilot bites in, no bigger than the annulus over
+# the screw's length (x 1.2), is excused; anything bigger (the head in the
+# wall, the screw through a rib) is still reported.
+THREAD_SLACK = 1.2
+
+
+def _coaxial_pilot(screw, part):
+    """(nominal d, narrowest pilot diameter) - the narrowest concave
+    cylinder of `part` on the screw's axis that is under d (the
+    thread-forming pilot it bites in, anywhere along the screw), or None."""
+    import numpy as np
+    got = _screw_axis(screw)
+    if got is None:
+        return None
+    nominal, ax, c, _tip, _back = got
+    best = None
+    for f, s in _cyl_faces(part):
+        a2 = np.array(tuple(s.Axis), dtype=float)
+        a2 /= np.linalg.norm(a2) or 1.0
+        if abs(float(a2 @ ax)) < 0.999:
+            continue
+        rel = np.array(tuple(s.Center), dtype=float) - c
+        if np.linalg.norm(rel - (rel @ ax) * ax) > 0.15:
+            continue
+        dd = 2.0 * s.Radius
+        if dd < 0.6 * nominal or dd >= nominal - 0.02:
+            continue
+        if best is None or dd < best:
+            best = dd
+    return None if best is None else (nominal, round(best, 3))
+
+
+def thread_engagement(hits, parts):
+    """R444: (hits kept, hits excused) - excused: a screw's overlap with a
+    part that has a pilot under d on the screw's axis (the thread-forming
+    pilot, wherever along the screw - below a heat-set insert pocket too),
+    no bigger than the thread annulus pi/4 (d^2 - pilot^2) x the screw's
+    length (x THREAD_SLACK)."""
+    import math
+    import re
+    if not hits:
+        return hits, []
+    shape_of = {p["label"]: p["shape"] for p in parts if p.get("shape") is not None}
+    kept, excused = [], []
+    for h in hits:
+        v = h.get("volume_mm3")
+        sa = re.search(SCREW_RE, str(h["a"]), re.I)
+        sb = re.search(SCREW_RE, str(h["b"]), re.I)
+        if v is None or bool(sa) == bool(sb):
+            kept.append(h)
+            continue
+        scr, oth = (h["a"], h["b"]) if sa else (h["b"], h["a"])
+        try:
+            got = _coaxial_pilot(shape_of[scr], shape_of[oth])
+            bb = tight(shape_of[scr])
+        except Exception:                               # noqa: BLE001
+            got = None
+        if got is None:
+            kept.append(h)
+            continue
+        d, pd = got
+        L = max(bb.XLength, bb.YLength, bb.ZLength)
+        cap = math.pi / 4.0 * max(0.0, d * d - pd * pd) * L * THREAD_SLACK
+        if v <= cap:
+            excused.append(dict(h, thread_cap_mm3=round(cap, 2), pilot_mm=pd))
+        else:
+            kept.append(h)
+    return kept, excused

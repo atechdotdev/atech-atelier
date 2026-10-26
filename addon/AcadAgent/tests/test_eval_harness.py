@@ -27,6 +27,8 @@ What is pinned:
   R111     the argv job gives _turn_args the request text and the seeded
            document: a plain request gets no ATECH_ASSEMBLY.md copy and the
            plain prompt, an Atech request the copy and the Atech section
+           (R250: with ATECH_PROMPT_OFF=board_default; while board_default
+           (R220) is on, a plain request gets the full section on purpose)
   S41      each run records its addon revision (commit, sha256, addon.diff,
            untracked files); materialize_addon rebuilds exactly that tree
            (sha256 equal); --rescore builds against it and the report names
@@ -80,6 +82,11 @@ What is pinned:
 import json
 import math
 import os
+
+# R250: these tests pin fast-mode values ($3 budget, 2 fix attempts, the
+# 300 s stall/turn limits); quality mode is the default since R230, so
+# they ask for fast mode unless the caller chose a mode.
+os.environ.setdefault("ATECH_PROMPT_MODE", "fast")
 import re
 import shutil
 import stat
@@ -1372,14 +1379,40 @@ class ProductionArgv(unittest.TestCase):
             self.addCleanup(shutil.rmtree, d, True)
         return prod, R.system_prompt_of(prod["first"])
 
+    PLAIN_REQ = "An L bracket, 40 x 40 mm, 4 mm thick, two M4 holes."
+    ATECH_REQ = ("Smart desk clock on the Atech 14-port board with a screen and a "
+                 "button module, in a case that sits on a desk.")
+
+    def _off(self, names):
+        """$ATECH_PROMPT_OFF set to `names` for this test (restored after)."""
+        old = os.environ.get("ATECH_PROMPT_OFF")
+        self.addCleanup(lambda: os.environ.__setitem__("ATECH_PROMPT_OFF", old)
+                        if old is not None else os.environ.pop("ATECH_PROMPT_OFF", None))
+        os.environ["ATECH_PROMPT_OFF"] = names
+
+    def test_r250_board_default_sends_the_full_section_to_a_plain_request(self):
+        # R220/R250: board_default on (the default) and the library present:
+        # every turn - a plain request too - gets the ATECH_ASSEMBLY.md copy
+        # and the full Atech section, on purpose.
+        self._off(",".join(n for n in (os.environ.get("ATECH_PROMPT_OFF") or "").split(",")
+                           if n.strip() and n.strip() != "board_default"))
+        plain, sp_plain = self._argv(self.PLAIN_REQ)
+        atech, sp_atech = self._argv(self.ATECH_REQ)
+        if "ATECH_ASSEMBLY.md" not in atech["workspace_files"]:
+            self.skipTest("Atech module library not installed here")
+        self.assertIn("ATECH_ASSEMBLY.md", plain["workspace_files"])
+        self.assertIn(os.path.join(plain["workspace"], "ATECH_ASSEMBLY.md"), sp_plain)
+        self.assertIn("ap.seat(doc", sp_plain, "board_default: the full Atech section")
+
     def test_r111_request_reaches_turn_args(self):
         # Production (panel._send_claude) calls _turn_args(ws, text=, doc=):
-        # a plain request gets no ATECH_ASSEMBLY.md copy, an Atech one gets
-        # the copy and the full Atech section. The eval must send the same.
-        plain, sp_plain = self._argv("An L bracket, 40 x 40 mm, 4 mm thick, two M4 holes.")
-        atech, sp_atech = self._argv(
-            "Smart desk clock on the Atech 14-port board with a screen and a "
-            "button module, in a case that sits on a desk.")
+        # with board_default off, a plain request gets no ATECH_ASSEMBLY.md
+        # copy, an Atech one gets the copy and the full Atech section. The
+        # eval must send the same.
+        self._off(",".join([n for n in (os.environ.get("ATECH_PROMPT_OFF") or "").split(",")
+                            if n.strip()] + ["board_default"]))
+        plain, sp_plain = self._argv(self.PLAIN_REQ)
+        atech, sp_atech = self._argv(self.ATECH_REQ)
         self.assertNotIn("ATECH_ASSEMBLY.md", plain["workspace_files"])
         self.assertIn("ATECH_ASSEMBLY.md", atech["workspace_files"])
         self.assertIn(os.path.join(atech["workspace"], "ATECH_ASSEMBLY.md"), sp_atech)

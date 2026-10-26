@@ -1,0 +1,891 @@
+{
+ "boards": {
+  "10port": {
+   "adjacent": [
+    [
+     1,
+     2
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     3,
+     4
+    ],
+    [
+     4,
+     5
+    ],
+    [
+     5,
+     6
+    ],
+    [
+     7,
+     8
+    ],
+    [
+     8,
+     9
+    ]
+   ],
+   "layout": [
+    [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6"
+    ],
+    [
+     "7",
+     "8",
+     "9",
+     "USB-C"
+    ]
+   ],
+   "name": "Atech 10-Port Board",
+   "ports": {
+    "1": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "2": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "3": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "4": [
+     "i2c",
+     "digital",
+     "gpio",
+     "uart"
+    ],
+    "5": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "6": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "7": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "8": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "9": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ]
+   },
+   "reserved": [
+    10
+   ]
+  },
+  "14port": {
+   "adjacent": [
+    [
+     1,
+     2
+    ],
+    [
+     2,
+     3
+    ],
+    [
+     3,
+     4
+    ],
+    [
+     4,
+     5
+    ],
+    [
+     5,
+     6
+    ],
+    [
+     9,
+     10
+    ],
+    [
+     10,
+     11
+    ],
+    [
+     13,
+     14
+    ]
+   ],
+   "layout": [
+    [
+     "9",
+     "10",
+     "11",
+     "Restart",
+     "13",
+     "14"
+    ],
+    [
+     "7",
+     "",
+     "",
+     "",
+     "",
+     "USB-C"
+    ],
+    [
+     "1",
+     "2",
+     "3",
+     "4",
+     "5",
+     "6"
+    ]
+   ],
+   "name": "Atech 14-Port Board",
+   "ports": {
+    "1": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "10": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "11": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "13": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "14": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "2": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "3": [
+     "i2c",
+     "digital",
+     "gpio",
+     "uart"
+    ],
+    "4": [
+     "i2c",
+     "digital",
+     "gpio",
+     "uart"
+    ],
+    "5": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "6": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "7": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "9": [
+     "i2c",
+     "digital",
+     "gpio"
+    ]
+   },
+   "reserved": [
+    8,
+    12
+   ]
+  },
+  "8port": {
+   "adjacent": [
+    [
+     1,
+     2
+    ],
+    [
+     3,
+     4
+    ]
+   ],
+   "layout": [
+    [
+     "1",
+     "2",
+     "",
+     "3",
+     "4"
+    ],
+    [
+     "5",
+     "Restart",
+     "",
+     "7",
+     "USB-C"
+    ]
+   ],
+   "name": "Atech 8-Port Board",
+   "ports": {
+    "1": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "2": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "3": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog"
+    ],
+    "4": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "5": [
+     "i2c",
+     "digital",
+     "gpio"
+    ],
+    "7": [
+     "i2c",
+     "digital",
+     "gpio",
+     "analog",
+     "uart"
+    ]
+   },
+   "reserved": [
+    6,
+    8
+   ]
+  }
+ },
+ "guide": "# Atech SDK \u2014 guide for coding agents\n\nYou are helping someone make an **Atech board** do something. The board is an\nESP32-S3 with numbered ports; modules (button, light grid, sensors, motors, a robot\narm\u2026) slide into the ports. You write one small file, `project.yaml`. The SDK turns\nit into firmware, compiles it, flashes it, and then lets you talk to the board from\nthe laptop.\n\nThis text ships inside the package: `atech guide` prints it, and `atech new` puts a\ncopy in every project as `AGENTS.md` and `CLAUDE.md`.\n\n## The whole workflow\n\n```bash\natech list-boards                  # ask the user which board they are holding\natech list-modules                 # what exists. Never invent a module\natech info <module>                # its C++ API, events, actions and cautions\natech new <name> --board 14port    # project.yaml + this guide\n#   ...edit project.yaml...\natech describe <dir>               # what you placed, the API, the events and actions\natech validate <dir>               # placement check\natech build <dir>                  # generate + compile\natech upload <dir>                 # flash the board on USB\natech check                        # reboot it: which modules answered, and why not\natech monitor                      # events coming from the board\natech send <key> [value]           # one action, confirmed by the board (value: r=255 g=0, a number, or JSON)\n```\n\nEvery command exits non-zero when it fails and says why on stderr (`error: \u2026`, or\nthe list of placement issues). Cautions are printed on stdout with the result.\n`list-boards`, `list-modules`, `info` and `monitor` take `--json`.\n\n## project.yaml\n\n```yaml\nname: my_project\nboard: 14port                        # 8port | 10port | 14port\nmodules:\n  - {id: button,   instance: btn, port: 1}\n  - {id: neopixel, instance: led, port: 2}\n  - {id: speaker,  instance: spk, ports: [13, 14]}   # 2-port module: an adjacent pair\ncode:\n  setup: |\n    // optional, runs once after every module is initialised\n  loop: |\n    // runs forever\n    if (btn.wasPressed()) {\n      led.setAll(255, 0, 0);\n      led.show();\n    }\n```\n\n- `instance` is the name of the C++ object you call in `code:`. Its methods are in\n  `atech info <module>` and `atech describe`.\n- Ports: `atech list-boards` shows which ports take modules and which of them have\n  UART. A 2-port module needs two neighbouring ports; a UART module (the robot arm)\n  needs a UART port. `atech validate` says what is wrong and which ports would work.\n- **Ask the user which port each module is in.** You cannot see the board.\n- Power modules (USB-C, power jack) are not in the catalog and need no entry in\n  `project.yaml`: they carry no firmware. Leave the ports they sit in unused.\n- There are exactly two code blocks, `setup` and `loop`. Keep state in `static`\n  variables inside `loop`.\n- `atech validate` checks placement only. Mistakes in your C++ show up in `atech build`.\n\n## Rules for the `code:` block\n\n- **Never block.** Use `millis()` for timing; no `delay()` beyond a few ms.\n- **Edge calls are yours.** `btn.wasPressed()`, `knob.wasRotatedCW()`,\n  `pir.wasTriggered()`, `imu.wasShaken()` return true once per edge and then clear.\n  The firmware's own events to the laptop do not use them, so your code and the\n  laptop both see every press. Call each edge function in one place only.\n- **Do not read `Serial` yourself.** The generated firmware reads it to receive\n  actions from the laptop. Reading it in your code steals those bytes.\n- **Do not hardcode GPIO numbers.** Pins come from the port.\n- **Do not edit `build/`.** It is regenerated on every `atech build`.\n- To send your own event to the laptop, print one JSON line:\n\n  ```cpp\n  Serial.printf(\"{\\\"type\\\":\\\"event\\\",\\\"payload\\\":{\\\"event_type\\\":\\\"sensor\\\",\\\"key\\\":\\\"level\\\",\\\"value\\\":%d}}\\n\", level);\n  ```\n\n- To accept your own action from the laptop, test `atech_action` and confirm it:\n\n  ```cpp\n  if (atech_action == \"buzz\") { spk.playTone(880, 100); atechDone(); }\n  ```\n\n  `atech_value` holds the value as a `String`. An action nobody handles is\n  answered with `ok:false`, so the laptop knows.\n\n## Talking to the board from the laptop\n\n`atech describe` lists the exact event and action names of a project. They are\nbuilt from the instance name, for example `btn`, `th_temperature`, `led_fill`.\n\n```bash\natech monitor --key btn                          # only the button's events\natech send led_fill r=255 g=0 b=0                # prints ok only if the board did it\n```\n\n```python\nfrom atech import Board, ActionRejected, NoAcknowledgement, NoBoardFoundError\n\nwith Board.connect() as board:                   # or Board.connect(port=\"/dev/cu.usbmodem1101\")\n    board.call(\"led_fill\", {\"r\": 255, \"g\": 0, \"b\": 0})         # do something\n    joints = board.query(\"arm_read\", reply=\"arm_positions\")   # ask, get the answer back\n    last = board.latest(\"btn\")                   # last event seen for a key, or None\n    for event in board.events(keys=[\"btn\"]):     # blocks, yields events forever\n        print(event.key, event.value)\n```\n\n- `board.call(key, value=\"\", timeout=2.0)` returns once the board confirmed. It\n  raises `ActionRejected` when the board could not do it (no such action, bad value,\n  a servo that does not answer) and `NoAcknowledgement` when nothing came back.\n- `board.query(key, value=\"\", reply=<event key>)` is `call` plus the value of the\n  event the board answers with. Use it for every read-back.\n- `board.send()` only writes to the port and tells you nothing. Use `call`.\n- `Board.connect()` takes the first board on USB and raises `NoBoardFoundError` when\n  there is none. With several boards attached, pass `port=` (`atech ports` lists them).\n- Wait for each action before sending the next: a flood of unconfirmed ones can\n  overflow the board's buffer and some get lost.\n- **One program per board at a time.** A second program opening the same port gets\n  `PortUnavailableError`. Stop `atech monitor` before `atech send` or `atech upload`,\n  or listen and send from one Python script as above.\n\n## Things that are true and save time\n\n- **The first build downloads the ESP32 compiler** (about 2.4 GB on disk, once).\n  After that a build takes seconds. Do the first build on good wifi. A few modules\n  (the light grid, for one) also download a small library the first time a project\n  uses them, so a new project can still need the network once.\n- **`atech upload` always regenerates and rebuilds from `project.yaml`.** There is no\n  stale build to worry about.\n- **Port in use?** Only one program can hold the board's port. Close the other one\n  (`atech monitor` in another terminal, an editor's serial monitor), or `atech free-port`.\n- **Linux, \"no permission\":** `sudo usermod -aG dialout $USER`, then log in again.\n- **No board found?** It must be plugged in with a USB data cable. `atech ports`\n  shows what the SDK sees. The SDK never falls back to some other serial port.\n- **`atech check` cannot see output-only modules.** A light grid or a display\n  reports \"initialized\" even when nothing is plugged in. Only eyes confirm output.\n- **A module does nothing?** Do not re-flash the same firmware. Print a line\n  before and after the suspect call and watch `atech monitor --json`; swap the\n  module into another port; keep one known-good module in the same build.\n- **Displays:** `display()` redraws the whole screen and takes about 273 ms. Draw\n  the background once, then use `displayRegion(x, y, w, h)` for what changes.\n\n### Robot arm: power\n\nThe Robot Arm module passes the board's high-voltage rail (labelled 12 V) straight\nto the servos. That rail is fed by a power module (the power jack module, or the\nUSB-C PD power module) and carries whatever that module is given. Nothing regulates\nit, and the standard USB-C module does not feed it. SO-101 arms come in a 12 V and\na 5 V version, and a 12 V supply on a 5 V arm damages the servos.\n\nBuilding is harmless. Before you **flash, or tell the user to connect or power the\narm**, ask which arm they have and what voltage is printed on the supply in the\njack, and tell them: 12 V supply for a 12 V arm, 5 V supply for a 5 V arm, never\nmore than 12 V. `atech validate`, `build` and `upload` print this as a `CAUTION`;\nrelay it. With nothing in the power jack the servos have no power, so a silent arm\non USB-C alone is expected.\n\nThe arm goes stiff when the firmware starts (torque is switched on in setup) and\nmoves as soon as something tells it to. Have the user clear its reach first.\n\n### Robot arm: no servo answers\n\nIf the arm has power and `atech check` still reports it not responding: on a\nRobot Arm V1.0 module with six servos, the servos only answered when the board\ntransmitted on the port's line B. The module transmits on line A by default. Swap\nthe two lines in `project.yaml` and upload again:\n\n```yaml\n  - {id: robot_arm, instance: arm, port: 3, swap_lines: true}\n```\n\nTell the user which of the two worked.\n\n## A module the catalog does not have\n\n```\nmy_project/\n\u251c\u2500\u2500 project.yaml          # add:  modules_path: ./my_modules\n\u2514\u2500\u2500 my_modules/\n    \u2514\u2500\u2500 <id>/\n        \u251c\u2500\u2500 module.yaml   # same shape as a bundled one\n        \u251c\u2500\u2500 <id>.h\n        \u2514\u2500\u2500 <id>.cpp\n```\n\nStart from a bundled module: `python -c \"import atech.catalog, pathlib;\nprint(pathlib.Path(atech.catalog.__file__).parent / 'data' / 'modules')\"` prints\nwhere they live. A module with the same id as a bundled one replaces it. In\n`module.yaml`, every event you declare must be a key the `loop` template really\nprints, and every action needs a `handler:` (C++ run when the action arrives;\nthe value is the `String value`).\n\n## Never\n\n- Invent a module, a method, an event or an action. `atech info` is the truth.\n- Skip `atech validate`.\n- Tell the user something worked because a command exited 0. Flashing succeeding\n  says nothing about the hardware; check with `atech check`, `atech monitor`, or\n  ask them what they see.\n- Use `delay(1000)` in `loop`.\n- Connect or power a robot arm before the supply question above is answered.\n",
+ "modules": {
+  "aht20": {
+   "actions": [],
+   "category": "sensor",
+   "caution": "",
+   "class": "AHT20",
+   "description": "AHT20 integrated temperature + humidity sensor over I2C (address 0x38).\nRange -40 to +125 \u00b0C and 0-100 %RH. A background FreeRTOS task takes\nmeasurements (~75 ms each) and caches them, so the getters return instantly\nand never block your loop. Single port: SDA on Line A, SCL on Line B.",
+   "events": [
+    {
+     "description": "Temperature in degrees Celsius. Emitted every 2 s (cached reading).",
+     "key": "{{ instance }}_temperature",
+     "type": "sensor",
+     "unit": "C",
+     "value_type": "float"
+    },
+    {
+     "description": "Relative humidity in %RH. Emitted every 2 s (cached reading).",
+     "key": "{{ instance }}_humidity",
+     "type": "sensor",
+     "unit": "%",
+     "value_type": "float"
+    }
+   ],
+   "interface": "i2c",
+   "methods": [
+    "begin",
+    "isConnected",
+    "readHumidity",
+    "readTemperature"
+   ],
+   "name": "AHT20 Temperature & Humidity Sensor",
+   "size": 1,
+   "usage": "// Public API of AHT20 \u2014 the instance is `{{ instance }}`.\n// begin() ran in setup() and started a background measurement task, so the\n// getters below return the latest cached value instantly (no blocking).\n// If you leave loop empty, the module already streams temperature + humidity\n// events every 2 s for you \u2014 only add code here for custom behaviour.\nfloat c = {{ instance }}.readTemperature();        // degrees Celsius\nfloat f = c * 9.0f / 5.0f + 32.0f;                  // if you want Fahrenheit\nfloat rh = {{ instance }}.readHumidity();           // % relative humidity\nif ({{ instance }}.isConnected()) { /* sensor is responding on the bus */ }"
+  },
+  "button": {
+   "actions": [],
+   "category": "input",
+   "caution": "",
+   "class": "ButtonModule",
+   "description": "Single digital button input with edge detection. Active-low with internal\npull-up. Emits a sensor event with value 1 on press and 0 on release.",
+   "events": [
+    {
+     "description": "1 on press edge, 0 on release edge",
+     "key": "{{ instance }}",
+     "type": "button",
+     "unit": null,
+     "value_type": "int"
+    }
+   ],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "getState",
+    "isPressed",
+    "update",
+    "wasPressed",
+    "wasReleased"
+   ],
+   "name": "Button",
+   "size": 1,
+   "usage": "// Public API of ButtonModule \u2014 the instance is `{{ instance }}`.\n// Edge detection: wasPressed()/wasReleased() return true once per edge.\n// For polling: isPressed() returns the current state.\nif ({{ instance }}.wasPressed())  { /* button just went down */ }\nif ({{ instance }}.wasReleased()) { /* button just released  */ }\nbool down = {{ instance }}.isPressed();"
+  },
+  "dc_motor": {
+   "actions": [
+    {
+     "description": "Set motor speed in [-255, 255]; negative = reverse.",
+     "key": "{{ instance }}_speed",
+     "value_type": "int"
+    },
+    {
+     "description": "Coast to stop.",
+     "key": "{{ instance }}_stop",
+     "value_type": "null"
+    },
+    {
+     "description": "Active brake.",
+     "key": "{{ instance }}_brake",
+     "value_type": "null"
+    }
+   ],
+   "category": "motor",
+   "caution": "",
+   "class": "DCMotor",
+   "description": "H-bridge DC motor driver. Two GPIO lines drive a small DC motor with PWM\nspeed and direction control. Accepts a single 'speed' action with value\nin -255..255 (negative reverses direction).",
+   "events": [],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "brake",
+    "forward",
+    "getSpeed",
+    "reverse",
+    "setSpeed",
+    "stop"
+   ],
+   "name": "DC Motor",
+   "size": 1,
+   "usage": "// Public API of DCMotor \u2014 the instance is `{{ instance }}`.\n// setSpeed accepts -255..255 (negative = reverse). forward/reverse take 0..255.\n// stop() coasts. brake() actively shorts. PWM is hardware (LEDC) for the first\n// 4 motors on the board; subsequent motors fall back to digital on/off.\n{{ instance }}.setSpeed(200);         // forward at ~78%\n{{ instance }}.setSpeed(-128);        // reverse at 50%\n{{ instance }}.forward(255);          // full forward\n{{ instance }}.reverse(255);          // full reverse\n{{ instance }}.stop();                // coast\n{{ instance }}.brake();               // active brake\nint16_t s = {{ instance }}.getSpeed();"
+  },
+  "distance_sensor": {
+   "actions": [],
+   "category": "distance",
+   "caution": "",
+   "class": "VL53L5CX_Sensor",
+   "description": "ST VL53L5CX multi-zone Time-of-Flight distance sensor. Ranges an 8x8 grid\n(64 zones) up to ~4000 mm. A background FreeRTOS task ranges at 15 Hz and\ncaches the grid, so the getters return instantly and never block your loop.\nSingle port: SDA on Line A, SCL on Line B. Uses the SparkFun VL53L5CX\nlibrary, which talks to Arduino `Wire` directly \u2014 the generated setup()\ninitializes the bus, the driver only shares it.",
+   "events": [
+    {
+     "description": "Closest object across all 64 zones, in mm. Returns the sentinel 32767 when nothing is in range (not 0 or -1). Emitted every 500 ms.\n",
+     "key": "{{ instance }}_min_distance",
+     "type": "sensor",
+     "unit": "mm",
+     "value_type": "int"
+    }
+   ],
+   "interface": "i2c",
+   "methods": [
+    "begin",
+    "getDistance",
+    "getDistanceGrid",
+    "getMaxDistance",
+    "getMinDistance",
+    "isReady"
+   ],
+   "name": "Distance Sensor (VL53L5CX 8x8 ToF)",
+   "size": 1,
+   "usage": "// Public API of VL53L5CX_Sensor \u2014 the instance is `{{ instance }}`.\n// begin() ran in setup() and started a 15 Hz background ranging task, so the\n// getters below return the latest cached values instantly (no blocking).\n// If you leave loop empty, the module already streams a min_distance event\n// every 500 ms \u2014 only add code here for custom behaviour.\n\n// --- summary readings (mm) across the whole 8x8 field ---\nint16_t nearest = {{ instance }}.getMinDistance();   // 32767 == nothing in range\nint16_t far     = {{ instance }}.getMaxDistance();\nif ({{ instance }}.isReady()) { /* at least one grid has been captured */ }\n\n// --- per-zone (0..63 == row*8 + col); -1 for an out-of-range zone index ---\nint16_t d = {{ instance }}.getDistance(27);\nint16_t grid[64];\n{{ instance }}.getDistanceGrid(grid);                // copy the full 8x8 frame\n\n// RESPONSIVE PRESENCE (the common ask: \"do X when something is in front\"):\n// edge-trigger with hysteresis \u2014 fire once on entry, re-arm on exit. No cooldown.\n//   static bool present = false;\n//   int16_t md = {{ instance }}.getMinDistance();\n//   if (!present && md < 300) { present = true;  /* entered: start action */ }\n//   else if (present && md > 400) { present = false; /* left:  stop action */ }"
+  },
+  "icm40608": {
+   "actions": [],
+   "category": "sensor",
+   "caution": "",
+   "class": "ICM40608",
+   "description": "6-axis inertial measurement unit: 3-axis accelerometer (\u00b12g), 3-axis\ngyroscope (\u00b1250\u00b0/s), and on-die temperature. The driver auto-detects which\nchip is present at boot (ICM-40608 at 0x68 or LSM6DSOX at 0x6A) \u2014 your code\nis identical either way. A background FreeRTOS task polls at 100 Hz and\ncaches readings, so every getter returns instantly. Single port: SDA on\nLine A, SCL on Line B.",
+   "events": [
+    {
+     "description": "Emitted once (value 1) on each shake/tap spike (>1.8 g by default).",
+     "key": "{{ instance }}_shake",
+     "type": "sensor",
+     "unit": null,
+     "value_type": "int"
+    },
+    {
+     "description": "Total tilt from upright (0 = flat face-up, 180 = face-down). Emitted every 1 s.",
+     "key": "{{ instance }}_tilt",
+     "type": "sensor",
+     "unit": "deg",
+     "value_type": "float"
+    },
+    {
+     "description": "Coarse 6-way pose: face_up / face_down / edge_right / edge_left / edge_front / edge_back / unknown. Emitted every 1 s.\n",
+     "key": "{{ instance }}_orientation",
+     "type": "sensor",
+     "unit": null,
+     "value_type": "string"
+    }
+   ],
+   "interface": "i2c",
+   "methods": [
+    "applyMountRotation",
+    "begin",
+    "calibrateGyro",
+    "detectChip",
+    "getChipName",
+    "getChipType",
+    "getOrientation",
+    "getOrientationName",
+    "getPitch",
+    "getRoll",
+    "getTiltAngle",
+    "initIcm40608",
+    "initLsm6dsox",
+    "isConnected",
+    "readAccelX",
+    "readAccelY",
+    "readAccelZ",
+    "readGyroX",
+    "readGyroY",
+    "readGyroZ",
+    "readIcmData",
+    "readLsmData",
+    "readRegister",
+    "readRegisterAt",
+    "readSensorData",
+    "readTemperature",
+    "setMountRotation",
+    "setShakeThreshold",
+    "takeShakeEvent",
+    "wasShaken",
+    "writeRegister"
+   ],
+   "name": "6-Axis IMU (ICM-40608 / LSM6DSOX)",
+   "size": 1,
+   "usage": "// Public API of ICM40608 \u2014 the instance is `{{ instance }}`.\n// begin() ran in setup() and started a 100 Hz background task, so every getter\n// below returns the latest cached value instantly (never blocks). If you leave\n// loop empty, the module already streams shake + tilt + orientation events.\n\n// --- DERIVED HELPERS (prefer these \u2014 users want tilt/shake/\"which way up\") ---\nfloat tilt  = {{ instance }}.getTiltAngle();     // 0 = flat face-up .. 180 = face-down\nfloat pitch = {{ instance }}.getPitch();         // -90..+90 (nose up positive)\nfloat roll  = {{ instance }}.getRoll();          // -180..+180 (left/right)\nconst char* pose = {{ instance }}.getOrientationName();  // \"face_up\", \"edge_left\", ...\nif ({{ instance }}.wasShaken()) { /* fires once per shake; reading clears it */ }\n{{ instance }}.setShakeThreshold(1.4f);          // lower = more sensitive (default 1.8g)\n\n// --- RAW AXES (only when explicitly needed: custom fusion / logging) ---\nfloat ax = {{ instance }}.readAccelX();          // g, \u00b12g   (Z \u2248 +1.0 at rest, flat)\nfloat gz = {{ instance }}.readGyroZ();           // deg/s, \u00b1250\u00b0/s\n// If you read raw gyro, call once in setup() with the board still:\n//   {{ instance }}.calibrateGyro();             // averages 100 samples, subtracts bias\nif ({{ instance }}.isConnected()) { /* sensor is responding on the bus */ }"
+  },
+  "microphone": {
+   "actions": [],
+   "category": "audio",
+   "caution": "",
+   "class": "Microphone",
+   "description": "I2S MEMS microphone (ICS-43434) for sound-level detection and audio capture.\n24-bit samples at 16 kHz. Spans TWO adjacent ports \u2014 placement requires an\nadjacent pair like [1, 2] / [3, 4]. A background FreeRTOS task reads the I2S\nbus (on I2S_NUM_1, so it won't clash with the speaker on I2S_NUM_0) and caches\nthe RMS/peak level, so the getters return instantly. Line A1 = LR select,\nLine B1 = WS, Line A2 = SCK, Line B2 = SD.",
+   "events": [
+    {
+     "description": "Current RMS sound level, 0-32767. Emitted every 250 ms.",
+     "key": "{{ instance }}_level",
+     "type": "sensor",
+     "unit": null,
+     "value_type": "int"
+    }
+   ],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "getPeakAmplitude",
+    "getRecording",
+    "getRecordingLength",
+    "getSamples",
+    "getSoundLevel",
+    "isRecording",
+    "isSoundDetected",
+    "setChannel",
+    "startRecording",
+    "stopRecording"
+   ],
+   "name": "I2S MEMS Microphone (ICS-43434)",
+   "size": 2,
+   "usage": "// Public API of Microphone \u2014 the instance is `{{ instance }}`.\n// begin() ran in setup() and started a background capture task, so the level\n// getters below return the latest cached value instantly (never block). If you\n// leave loop empty, the module already streams a `level` event every 250 ms.\n\n// --- sound level / detection ---\nint16_t level = {{ instance }}.getSoundLevel();          // RMS, 0..32767\nif ({{ instance }}.isSoundDetected(500)) { /* above threshold */ }\nint16_t peak = {{ instance }}.getPeakAmplitude();        // peak since last read (resets)\n\n// --- raw samples (max BUFFER_SAMPLES = 512 per call) ---\nint16_t buf[512];\nint n = {{ instance }}.getSamples(buf, 512);\n\n// --- record to a heap buffer (up to ~3 s at 16 kHz), then play back ---\n{{ instance }}.startRecording();\n// ... let time pass in your loop (non-blocking) ...\n{{ instance }}.stopRecording();\nconst int16_t* rec = {{ instance }}.getRecording();      // MUST be const\nint len = {{ instance }}.getRecordingLength();           // sample count\n// Pair with a speaker on another port for playback: spk.writeSamples(rec, len);"
+  },
+  "neopixel": {
+   "actions": [
+    {
+     "description": "Object {\"r\": 0-255, \"g\": 0-255, \"b\": 0-255} sets every LED to that colour.",
+     "key": "{{ instance }}_fill",
+     "value_type": "json"
+    },
+    {
+     "description": "Object {\"index\": 0-8, \"r\": ..., \"g\": ..., \"b\": ...} sets one LED.",
+     "key": "{{ instance }}_pixel",
+     "value_type": "json"
+    },
+    {
+     "description": "Turn every LED off.",
+     "key": "{{ instance }}_clear",
+     "value_type": "null"
+    }
+   ],
+   "category": "led",
+   "caution": "",
+   "class": "NeoPixelGrid",
+   "description": "3x3 grid of WS2812B / SK6812 LEDs. Drives both Line A (RGB) and Line B\n(RGBW) so the same driver works for both module revisions. Accepts a\n'pixel' action ({index, r, g, b}) and a 'fill' action ({r, g, b}).",
+   "events": [],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "clear",
+    "getBrightness",
+    "getPixelColor",
+    "setAll",
+    "setBrightness",
+    "setColumn",
+    "setPixel",
+    "setPixelXY",
+    "setRow",
+    "show",
+    "xyToIndex"
+   ],
+   "name": "NeoPixel 3x3 Grid",
+   "size": 1,
+   "usage": "// Public API of NeoPixelGrid \u2014 the instance is `{{ instance }}`.\n// 3x3 grid (9 LEDs). Always call show() after staging colors.\n// Indices 0-8, or row/col 0-2. Brightness is clamped to 20% (51/255).\n{{ instance }}.setAll(255, 0, 0);                   // every LED red\n{{ instance }}.setPixel(4, 0, 255, 0);              // centre LED green\n{{ instance }}.setPixelXY(0, 2, 0, 0, 255);         // top-right blue\n{{ instance }}.setRow(1, 80, 80, 80);               // middle row dim white\n{{ instance }}.setColumn(0, 0, 0, 0);               // left column off\n{{ instance }}.clear();                             // stage all-off\n{{ instance }}.show();                              // push to LEDs (do this!)\n{{ instance }}.setBrightness(30);                   // 0..51 effective"
+  },
+  "pir": {
+   "actions": [],
+   "category": "sensor",
+   "caution": "",
+   "class": "PIRSensor",
+   "description": "AM312 mini passive-infrared motion sensor. A single digital OUT line goes\nHIGH for ~2 s when motion is seen within its ~3-5 m / 100\u00b0 cone, then\nreturns LOW. Hardware-debounced \u2014 no pull-ups needed. Uses only Line A.\nThe sensor needs ~30 s after power-on to thermally stabilise; isWarmedUp()\nreports when readings can be trusted.",
+   "events": [
+    {
+     "description": "1 on motion start (rising edge), 0 when motion clears (~2 s later). Suppressed during the 30 s warmup.",
+     "key": "{{ instance }}",
+     "type": "sensor",
+     "unit": null,
+     "value_type": "int"
+    }
+   ],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "isMotionDetected",
+    "isWarmedUp",
+    "timeSinceLastMotion",
+    "update",
+    "wasCleared",
+    "wasTriggered"
+   ],
+   "name": "PIR Motion Sensor (AM312)",
+   "size": 1,
+   "usage": "// Public API of PIRSensor \u2014 the instance is `{{ instance }}`.\n// IMPORTANT: call update() once at the top of loop() BEFORE the checks, or\n// edge detection never fires. (If you leave loop empty, the module already\n// emits motion events for you \u2014 only add this if you want custom behaviour.)\n{{ instance }}.update();\n\nif ({{ instance }}.wasTriggered()) { /* motion just started (edge, fires once) */ }\nif ({{ instance }}.wasCleared())   { /* motion just ended (edge, ~2 s later)   */ }\nbool now = {{ instance }}.isMotionDetected();      // level: motion right now?\n\nif (!{{ instance }}.isWarmedUp()) { /* first ~30 s: ignore, sensor settling */ }\nunsigned long ms = {{ instance }}.timeSinceLastMotion();   // ULONG_MAX if never"
+  },
+  "robot_arm": {
+   "actions": [
+    {
+     "description": "Move one joint: {\"id\":1-6,\"position\":0-4095,\"timeMs\":ms}. timeMs is optional (0 = as fast as the servo goes). Fails if the servo does not answer.",
+     "key": "{{ instance }}_move_joint",
+     "value_type": "json"
+    },
+    {
+     "description": "Move all 6 joints: {\"positions\":[p1..p6],\"timeMs\":ms} (0-4095 each). timeMs is optional (0 = as fast as the servos go). The move is broadcast: an ok means it was sent, not that the arm got there. Check with {{ instance }}_read.",
+     "key": "{{ instance }}_move_all",
+     "value_type": "json"
+    },
+    {
+     "description": "Center all joints to 2048 over the given time in ms (1000 if no value is given).",
+     "key": "{{ instance }}_center_all",
+     "value_type": "int"
+    },
+    {
+     "description": "Enable (true) or disable (false) holding torque on all joints.",
+     "key": "{{ instance }}_set_torque",
+     "value_type": "bool"
+    },
+    {
+     "description": "Load a saved recording from flash slot 0-9 and play it back.",
+     "key": "{{ instance }}_play_slot",
+     "value_type": "int"
+    },
+    {
+     "description": "Read all 6 joints. Answers with the event {{ instance }}_positions = [p1..p6] (0-4095 each, -1 for a joint that did not answer), sent before the acknowledgement. Fails if no joint answers.",
+     "key": "{{ instance }}_read",
+     "value_type": "null"
+    }
+   ],
+   "category": "robotics",
+   "caution": "The Robot Arm module passes the board's high-voltage rail (labelled 12 V) straight to\nthe servos. That rail is fed by a power module (the power jack module, or the USB-C PD power\nmodule) and carries whatever that module is given: nothing regulates it, and the\nstandard USB-C module does not feed it. So the supply\nmust match the arm. SO-101 arms come in a 12 V and a 5 V version: use a 12 V supply\nfor the 12 V arm and a 5 V supply for the 5 V arm. A 12 V supply on a 5 V arm damages\nthe servos. Never plug more than 12 V into the jack. Check the voltage printed on the\nsupply and which arm you have before you connect anything.",
+   "class": "RobotArm",
+   "description": "6-axis robot-arm controller for the SO-101 / SO-ARM100 (Feetech STS3215 servos).\nNeeds a UART port.\nSingle port using half-duplex UART at 1 Mbps to drive 6 daisy-chained servos\n(IDs 1-6, position 0-4095, center 2048, \u22480-240\u00b0). Supports per-joint and\nsynchronized moves, position/temperature read-back, motion recording &\nplayback, and 10 flash save-slots. TX on Line A, RX on Line B. **The module\npasses the board's high-voltage rail to the servos: the arm gets whatever supply\nis plugged into the power jack module (or comes from the USB-C PD power module), unregulated. The supply must match the arm\n(12 V or 5 V). See `caution`.**",
+   "events": [
+    {
+     "description": "All 6 joint positions [p1..p6] (-1 = that joint did not answer), sent in answer to the {{ instance }}_read action.",
+     "key": "{{ instance }}_positions",
+     "type": "sensor",
+     "unit": null,
+     "value_type": "json"
+    }
+   ],
+   "interface": "uart",
+   "methods": [
+    "begin",
+    "captureFrame",
+    "centerAll",
+    "getFrameCount",
+    "getFrames",
+    "getJointCount",
+    "getRecordingInterval",
+    "isPlaying",
+    "isRecording",
+    "loadFromSlot",
+    "moveAll",
+    "moveJoint",
+    "pingJoint",
+    "playRecording",
+    "printDiagnostics",
+    "readAll",
+    "readJoint",
+    "readStatus",
+    "readTemperature",
+    "readVoltage",
+    "saveToSlot",
+    "scanJoints",
+    "setTorque",
+    "setTorqueAll",
+    "startRecording",
+    "stopPlayback",
+    "stopRecording"
+   ],
+   "name": "SO-101 / SO-ARM100 6-Axis Robot Arm",
+   "size": 1,
+   "usage": "// Public API of RobotArm \u2014 the instance is `{{ instance }}`.\n// begin() + setTorqueAll(true) ran in setup(). Positions are 0-4095\n// (center 2048, \u22480-240\u00b0); joint IDs are 1-6.\n// POWER: the servos get whatever supply is plugged into the power jack module\n// (board high-voltage rail, unregulated; the standard USB-C module does not feed it). Match it to the\n// arm: 12 V supply for a 12 V arm, 5 V for a 5 V arm. 12 V on a 5 V arm damages it.\n\n// --- move ---\n{{ instance }}.moveJoint(1, 2048, 800);           // joint 1 -> center over 800 ms\nuint16_t pose[6] = {2048,2048,2048,2048,2048,2048};\n{{ instance }}.moveAll(pose, 1000);               // synchronized move (uint16_t[6]!)\n{{ instance }}.centerAll(1000);                   // all joints to 2048\n\n// --- read (declare position buffers as uint16_t[6], NOT int[]) ---\nuint16_t pos[6];\nint ok = {{ instance }}.readAll(pos);             // returns count of good reads\nint p1 = {{ instance }}.readJoint(1);             // 0-4095, or -1 on error\nint tC = {{ instance }}.readTemperature(1);       // \u00b0C, -1 on error\n\n// --- torque ---\n{{ instance }}.setTorque(3, false);               // release one joint (hand-pose it)\n{{ instance }}.setTorqueAll(true);\n\n// --- record a motion, then replay it ---\n{{ instance }}.startRecording(100);               // capture every 100 ms\n// call {{ instance }}.captureFrame(); each loop while recording, then:\n{{ instance }}.stopRecording();\n{{ instance }}.playRecording(100);                // 100 = normal, 50 = half, 200 = double\n{{ instance }}.saveToSlot(0);                     // persist to flash (slots 0-9)\n{{ instance }}.loadFromSlot(0);"
+  },
+  "rotary_encoder": {
+   "actions": [],
+   "category": "input",
+   "caution": "",
+   "class": "RotaryEncoder",
+   "description": "18-step quadrature rotary encoder with a push-button switch and a 12-LED\nNeoPixel indicator ring. Spans TWO adjacent ports \u2014 placement requires an\nadjacent pair like [1, 2] or [3, 4] on the 8-port board. Uses interrupts\nfor missed-step-free decoding at any speed, plus a background FreeRTOS\ntask that renders the ring indicator in ~1ms regardless of loop timing.",
+   "events": [
+    {
+     "description": "Cumulative knob position (acceleration applied). Emitted on every detent of rotation.",
+     "key": "{{ instance }}",
+     "type": "sensor",
+     "unit": null,
+     "value_type": "int"
+    },
+    {
+     "description": "Emitted with value=1 each time the knob's push-button is pressed.",
+     "key": "{{ instance }}_btn",
+     "type": "button",
+     "unit": null,
+     "value_type": "int"
+    }
+   ],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "enableRing",
+    "getDirection",
+    "getPosition",
+    "isPressed",
+    "resetPosition",
+    "setAcceleration",
+    "setPosition",
+    "setRingBrightness",
+    "setRingColor",
+    "setRingPosition",
+    "update",
+    "wasPressed",
+    "wasRotatedCCW",
+    "wasRotatedCW"
+   ],
+   "name": "Rotary Encoder Knob",
+   "size": 2,
+   "usage": "// Public API of RotaryEncoder \u2014 the instance is `{{ instance }}`.\n// Position decoding is interrupt-driven and missed-step-free; call update()\n// each loop only for button edge detection.\n{{ instance }}.update();\n\nif ({{ instance }}.wasRotatedCW())  { /* CW edge since last call */ }\nif ({{ instance }}.wasRotatedCCW()) { /* CCW edge since last call */ }\nint32_t pos = {{ instance }}.getPosition();        // accelerated counter\n{{ instance }}.resetPosition();                    // zero it\n{{ instance }}.setAcceleration(true, 5);           // off, or multiplier 1..N\n\nif ({{ instance }}.wasPressed()) { /* button down edge */ }\nif ({{ instance }}.isPressed())  { /* polled level */ }\n\n// Optional indicator ring (12 NeoPixels). Position auto-follows the knob.\n{{ instance }}.setRingColor(255, 0, 0);            // ring colour\n{{ instance }}.setRingBrightness(80);              // 0..255 (Adafruit scale)\n{{ instance }}.enableRing(false);                  // turn ring off entirely\n{{ instance }}.setRingPosition(3.5);               // override knob coupling"
+  },
+  "scd40_air_quality": {
+   "actions": [],
+   "category": "sensor",
+   "caution": "",
+   "class": "SCD40",
+   "description": "Sensirion SCD40 NDIR CO2 sensor over I2C (address 0x62) \u2014 true CO2\nmeasurement (400-2000 ppm typical), with temperature and humidity returned\nas calibration byproducts. A background FreeRTOS task polls the sensor at\nits native 5 s cadence and caches the reading, so the getters return\ninstantly and never block your loop. The first valid reading lands ~5 s\nafter boot. Single port: SDA on Line A, SCL on Line B.",
+   "events": [
+    {
+     "description": "CO2 concentration in ppm. Reads 0 until the first measurement lands (~5 s after boot). Emitted every 5 s (cached reading).\n",
+     "key": "{{ instance }}_co2",
+     "type": "sensor",
+     "unit": "ppm",
+     "value_type": "int"
+    },
+    {
+     "description": "Temperature in degrees Celsius. Emitted every 5 s (cached reading).",
+     "key": "{{ instance }}_temperature",
+     "type": "sensor",
+     "unit": "C",
+     "value_type": "float"
+    },
+    {
+     "description": "Relative humidity in %RH. Emitted every 5 s (cached reading).",
+     "key": "{{ instance }}_humidity",
+     "type": "sensor",
+     "unit": "%",
+     "value_type": "float"
+    }
+   ],
+   "interface": "i2c",
+   "methods": [
+    "begin",
+    "isConnected",
+    "isReady",
+    "readCO2",
+    "readHumidity",
+    "readTemperature"
+   ],
+   "name": "SCD40 Air Quality Sensor (CO2)",
+   "size": 1,
+   "usage": "// Public API of SCD40 \u2014 the instance is `{{ instance }}`.\n// begin() ran in setup() and started a background polling task, so the\n// getters below return the latest cached value instantly (no blocking).\n// If you leave loop empty, the module already streams co2 + temperature +\n// humidity events every 5 s \u2014 only add code here for custom behaviour.\nuint16_t ppm = {{ instance }}.readCO2();           // 0 until first reading\nfloat c      = {{ instance }}.readTemperature();   // degrees Celsius\nfloat rh     = {{ instance }}.readHumidity();      // % relative humidity\n\n// readCO2() returns 0 for the first ~5 s. Guard any UI with isReady():\nif ({{ instance }}.isReady()) { /* a real measurement has landed */ }\nif ({{ instance }}.isConnected()) { /* sensor is responding on the bus */ }\n\n// The sensor only updates every 5 s \u2014 polling faster just re-reads the\n// same cached value. Indoor CO2 reference:\n//   <800 ppm fresh | 800-1200 acceptable | >1500 poor | >2000 uncomfortable\n//\n// Edge-trigger with hysteresis so it fires once per crossing, not every loop:\n//   static bool stuffy = false;\n//   if (!stuffy && ppm > 1200) { stuffy = true;  /* crossed into poor air */ }\n//   else if (stuffy && ppm < 1000) { stuffy = false; /* recovered */ }"
+  },
+  "speaker": {
+   "actions": [
+    {
+     "description": "RTTTL melody string, e.g. \"tune:d=4,o=5,b=140:c,e,g,2c6\". Plays in the background.",
+     "key": "{{ instance }}_play_rtttl",
+     "value_type": "string"
+    },
+    {
+     "description": "Volume 0.0 (silent) to 1.0 (max). 0.3-0.5 is comfortable; 1.0 clips.",
+     "key": "{{ instance }}_set_volume",
+     "value_type": "float"
+    },
+    {
+     "description": "Stop any sound immediately.",
+     "key": "{{ instance }}_stop",
+     "value_type": "null"
+    },
+    {
+     "description": "Base64-encoded 16-bit mono PCM at 16 kHz, at most ~3000 base64 characters per action (lines are capped at 4096). The host decodes an MP3/WAV, resamples to 16 kHz mono, and sends chunks. Blocks until the chunk has played.\n",
+     "key": "{{ instance }}_play_pcm",
+     "value_type": "string"
+    }
+   ],
+   "category": "audio",
+   "caution": "",
+   "class": "Speaker",
+   "description": "3W Class-D I2S audio amplifier (MAX98357A) for tones, chords, and full\nmelodies. Spans TWO adjacent ports \u2014 placement requires an adjacent pair\nlike [1, 2] / [3, 4] (8-port) or [1, 2] \u2026 [13, 14] (14-port). Audio plays\nin a background FreeRTOS task on Core 0, so the main loop never blocks. The\nRTTTL parser lets you play ringtone-style melody strings with a single call.",
+   "events": [],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "getVolume",
+    "isPlaying",
+    "playChord",
+    "playNote",
+    "playPCMBase64",
+    "playRTTTL",
+    "playTone",
+    "setVolume",
+    "stop",
+    "writeSamples"
+   ],
+   "name": "I2S Speaker (MAX98357A)",
+   "size": 2,
+   "usage": "// Public API of Speaker \u2014 the instance is `{{ instance }}`.\n// Audio runs in a background task: every call below returns immediately.\n// begin() + setVolume(0.4f) already ran in setup(); don't play on boot.\n//\n// NOTE_* frequency constants are provided by speaker.h, octaves 3-6:\n//   NOTE_C4, NOTE_CS4 (C#), NOTE_D4 ... NOTE_B4, NOTE_C5 ... NOTE_B6, NOTE_REST\n// Comfortable range is NOTE_C4..NOTE_B5 (~260-990 Hz). Above NOTE_C6 gets piercing.\n\n// --- single tone: one sine wave, auto-stops after durationMs ---\n{{ instance }}.playTone(NOTE_A4, 200);             // 440 Hz for 200 ms\n{{ instance }}.playTone(880, 50);                  // raw Hz also fine\n\n// --- melodies: call playNote() back-to-back (15% gap between notes) ---\n{{ instance }}.playNote(NOTE_C5, 90);              // success motif:\n{{ instance }}.playNote(NOTE_E5, 90);              //   C - E - G\n{{ instance }}.playNote(NOTE_G5, 120);\n\n// --- chords: up to 6 simultaneous frequencies ---\nfloat triad[] = { NOTE_C4, NOTE_E4, NOTE_G4 };\n{{ instance }}.playChord(triad, 3, 400);\n\n// --- RTTTL: play a whole ringtone/jingle from one string (non-blocking) ---\n{{ instance }}.playRTTTL(\"scale:d=4,o=5,b=160:c,d,e,f,g,a,b,2c6\");\n\n// --- control ---\n{{ instance }}.setVolume(0.5f);                    // 0.0 .. 1.0 (1.0 clips)\nif ({{ instance }}.isPlaying()) { /* still sounding */ }\n{{ instance }}.stop();                             // silence immediately\n\n// GUIDELINES (important for good-sounding firmware):\n//  - Prefer short 2-4 note playNote() motifs over bare sustained tones.\n//  - Only play in response to events; never call playTone() unguarded in loop().\n//  - Do NOT play on boot. Keep tone durations <= ~2000 ms.\n//  - Never use Arduino tone()/noTone() \u2014 they don't drive I2S."
+  },
+  "st7735_tft": {
+   "actions": [],
+   "category": "display",
+   "caution": "",
+   "class": "ST7735_TFT",
+   "description": "160x80 pixel colour TFT (ST7735 controller, SPI). Spans TWO adjacent ports.\n65K colours (RGB565), text, shapes, and a flicker-free canvas buffer. Two\ndrawing modes: canvas mode (default \u2014 clear/draw/display, best for\ndashboards) and direct mode (setDirectMode(true), best for games/animation).\nPin map: DC on Line A1, CS on Line B1, MOSI on Line A2, SCLK on Line B2.",
+   "events": [],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "clear",
+    "display",
+    "displayRegion",
+    "displayText",
+    "drawCircle",
+    "drawLine",
+    "drawPixel",
+    "drawRect",
+    "fillCircle",
+    "fillRect",
+    "fillScreen",
+    "height",
+    "print",
+    "println",
+    "setCursor",
+    "setDirectMode",
+    "setFont",
+    "setRotation",
+    "setSPISpeed",
+    "setTextColor",
+    "setTextSize",
+    "width"
+   ],
+   "name": "ST7735 TFT Color Display (160x80)",
+   "size": 2,
+   "usage": "// Public API of ST7735_TFT \u2014 the instance is `{{ instance }}`. 160x80 px.\n// begin() + clear() already ran in setup(). Colour constants live on the\n// class: ST7735_TFT::COLOR_BLACK / _WHITE / _RED / _GREEN / _BLUE / _CYAN /\n// _MAGENTA / _YELLOW / _ORANGE  (RGB565 uint16_t \u2014 raw values also accepted).\n\n// --- CANVAS MODE (default): clear -> draw -> display. Flicker-free. ---\n{{ instance }}.clear();\n{{ instance }}.setCursor(4, 4);\n{{ instance }}.setTextSize(1);\n{{ instance }}.setTextColor(ST7735_TFT::COLOR_WHITE);\n{{ instance }}.print(\"Hello\");                 // print() takes ONE arg only\n{{ instance }}.displayText(\"42C\", 4, 30, 2, ST7735_TFT::COLOR_RED); // text+pos+size+colour\n{{ instance }}.display();                       // push the frame to the screen\n\n// --- ANIMATION: display() pushes all 160x80 px (25.6 kB) over SOFTWARE SPI\n// and costs ~270 ms. Do NOT call it every frame -- you will watch the panel\n// repaint. Instead paint the static backdrop once, then push only the box\n// that changed (cost scales with area: a 44x52 box is ~16x cheaper, ~17 ms):\n{{ instance }}.displayRegion(x, y, w, h);       // push ONLY this rectangle\n// Repaint the box spanning the sprite's OLD and NEW positions so the old\n// one is erased in the same push. ~30 fps is achievable this way.\n\n// Software SPI clock (default 40 MHz). Lower it for screens on noisy pins\n// -- on ESP32-S3, GPIO 33-37 share the octal flash/PSRAM bank:\n{{ instance }}.setSPISpeed(10000000);\n\n// --- shapes ---\n{{ instance }}.fillScreen(ST7735_TFT::COLOR_BLACK);\n{{ instance }}.drawRect(10, 10, 40, 20, ST7735_TFT::COLOR_GREEN);\n{{ instance }}.fillRect(10, 10, 40, 20, ST7735_TFT::COLOR_BLUE);\n{{ instance }}.drawCircle(80, 40, 15, ST7735_TFT::COLOR_YELLOW);\n{{ instance }}.fillCircle(80, 40, 15, ST7735_TFT::COLOR_CYAN);\n{{ instance }}.drawLine(0, 0, 159, 79, ST7735_TFT::COLOR_WHITE);\n{{ instance }}.drawPixel(5, 5, ST7735_TFT::COLOR_RED);\n\n// --- DIRECT MODE (games/animation): set once in setup, then never call ---\n// clear()/fillScreen()/display() in the loop. Erase old position with a\n// small fillRect(bg), then draw at the new position.\n{{ instance }}.setDirectMode(true);\n\nint16_t w = {{ instance }}.width();             // 160\nint16_t h = {{ instance }}.height();            // 80\n{{ instance }}.setRotation(1);                   // 0-3\n\n// To position text: setCursor(x,y) THEN print(value) \u2014 never pass coords to print()."
+  },
+  "stepper_motor": {
+   "actions": [],
+   "category": "motor",
+   "caution": "",
+   "class": "StepperMotor",
+   "description": "Bipolar stepper motor (e.g. NEMA 17) driven by a TMC2209 in STEP/DIR mode.\nSpans TWO adjacent ports: STEP on Line A and DIR on Line B of the primary\nport, ENABLE on Line A of the secondary port. Requires an EXTERNAL motor\nsupply (typically 12-24 V) wired to the driver board \u2014 the SDK can't detect\na missing VMOT, the symptom is \"calls succeed but the motor doesn't move\".\nAll motion calls are BLOCKING (they return once the pulses are issued).",
+   "events": [],
+   "interface": "gpio",
+   "methods": [
+    "begin",
+    "disable",
+    "enable",
+    "getPosition",
+    "isEnabled",
+    "moveSteps",
+    "moveTo",
+    "resetPosition",
+    "setDirection",
+    "setReversed",
+    "step"
+   ],
+   "name": "Stepper Motor Driver (NEMA 17 / TMC2209)",
+   "size": 2,
+   "usage": "// Public API of StepperMotor \u2014 the instance is `{{ instance }}`.\n// begin() already ran in setup(); the motor starts DISABLED (coils released).\n// All moves are BLOCKING and auto-enable the driver. stepsPerSecond is\n// clamped to [1, 20000]; 200-2000 is smooth. Position is in microsteps,\n// counted from power-on / resetPosition() \u2014 there is no homing switch.\n\n// --- relative moves ---\n{{ instance }}.moveSteps(1600, 800);     // +1600 microsteps fwd @ 800 sps (~1 rev at 1/8)\n{{ instance }}.moveSteps(-800, 1200);    // reverse 800 microsteps\n\n// --- direction-then-step ---\n{{ instance }}.setDirection(true);       // true = forward\n{{ instance }}.step(400, 600);           // 400 microsteps in current direction\n\n// --- absolute positioning (relative to resetPosition/power-on) ---\n{{ instance }}.resetPosition();          // call at a known mechanical reference\n{{ instance }}.moveTo(3200, 1000);       // go to absolute position 3200\nint32_t pos = {{ instance }}.getPosition();\n\n// --- power / config ---\n{{ instance }}.enable();                 // energise coils (holding torque)\n{{ instance }}.disable();                // release coils when idle (saves heat/power)\n{{ instance }}.setReversed(true);        // flip what \"forward\" means for this motor\n\n// Never digitalWrite() the STEP/DIR/ENABLE pins directly \u2014 use these methods."
+  }
+ },
+ "sdk_version": "1.0.0a11"
+}

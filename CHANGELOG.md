@@ -4,6 +4,149 @@ All notable changes to Atech Atelier are listed here. Versions follow
 [Semantic Versioning](https://semver.org). Before 1.0.0, any release may
 change behaviour.
 
+## [Unreleased]
+
+### Agent: products that work (Atech SDK)
+
+- An Atech product now gets its **firmware** as well as its CAD: beside
+  model.py the agent writes a `project.yaml` for the
+  [Atech SDK](https://github.com/atechdotdev/python-sdk) (`atech build`,
+  `atech upload`). It lists every module on the ports the build used, and
+  its `code:` block makes the product do its job.
+- Every workspace gets `reference/ATECH_FIRMWARE.md`, which is generated from
+  the SDK's own catalog: each module's SDK id, methods, events, actions and
+  cautions, plus the ports and port pairs the firmware accepts. The installed
+  `atech` package is used when Studio's Python has it. Otherwise the
+  snapshot shipped with the kit is used (SDK 1.0.0a11).
+- The design levels' MODULE PLAN names what the firmware does with each
+  module.
+- `./check` prints the build's project.yaml modules block and FIRMWARE
+  warnings: a port the SDK refuses, a project.yaml that does not match the
+  build, and code that reads Serial, blocks in `delay()`, uses GPIO numbers
+  or calls a method the SDK does not have. These are warnings only, never a
+  failure. Switch the whole feature off with `ATECH_PROMPT_OFF=firmware`.
+
+### Modules: the SimReady models
+
+- The module library now comes from Atech's
+  [atech-module-simready](https://huggingface.co/datasets/atechdev/atech-module-simready)
+  dataset (the module-renders v1.7 CAD). Every module but USB-C is updated.
+- The **knob** has pins now, so it plugs into the board like any module
+  instead of being placed by hand.
+- Four new modules: **PIR motion sensor**, **CO2 sensor (SCD40)**, **robot
+  arm integrator** and **stepper motor driver**. Atech has no CAD of these
+  yet: their case, board and pins are real, but the parts on top are
+  placeholders. The Modules page marks them "derived".
+- **Connect by cable**: the Modules page can add a module off the board,
+  beyond the picked port, wired to that port by a ribbon cable. Move it
+  where the design needs it, then press Remake cable. Every module can be
+  connected this way.
+
+### Agent: design levels
+
+- A new product is designed in **nine levels, one agent turn each**, the
+  way a product design studio works: brief and rough volume, packaging the
+  Atech board, surfaces and edges, the shell, modules with their openings
+  and cable routes, 3D details, colour and material, refinement, and
+  product ready. Each level has a checklist and a gate, and ends on a
+  passing build before Atelier sends the next one, so the product improves
+  step by step and a failure costs one level, not the whole design. The
+  turn card shows the level ("Level 3/9: Shape the surfaces and smooth the
+  edges"). Stop, a failed level, or a message of your own ends the run.
+- A new product starts from the closest product example (toy car, desk
+  robot, smart speaker, bedside lamp, handheld console), which already
+  builds, so the 3D view shows a whole product at once instead of after
+  10-20 minutes.
+- The agent's instructions now set a real-world quality standard: the result
+  must stand next to a real product of its kind.
+- **Module plan.** Level 1's brief now plans the Atech modules a real
+  product of its kind has, even ones the user didn't name, such as eyes
+  (a distance sensor, or lights or the screen as a face), motors at the
+  wheel, arm or fan they drive, lights, buttons and a speaker. Each one has
+  a place on the product. A module whose job is at a place is cabled there
+  with `ap.cable`, routed inside the body, instead of sitting wherever its
+  port is. Level 2 places every module in the plan, and its gate checks
+  them. `./check` warns when the board carries no module or only the USB-C
+  (`ATECH_PROMPT_OFF=module_plan` turns the plan off).
+- `cad.detail("name")`: a detail that fails with a geometry error is skipped
+  and listed by `./check` instead of failing the whole build.
+- Each change can be switched off on its own for comparison
+  (`ATECH_PROMPT_OFF=levels,seed_fork,real_world`). The eval harness drives
+  the same levels, saves a render per level, and reports the level reached.
+
+### macOS
+
+- A macOS app for Apple silicon and Intel, built by
+  `branding/build_macos.sh` from FreeCAD 1.1.3's official macOS disk images
+  (pinned by sha256; refused unless the FreeCAD Project Association's
+  signature on FreeCAD.app verifies). It carries the same Atech workbench,
+  theme, module library and notices as the AppImage, passes the same build
+  gate (`verify_tree.py`, now platform-aware), and lists every change in
+  `ATECH_CHANGES.txt`. FreeCAD's program files and libraries keep their own
+  signatures; only the bundle is re-signed (ad-hoc, or a Developer ID with
+  notarization when configured).
+- Design scripts run in the macOS sandbox (`sandbox-exec`): no network, no
+  view of the home folders, `/Volumes` or the temp folders, writes only to
+  the chat's folder, and `./check` read-only. Measured with a hostile
+  model.py through both the app's build and `./check`. On Linux, bubblewrap
+  as before.
+- Claude Code runs started by the app are stopped when the app quits or
+  crashes (macOS has no `PR_SET_PDEATHSIG`; a small watcher does it).
+- Signing in opens Terminal.app; the bundle's own `bin/` and `Mod/` folders
+  no longer leak into the `PATH` of Claude Code and the in-app terminal.
+- The app never writes Python bytecode into its own bundle, which would
+  break its code signature.
+
+### Motors
+
+- The **DC motor** module is offered on the Atech modules page and to the
+  agent. It always seated (one connector), but the library filed it under
+  `motor` and both only listed `module`. Its description now says what the
+  hardware is: the N20 gearmotor sits inside the housing and its shaft
+  comes out of the end face.
+- A **NEMA 17 stepper motor** (`nema17_stepper`), the motor Atech's stepper
+  driver drives, as an off-board part: placed with
+  `atech_modules.load_module`, never seated. Its flange, M3 hole square,
+  pilot and shaft are the NEMA standard; the body length and shaft length
+  are stated as choices. The mesh is generated by `projects/gen_nema17.py`.
+- The agent's API card lists off-board parts (the wheel, the NEMA 17) with
+  their measured sizes and the call that places them, instead of as
+  modules that "cannot be seated".
+
+### Sidebar, as on studio.atech.dev
+
+- A project picker at the top of the sidebar. Its menu lists the open
+  projects, recent files, a new project, the Atech starter projects and
+  Open file. Each project is a document with its own chat, so switching
+  projects switches the chat.
+- Two views instead of three tabs: **3D CAD** (the chat with the agent; the
+  **Parts** button beside it shows the part tree) and **Atech modules**. The
+  switch is Studio's two-tab pill with the sliding black thumb.
+- The Atech modules page draws the board the way Studio does: the board's
+  own plan-view picture with its port numbers, and each placed module's
+  picture seated in its port and facing outward (Studio's sprites, rendered
+  from the module models). A port you pick or point at gets a ring.
+- The 3D view draws the board and modules as Studio does: the real models
+  (atech-module-renders v1.5) with their own materials, meaning black
+  shells, navy PCBs, gold pins, clear lids, lit LEDs, the board's printed
+  port numbers and the "Atech" screen. It's display only: the STL meshes
+  every fit check measures are unchanged, a click still selects the
+  module, and nothing is written into your document. Each model is placed
+  on its STL by a measured offset (tests/test_board_look.py). The knob's
+  model is taller than the knob the checks measure (38.1 vs 29.9 mm).
+  Turn the look off with the StudioLook preference.
+
+### Install
+
+- `install.sh`: one command for macOS and Linux
+  (`curl -fsSL .../install.sh | bash`). It downloads the newest release for
+  this computer, installs nothing unless the file matches the release's
+  `SHA256SUMS` (and, on macOS, the app's signature verifies), needs no sudo,
+  and checks for Claude Code. `--uninstall` removes the app and keeps your
+  data.
+- The release workflow builds the macOS disk images next to the AppImage
+  and publishes one `SHA256SUMS` for all of them.
+
 ## [0.1.1] - 2026-10-04 (preview)
 
 Credits and licence notices corrected. No change to the bundled components:

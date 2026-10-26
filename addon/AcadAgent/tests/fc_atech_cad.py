@@ -701,6 +701,27 @@ def t_socket_opening():
     msg = raises(cad.socket_opening, behind, usb)
     check("socket_opening: a wall not in front of the mouth raises",
           msg is not None and "in front of" in msg, msg)
+    # R250: the printed wall is the one IN FRONT of the mouth (the centre
+    # ray), not the longest corner run: a 5 mm frame on the plate's outer
+    # face round the mouth (its 3 x 3 hole on the mouth's centre) made the
+    # report say 7.00 mm for this 2 mm plate (desk_robot: 6.12 for 1.05)
+    _tilt, bn = atech_geom.board_tilt(board.Mesh)
+    _dv, P = atech_geom.socket_face(usb.Mesh, bn, [
+        list(usb.Placement.Rotation.multVec(cad.V(e)))
+        for e in ((1, 0, 0), (0, 1, 0), (0, 0, 1))])
+    cy, cz = 0.5 * (P[:, 1].min() + P[:, 1].max()), 0.5 * (P[:, 2].min() + P[:, 2].max())
+    x_out = ub.XMin - 6.5
+    frame = Part.makeBox(5.0, 30.0, 30.0, cad.V((x_out - 5.0, cy - 15, cz - 15))).cut(
+        Part.makeBox(7.0, 3.0, 3.0, cad.V((x_out - 6.0, cy - 1.5, cz - 1.5))))
+    framed = cad.fuse_one(plate, frame)
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        cad.socket_opening(framed, usb)
+    said = buf.getvalue()
+    check("socket_opening: reports the 2 mm wall in front of the mouth, not the "
+          "7 mm corner run", "through a 2.00 mm wall" in said, said)
     light = ap.seat(doc, "light", 2)
     msg = raises(cad.socket_opening, plate, light)
     check("socket_opening: a module with no socket mouth raises",

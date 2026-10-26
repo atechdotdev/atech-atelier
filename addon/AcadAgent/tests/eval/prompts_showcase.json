@@ -1,0 +1,27 @@
+{
+  "_doc": [
+    "SHOWCASE set: one-line product prompts for the end-to-end goal (one short prompt -> a complete product with real Atech modules and a designed body around them). Expectations are minimal; quality is graded by hand from render.png and transcript.txt.",
+    "Run with: run_eval.py --set showcase   (outputs <tag>_showcase_<n>.*).",
+    "Ids are unique across ALL sets (run_eval.load_expectations): the toy car is showcase_toy_car (R243), because the core set already has toy_car - the run showcasebase_showcase_1 saved it as toy_car."
+  ],
+  "prompts": [
+    {"id": "showcase_toy_car", "prompt": "a toy car",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "desk_robot", "prompt": "a little desk robot",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "smart_speaker", "prompt": "a smart speaker",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "handheld_console", "prompt": "a handheld game console",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "rc_tank", "prompt": "an RC tank",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "bedside_lamp", "prompt": "a bedside lamp",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "alarm_clock", "prompt": "an alarm clock",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "weather_station", "prompt": "a weather station",
+     "expect": {"min_objects": 1, "atech_check": true}},
+    {"id": "desk_fan", "prompt": "a small desk fan",
+     "expect": {"min_objects": 1, "atech_check": true}}
+  ]
+}

@@ -338,6 +338,8 @@ class TestR138ActiveDocChat(twp.Case):
         shots = self._fake_capture()
         os.environ["FAKE_SID"] = "sid-mods"
         self.assertTrue(vision.ask_in_chat(panel=self.p))
+        # R500: the composer opens with the view; the user sends.
+        self.send(vision.DEFAULT_QUESTION)
         self.assertTrue(self.idle())
 
         mods_state = self.p._docs[mods.Uid]
@@ -364,6 +366,8 @@ class TestR138ActiveDocChat(twp.Case):
         self.assertTrue(self.idle())
         self._fake_capture()
         self.assertTrue(vision.ask_in_chat(panel=self.p))
+        # R500: the composer opens with the view; the user sends.
+        self.send(vision.DEFAULT_QUESTION)
         self.assertTrue(self.idle())
         self.assertIn("a box", self.bubbles())
 

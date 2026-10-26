@@ -11,9 +11,13 @@ This licence covers:
 - the Atech board and module 3D models (mesh files such as STL and GLB) from
   the Atech module library `models/` directory
 - `presets.yaml` from that same directory
+- the plan-view pictures of the board and modules rendered from those models,
+  in `addon/AcadAgent/acadagent/board_sprites/` (the same pictures
+  studio.atech.dev uses; see `SOURCE.md` there)
 
 In the built application these files are installed under
-`usr/Mod/AcadAgent/data/models/`.
+`usr/Mod/AcadAgent/data/models/` and `usr/Mod/AcadAgent/acadagent/board_sprites/`
+(on macOS, under `Contents/Resources/Mod/AcadAgent/`).
 
 It does **not** cover the application code (`LICENSE`, LGPL-2.1-or-later),
 FreeCAD or its bundled libraries (their own licences, under `usr/share/doc/`),

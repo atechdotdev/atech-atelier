@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="#download-and-run">Download</a> ·
+  <a href="#install">Install</a> ·
   <a href="#common-questions">Common questions</a> ·
   <a href="https://discord.gg/B6kuhUW27S">Discord</a> ·
   <a href="mailto:hello@atech.dev">hello@atech.dev</a> ·
@@ -29,8 +29,9 @@ Atech AI CAD is the official FreeCAD 1.1.3 release, with FreeCAD's program
 files unmodified (no FreeCAD source patched or recompiled), plus the Atech
 workbench, theme and module library. Atech changes only the launcher
 (`AppRun`), the icon and the desktop/AppStream entries, and adds a FreeCAD
-branding file; `ATECH_CHANGES.txt` lists every change. It comes as one Linux
-AppImage (x86_64), and nothing is installed system-wide.
+branding file; `ATECH_CHANGES.txt` lists every change. It comes as a macOS
+app (Apple silicon and Intel) and a Linux AppImage (x86_64), installed with
+one command, and nothing is installed system-wide.
 
 > Atech AI CAD is built on FreeCAD ((C) 2001-2026 FreeCAD contributors,
 > licensed "LGPL2+": the GNU LGPL version 2 or any later version). It is not
@@ -66,26 +67,78 @@ written, built and measured by the agent:
 
 ---
 
-## Requirements
+## Install
 
-- **Linux, x86_64**, with a desktop session.
-- **FUSE 2** to run AppImages directly (most desktops have it). Without it,
-  see [Troubleshooting](#troubleshooting).
+One command, on macOS or Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/atechdotdev/atech-atelier/main/install.sh | bash
+```
+
+It finds the newest release for your computer, downloads it and that
+release's `SHA256SUMS` over HTTPS, and **installs nothing unless the file's
+checksum matches**. It needs no `sudo` and installs only for you:
+
+- **macOS**: the app goes into `/Applications` (or `~/Applications`). Its
+  code signature is checked before it is copied.
+- **Linux**: the AppImage goes into `~/.local/share/atech-atelier/`, with a
+  menu entry and the command `atech-atelier`.
+
+Then it checks for Claude Code (below) and tells you the next step. It does
+not install Claude Code unless you say yes (or pass `--with-claude`).
+
+Prefer to read it first? Download
+[`install.sh`](install.sh), read it, and run `bash install.sh`. Options:
+`--version X.Y.Z`, `--file <download>` (installs a file you downloaded, which
+must have `SHA256SUMS` next to it), `--uninstall`, `--help`.
+
+### Requirements
+
+- **macOS** 11 (Big Sur) or later, on Apple silicon or Intel, **or Linux** x86_64
+  with a desktop session.
 - **Claude Code**, Anthropic's command-line agent, installed and signed in.
   The chat runs on it, and Atech AI CAD does not include it. Claude Code
   needs a Claude account that includes it; see Anthropic's setup page
   (<https://code.claude.com/docs/en/setup>) for which plans do.
-- **Optional: bubblewrap** (`bwrap`). When it is installed, every design
-  script runs in an isolated sandbox: read-only system, no network, no view
-  of your home folder. Without it the app still works, and tells you once
-  what a design script can still reach. On Debian/Ubuntu: `sudo apt install bubblewrap`.
+- Linux only: **FUSE** to run AppImages directly (most desktops have it;
+  the installer tells you if not), and optionally **bubblewrap** (`bwrap`)
+  for the design sandbox (see below). On Debian/Ubuntu:
+  `sudo apt install bubblewrap`.
 
-## Download and run
+**Design scripts run in a sandbox.** Every script the agent writes is built
+in a separate process that can't read your files, can't reach the network
+and can write only to that chat's own folder. On macOS this is the built-in
+macOS sandbox, and nothing needs to be installed. On Linux it's bubblewrap.
+Without bubblewrap the app still works, and tells you once what a design
+script can still reach.
 
-Download `AtechAICAD-<version>-x86_64.AppImage` and `SHA256SUMS` from
-the [Releases page](https://github.com/atechdotdev/atech-atelier/releases),
-then, in the folder you downloaded them to (releases up to 0.1.1 are named
-`AtechAtelier-<version>-x86_64.AppImage`, from before the rename):
+### Download by hand
+
+From the [Releases page](https://github.com/atechdotdev/atech-atelier/releases),
+download the file for your computer and `SHA256SUMS`:
+
+| computer | file |
+|---|---|
+| Mac with Apple silicon (M1 and later) | `AtechAICAD-<version>-macOS-arm64.dmg` |
+| Mac with an Intel processor | `AtechAICAD-<version>-macOS-x86_64.dmg` |
+| Linux x86_64 | `AtechAICAD-<version>-x86_64.AppImage` |
+
+(Releases up to 0.1.1 are named `AtechAtelier-<version>-...`, from before the
+rename. 0.1.1 and earlier are Linux only.)
+
+**macOS**: check the download, then open the disk image and drag the app to
+Applications:
+
+```bash
+shasum -a 256 -c --ignore-missing SHA256SUMS
+```
+
+If macOS says the app "cannot be opened" or that Apple "could not verify" it,
+that release was not notarized by Apple. Install it with
+`bash install.sh --file <the .dmg>` instead, which checks the same checksum and
+the app's signature.
+
+**Linux**:
 
 ```bash
 sha256sum -c --ignore-missing SHA256SUMS
@@ -93,7 +146,10 @@ chmod +x Atech*-x86_64.AppImage
 ./Atech*-x86_64.AppImage
 ```
 
-Atech AI CAD opens on its own workbench with the chat on the right.
+Atech AI CAD opens on its own workbench. The sidebar has a project picker at the
+top (open, recent and new projects), then **3D CAD** (the chat with the agent)
+and **Atech modules** (the board). The app comes with ready-made example
+projects (a toy car, a desk robot, an RC tank and more) in your projects folder.
 
 ## Set up Claude Code (once)
 
@@ -107,7 +163,8 @@ curl -fsSL https://claude.ai/install.sh | bash
 ```
 
 It puts the `claude` command in `~/.local/bin/claude`, the first place Atech
-AI CAD looks. Check that it works:
+AI CAD looks (on macOS too; Homebrew's `/opt/homebrew/bin/claude` and the
+common Node installs are also found). Check that it works:
 
 ```bash
 claude --version
@@ -141,7 +198,7 @@ continue.
 
 ## Atech modules
 
-The **Modules** page and the **Atech → New Project** menu place real Atech
+The **Atech modules** page and the **Atech → New Project** menu place real Atech
 hardware modules (the 14-port board and its plug-in modules) from the library
 inside the app. Nothing extra is downloaded. If the page says *"Atech modules
 are missing from this installation"*, the download is incomplete: download it
@@ -171,7 +228,10 @@ Claude Code also includes what it adds to any session, such as the chat
 folder's path and the name of your operating system. What Anthropic does with
 all of this is set by the terms of your Claude account.
 
-**Stored on your computer:**
+**Stored on your computer** (Linux paths; on macOS, `~/.local/share/Atech AI
+CAD/` is `~/Library/Application Support/Atech AI CAD/`, `~/.config/Atech AI
+CAD/` is `~/Library/Preferences/Atech AI CAD/`, and the cache is under
+`~/Library/Caches/`):
 
 | what | where |
 |---|---|
@@ -218,7 +278,8 @@ computer. The chat needs the internet, because Claude Code runs on
 Anthropic's servers.
 
 **Which systems does it run on?**
-Linux x86_64 for now, as one AppImage. Nothing is installed system-wide.
+macOS (Apple silicon and Intel, macOS 11 or later) and Linux x86_64. The
+same one-line installer works on both, and nothing is installed system-wide.
 
 **Is it free and open source?**
 Atech's code is LGPL-2.1-or-later and FreeCAD is LGPL2+. The Atech board and
@@ -239,6 +300,17 @@ welcome as [GitHub issues](https://github.com/atechdotdev/atech-atelier/issues).
 
 ## Troubleshooting
 
+**macOS: "cannot be opened", or Apple "could not verify" the app.** The
+release you downloaded in a browser was not notarized by Apple. Install it
+with the installer instead (`curl ... | bash` above, or
+`bash install.sh --file <the .dmg>`). It checks the published checksum and
+the app's signature, and the app then opens normally.
+
+**macOS: "Terminal would like to manage apps" or "Operation not permitted"
+while installing or updating.** macOS protects installed apps. Allow it once
+(*System Settings → Privacy & Security → App Management*), or quit Atech AI
+CAD and run the installer again.
+
 **"Permission denied" when starting.** Run `chmod +x` on the file (see
 above).
 
@@ -252,7 +324,8 @@ from your distribution (Ubuntu 24.04: `sudo apt install libfuse2t64`; Ubuntu
 
 **The chat says Claude Code is not found.** Check `claude --version` in a
 terminal. If it works there but not in the app, the app does not see the same
-`PATH` (a shell function or alias does not count). Set the full path to the
+`PATH` (a shell function or alias does not count; on macOS, an app started
+from the Dock never reads your shell's `PATH`). Set the full path to the
 program in **Agent Settings** (for the official installer:
 `~/.local/bin/claude`).
 
@@ -319,6 +392,20 @@ FreeCAD itself is not recompiled.
 ./branding/build_appimage.sh               # ...and pack it into dist/AtechAICAD-<version>-x86_64.AppImage
 dist/build/squashfs-root/AppRun            # run the built folder directly
 ```
+
+On a Mac, the same app is built from FreeCAD's official macOS release (its
+disk image is pinned by sha256 in `branding/upstream.env`, and the build
+refuses it unless the FreeCAD Project Association's signature on it is
+valid):
+
+```bash
+./branding/build_macos.sh --app-only       # build, verify, sign and smoke-test the .app
+./branding/build_macos.sh                  # ...and the disk image dist/AtechAtelier-<version>-macOS-<arch>.dmg
+```
+
+Without a Developer ID the app is ad-hoc signed. Set `ATECH_MAC_SIGN_IDENTITY`
+and `ATECH_NOTARY_PROFILE` to sign it with your Developer ID and have Apple
+notarize it (see `./branding/build_macos.sh --help`).
 
 Packing needs `appimagetool`. The build also needs python3 with numpy, Pillow
 and scipy, inkscape, curl, and the Atech module library (`--artifacts DIR`).

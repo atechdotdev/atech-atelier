@@ -1,4 +1,4 @@
-"""style — the Atech Atelier design system for everything this addon draws.
+"""style — the Atech AI CAD design system for everything this addon draws.
 
 ONE token table per mode, copied from brand/tokens.py (which is itself ported
 from the atech.dev frontend). The addon ships alone inside the AppImage, so it
@@ -43,11 +43,16 @@ LIGHT.update({"bubble": "#f3f4f6", "card": "#fafafa", "composer": "#efefef",
 DARK.update({"bubble": "#222222", "card": "#161616", "composer": "#1f1f1f",
              "track": "#0d0d0d", "view_top": "#1c1c1e", "view_bot": "#0b0b0c"})
 
+#: The product name in UI strings (wordmark, About, notices). The data
+#: folder and the bundle keep "Atech Atelier" (the PRD's open question):
+#: renaming those moves every profile.
+PRODUCT = "Atech AI CAD"
+
 FONT_UI = "Inter"
 FONT_MONO = "Geist Mono"
 FONT_DISPLAY = "Sen"
-UI_FAMILIES = ("Inter", "Segoe UI", "Cantarell", "DejaVu Sans")
-MONO_FAMILIES = ("Geist Mono", "JetBrains Mono", "DejaVu Sans Mono",
+UI_FAMILIES = ("Inter", "Segoe UI", "Helvetica Neue", "Cantarell", "DejaVu Sans")
+MONO_FAMILIES = ("Geist Mono", "JetBrains Mono", "Menlo", "DejaVu Sans Mono",
                  "Liberation Mono", "Noto Sans Mono")
 _PICKED = {}
 
@@ -89,8 +94,134 @@ def palette_is_dark(pal=None):
         return None
 
 
+# ---------------------------------------------------------- theme choice
+# R306: Light / Dark / System, chosen in Atech's own Appearance panel and
+# kept in Atech's parameter group (never FreeCAD's View or MainWindow keys,
+# which hold the user's own values). "" = never chosen: mode() then follows
+# FreeCAD's theme exactly as before.
+_OWN = "User parameter:BaseApp/Preferences/Mod/AcadAgent"
+THEME_KEY = "AppearanceTheme"
+THEMES = ("light", "dark", "system")
+THEME_LABELS = {"light": "Light", "dark": "Dark", "system": "System"}
+#: FreeCAD theme (parameters/*.yaml) and style sheet per mode. The first
+#: name is what this build installs; the second is the name the rename to
+#: "Atech AI CAD" would give it, used when the build has it instead.
+FC_THEMES = {"light": ("Atech Atelier Light", "Atech AI CAD Light"),
+             "dark": ("Atech Atelier Dark", "Atech AI CAD Dark")}
+FC_SHEETS = {"light": "AtechLight.qss", "dark": "AtechDark.qss"}
+
+
+def theme_choice():
+    """'light', 'dark', 'system', or '' when the user never chose."""
+    try:
+        import FreeCAD
+        v = FreeCAD.ParamGet(_OWN).GetString(THEME_KEY, "").strip().lower()
+    except Exception:                                  # noqa: BLE001
+        return ""
+    return v if v in THEMES else ""
+
+
+def system_mode():
+    """The OS appearance ('dark' / 'light'), None when Qt cannot tell.
+    QStyleHints.colorScheme() follows macOS's Appearance setting live."""
+    try:
+        app = QtGui.QGuiApplication.instance()
+        if app is None:
+            return None
+        cs = app.styleHints().colorScheme()
+        if cs == QtCore.Qt.ColorScheme.Dark:
+            return "dark"
+        if cs == QtCore.Qt.ColorScheme.Light:
+            return "light"
+    except Exception:                                  # noqa: BLE001
+        pass
+    return None
+
+
+def wanted_mode(choice=None):
+    """The mode a theme choice asks for, None when it does not decide
+    (never chosen, or System on a platform that cannot tell)."""
+    choice = theme_choice() if choice is None else choice
+    if choice in ("light", "dark"):
+        return choice
+    if choice == "system":
+        return system_mode()
+    return None
+
+
+def _theme_dir():
+    try:
+        import os
+        import FreeCAD
+        return os.path.join(FreeCAD.getResourceDir(), "Gui", "Stylesheets",
+                            "parameters")
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def fc_theme_name(m, available=None):
+    """FreeCAD's theme name for mode `m`: the Atech theme this build ships
+    (`available`: the installed parameter files' names, read when None)."""
+    names = FC_THEMES[m]
+    if available is None:
+        import os
+        d = _theme_dir()
+        try:
+            available = {os.path.splitext(f)[0] for f in os.listdir(d)} \
+                if d else set()
+        except OSError:
+            available = set()
+    for n in names:
+        if n in available:
+            return n
+    return names[0]
+
+
+def apply_theme_choice(choice, reload=True):
+    """Store the choice and make FreeCAD's own chrome match it: its Theme
+    and StyleSheet preferences are set to the Atech light or dark pair, and
+    the style sheet is reloaded. A user on a theme of their own (not an
+    Atech one) keeps their style sheet; only the token theme moves.
+    Returns the mode applied, or None (System that cannot tell; nothing
+    written to FreeCAD then)."""
+    if choice not in THEMES:
+        raise ValueError("theme must be one of %s, not %r" % (THEMES, choice))
+    try:
+        import FreeCAD
+        FreeCAD.ParamGet(_OWN).SetString(THEME_KEY, choice)
+    except Exception:                                  # noqa: BLE001
+        return None
+    m = wanted_mode(choice)
+    if m is None:
+        return None
+    changed = False
+    try:
+        g = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/MainWindow")
+        theme = fc_theme_name(m)
+        if g.GetString("Theme") != theme:
+            g.SetString("Theme", theme)
+            changed = True
+        sheet = g.GetString("StyleSheet")
+        if (not sheet or sheet.startswith("Atech")) and sheet != FC_SHEETS[m]:
+            g.SetString("StyleSheet", FC_SHEETS[m])
+            changed = True
+    except Exception:                                  # noqa: BLE001
+        return m
+    if changed and reload:
+        try:
+            import FreeCADGui
+            FreeCADGui.runCommand("Std_ReloadStyleSheet")
+        except Exception:                              # noqa: BLE001
+            pass
+    return m
+
+
 def mode():
     """'dark' or 'light', following what FreeCAD actually paints.
+
+    R306: with the System theme chosen in Atech's Appearance panel, the OS
+    appearance decides first (macOS Light / Dark), so the panels follow it
+    even before FreeCAD's own sheet has been reloaded.
 
     FreeCAD 1.1 colours come from the THEME (token set), not only from the
     .qss file: MEASURED on a real profile, StyleSheet=FreeCAD.qss with
@@ -101,6 +232,10 @@ def mode():
     by the application palette's Window lightness (R34): a dark Classic
     profile used to get light panels because its name has no "dark" in it.
     The stylesheet file name is the last resort."""
+    if theme_choice() == "system":
+        sysm = system_mode()
+        if sysm is not None:
+            return sysm
     theme, sheet = _theme_name()
     if "dark" in theme:
         return "dark"
@@ -116,9 +251,13 @@ def tokens(m=None):
     return DARK if (m or mode()) == "dark" else LIGHT
 
 
-def qss(template, m=None, **extra):
+def qss(template, m=None, reset=True, **extra):
     """Fill {token} placeholders. Braces in QSS are doubled in templates.
-    `extra` supplies non-colour values a template needs (an icon path)."""
+    `extra` supplies non-colour values a template needs (an icon path).
+    reset=False leaves RESET out: R390, the MAIN WINDOW's sheet must never
+    carry it - it reaches every QPushButton of every dialog parented to the
+    main window (FreeCAD's "Save changes?" with "Apply to all" squeezed its
+    buttons to 30 px, MEASURED in the real app)."""
     t = dict(tokens(m))
     t.update(UI=_pick(UI_FAMILIES), MONO=_pick(MONO_FAMILIES))
     t.update(extra)
@@ -126,7 +265,7 @@ def qss(template, m=None, **extra):
     # stretched the round send button to 104 px and the view bar past the
     # viewport (measured on a real profile). Our stylesheets sit closer to
     # our widgets than the app's, so this reset wins for everything we draw.
-    return template.format(**t) + RESET
+    return template.format(**t) + (RESET if reset else "")
 
 
 RESET = """
@@ -156,6 +295,7 @@ _SVG = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
 
 PATHS = {
     "arrow-up": '<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>',
+    "chevron-down": '<path d="m6 9 6 6 6-6"/>',
     "stop": '<rect x="7" y="7" width="10" height="10" rx="1.5" fill="{c}" stroke="none"/>',
     "chat": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     "tree": '<path d="M3 5h8"/><path d="M3 12h8"/><path d="M3 19h8"/>'
@@ -200,6 +340,41 @@ PATHS = {
     "bell": '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>'
             '<path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
     "mouse": '<rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/>',
+    # R300+: navigation and Home. Lucide: focus, maximize, minimize,
+    # keyboard, search, chevron-right, cpu, car, bot, speaker, monitor,
+    # upload. Drawn here: "perspective" (a receding plane), "wire" (a
+    # cube with its hidden edges dashed).
+    "focus": '<circle cx="12" cy="12" r="3"/><path d="M3 7V5a2 2 0 0 1 2-2h2"/>'
+             '<path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/>'
+             '<path d="M7 21H5a2 2 0 0 1-2-2v-2"/>',
+    "maximize": '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>'
+                '<path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+    "minimize": '<path d="M8 3v3a2 2 0 0 1-2 2H3"/><path d="M21 8h-3a2 2 0 0 1-2-2V3"/>'
+                '<path d="M3 16h3a2 2 0 0 1 2 2v3"/><path d="M16 21v-3a2 2 0 0 1 2-2h3"/>',
+    "keyboard": '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01"/>'
+                '<path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/>'
+                '<path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/>'
+                '<path d="M7 16h10"/>',
+    "search": '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+    "chevron-right": '<path d="m9 18 6-6-6-6"/>',
+    "cpu": '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>'
+           '<path d="M15 2v2"/><path d="M15 20v2"/><path d="M2 15h2"/><path d="M2 9h2"/>'
+           '<path d="M20 15h2"/><path d="M20 9h2"/><path d="M9 2v2"/><path d="M9 20v2"/>',
+    "car": '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10'
+           's-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7'
+           ' 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/>'
+           '<circle cx="17" cy="17" r="2"/>',
+    "bot": '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/>'
+           '<path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+    "speaker": '<rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 6h.01"/>'
+               '<circle cx="12" cy="14" r="4"/><path d="M12 14h.01"/>',
+    "monitor": '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/>'
+               '<path d="M12 17v4"/>',
+    "upload": '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/>'
+              '<path d="M12 3v12"/>',
+    "perspective": '<path d="M3 5l18 3v8L3 19z"/><path d="M3 12h18" stroke-dasharray="2 3"/>',
+    "wire": '<path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5"/>'
+            '<path d="M12 12v9"/><path d="M4 16.5 12 12" stroke-dasharray="2 2"/>',
 }
 
 

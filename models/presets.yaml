@@ -194,10 +194,11 @@ speaker:
     cover). The 40 × 40 mm footprint is much bigger than other modules,
     so neighbours need at least 3 mm spacing to avoid resonance coupling.
 dc_motor:
-  display_name: DC Motor (N20 driver)
-  category: motor
-  description: GA12-N20 micro gearmotor driver module. Drives an external N20 motor
-    + wheel/gear.
+  display_name: DC Motor
+  category: module
+  description: DC motor module. A GA12-N20 micro gearmotor and its DRV8833 H-bridge
+    in one housing; the 3 mm D-shaft comes out of the end face. Takes an
+    n20_wheel/gear.
   file: dc_motor.stl
   image: dc_motor.png
   recommended_templates: []
@@ -205,12 +206,14 @@ dc_motor:
   dimensions_mm: {x: 19.5, y: 19.1, z: 48.3}
   accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
   agent_notes: |
-    Build AROUND this motor driver. This module is taller than most
-    (48 mm Z) — your enclosure must accommodate the elongated body. The
-    +Y face has the cable port that runs to the EXTERNAL motor + wheel
-    (not part of this module). Provide a cable exit: a small is_hole=true
-    box (~3 × 6 × 2 mm) on +Y or +X. Do not seal this module inside an
-    airtight pocket — the driver dissipates heat when running.
+    Build AROUND this motor module. It is longer than most (48 mm Z) —
+    your enclosure must accommodate the elongated body. The gearmotor is
+    INSIDE the housing; its shaft sticks out of the end face that points
+    away from the board (the module's "out" working face), and that is
+    where a wheel or gear goes. Leave the shaft free to turn: a hole at
+    least 2 mm wider than the shaft (or the wheel, if it sits inside the
+    wall). Do not seal this module inside an airtight pocket — the
+    driver dissipates heat when running.
 orientation:
   display_name: Orientation Sensor
   category: module
@@ -274,15 +277,15 @@ knob:
   image: knob.png
   recommended_templates: []
   default_params: {}
-  dimensions_mm: {x: 39.5, y: 29.6, z: 39.5}
+  dimensions_mm: {x: 39.5, y: 38.1, z: 39.5}
   accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
   agent_notes: |
-    Build AROUND this rotary knob. The shaft rises ~10 mm above +Y; the
-    user grips the knob with thumb+forefinger and rotates. Allow at least
-    8 mm of finger clearance on every horizontal direction around the +Y
-    face — no walls within ~24 mm of the knob centre in X or Z. The knob
-    itself is taller (29.6 mm Y) than most modules — the enclosure must
-    rise accordingly. Avoid placing decorative primitives in the
+    Build AROUND this rotary knob. The user grips the knob cap on +Y with
+    thumb+forefinger and rotates. Allow at least 8 mm of finger clearance
+    on every horizontal direction around the cap — no walls within ~24 mm
+    of the knob centre in X or Z. The knob is much taller (38.1 mm Y, cap
+    and LED ring included) than most modules — the enclosure must rise
+    accordingly; the ring of twelve LEDs round the cap should stay visible. Avoid placing decorative primitives in the
     finger-clearance ring.
 microphone:
   display_name: Microphone
@@ -326,3 +329,122 @@ n20_wheel:
     an n20_wheel, ensure the wheel sits outside any solid you generate
     (the auto-carve protects it, but ideally the shell wraps the motor
     body and stops before the wheel).
+nema17_stepper:
+  display_name: NEMA 17 stepper motor
+  category: motor
+  description: Bipolar NEMA 17 stepper motor, the motor the Atech stepper motor
+    driver (TMC2209) drives. Off-board, wired, not plugged into a port. The
+    flange is the standard 42.3 mm square; the shaft points +Y from the
+    mounting face at y = 0.
+  file: nema17_stepper.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 42.3, y: 64.0, z: 42.3}
+  agent_notes: |
+    An OFF-BOARD part: it does not plug into the motherboard and cannot be
+    seated. Place it with atech_modules.load_module(doc, "nema17_stepper",
+    placement=...). Its own frame: mounting face on y = 0, shaft up +Y on
+    the axis x = z = 0, body hanging down to y = -40.
+
+    STANDARD (NEMA ICS 16, true for every NEMA 17 — design mounts to these):
+      flange 42.3 x 42.3 mm; 4x M3 holes on a 31.0 mm square centred on
+      the shaft; pilot boss 22.0 mm dia x 2.0 mm proud of the face; shaft
+      5.0 mm dia. A mount plate needs a >= 22.5 mm clearance hole for the
+      pilot and 3.2-3.4 mm holes for M3 screws on the 31 mm square.
+
+    NOT STANDARD (this mesh's choice — measure the real motor if a design
+    depends on it): body length 40 mm (34 and 48 are also common), shaft
+    24 mm long with a 0.5 mm D-flat, 5 mm corner chamfers, the cable
+    connector (absent from the mesh; it sits on one side face at the back).
+
+    The motor runs warm and needs its own 12-24 V supply; leave air round
+    the body and a cable exit at the back.
+
+# ---------------------------------------------------------------- DERIVED
+# The four modules below have NO Atech CAD. Their meshes come from the
+# atech-module-simready dataset (models/SIMREADY.json), which builds each
+# from an Atech module shell plus placeholder parts: the case, PCB and pin
+# header are real Atech geometry (so seating and cables are measured as for
+# every module), the parts on top are not. `derived` says so wherever the
+# module is shown.
+pir:
+  display_name: PIR Motion Sensor
+  category: module
+  derived: Shell and pin header from Atech's button module; the AM312 lens
+    and parts on top are placeholders, not Atech CAD of this module.
+  description: Passive-infrared motion sensor (AM312). The lens dome on +Y
+    watches the room and must not be covered.
+  file: pir.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 14.2, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this motion sensor — the lens dome on +Y must see the
+    space it watches. Ordinary plastics and glass block the infrared it
+    senses, so leave a clear opening over the whole dome (a cylinder
+    is_hole=true a little wider than the dome); never cap it, tint it or
+    put a window in front of it. Point +Y toward where people move.
+    The lens is a placeholder shape: measure the real part before a
+    design depends on its exact size.
+scd40_air_quality:
+  display_name: CO2 Sensor (SCD40)
+  category: module
+  derived: Shell and pin header from Atech's button module; the SCD40 sensor
+    and parts on top are placeholders, not Atech CAD of this module.
+  description: Air-quality sensor (Sensirion SCD40) measuring CO2,
+    temperature and humidity. It must breathe room air.
+  file: scd40_air_quality.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 10.6, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this CO2 sensor — it reads the air that reaches it, so the
+    enclosure must let room air flow past the +Y face: vent slots or a
+    grid of is_hole=true cylinders over it, ideally with a second vent
+    elsewhere so air moves through. A sealed pocket reads its own stale
+    air. Keep it away from warm modules (motor drivers, the stepper
+    driver) and from where people breathe straight onto it.
+    The sensor body is a placeholder shape: measure the real part before a
+    design depends on its exact size.
+robot_arm:
+  display_name: Robot Arm Integrator
+  category: module
+  derived: Shell and pin headers from Atech's screen module; the servo-bus
+    connector, capacitor and parts on top are placeholders, not Atech CAD
+    of this module.
+  description: Connects an SO-101 / SO-ARM100 robot arm to the board over
+    its servo bus. The arm itself is a separate, off-board part.
+  file: robot_arm.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 39.5, y: 9.6, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this integrator — the servo-bus connector on +Y takes the
+    arm's cable, so leave room for the plug and its cable to leave the
+    enclosure (a slot or cable runway off +Y, at least 8 mm). The arm
+    and its power supply are not part of this module. The connector is a
+    placeholder shape: measure the real part before a design depends on
+    its exact size.
+stepper_motor:
+  display_name: Stepper Motor Driver
+  category: module
+  derived: Shell and pin headers from Atech's screen module; the driver chip
+    and motor terminal on top are placeholders, not Atech CAD of this
+    module.
+  description: Stepper motor driver (TMC2209). Drives a stepper motor wired
+    to its motor terminal; the motor is a separate, off-board part.
+  file: stepper_motor.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 39.5, y: 15.0, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this driver — the motor terminal on +Y takes the motor's
+    wires, so leave a way for them out of the enclosure. The driver chip
+    runs warm under load: do not seal it in an airtight pocket, and give
+    it vents. The motor itself is placed separately. The chip and terminal
+    are placeholder shapes: measure the real part before a design depends
+    on their exact size.

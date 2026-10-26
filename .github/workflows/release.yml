@@ -1,6 +1,20 @@
 # Release workflow for Atech Atelier (public repository).
 #
-# On a tag v*, build the Linux x86_64 AppImage from:
+# On a tag v*, build the Linux x86_64 AppImage and the macOS disk images
+# (Apple silicon and Intel, branding/build_macos.sh, from FreeCAD's own
+# macOS DMGs pinned in branding/upstream.env), then publish all of them with
+# ONE SHA256SUMS (install.sh verifies every download against it).
+#
+# macOS signing: with the repository secrets MACOS_SIGN_P12_BASE64,
+# MACOS_SIGN_P12_PASSWORD and MACOS_SIGN_IDENTITY ("Developer ID
+# Application: ..."), the apps are signed with that Developer ID; with
+# APPLE_ID, APPLE_TEAM_ID and APPLE_APP_PASSWORD as well, the disk images
+# are notarized by Apple and stapled, so a browser download opens without a
+# Gatekeeper warning. Without them the apps are ad-hoc signed: install.sh
+# installs them (it checks SHA256SUMS and the signature's integrity), a
+# browser download is blocked by Gatekeeper. The job says which it did.
+#
+# The Linux AppImage is built from:
 #   - the official FreeCAD 1.1.3 AppImage, downloaded by URL and checked
 #     against a pinned sha256 (the same pin as branding/upstream.env and
 #     CREDITS.md; the job fails if the three disagree),
@@ -127,18 +141,114 @@ jobs:
             -o "out/$name"
           echo "APPIMAGE_NAME=$name" >> "$GITHUB_ENV"
 
-      - name: SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-x86_64
+          path: out/
+          if-no-files-found: error
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Tag matches VERSION
+        run: |
+          want="v$(python3 branding/release_meta.py version)"
+          [ "$GITHUB_REF_NAME" = "$want" ] || {
+            echo "::error::tag $GITHUB_REF_NAME does not match VERSION ($want)"; exit 1; }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python deps for the brand generators
+        run: python -m pip install numpy pillow scipy pyyaml
+
+      - name: Developer ID (when the secrets are set)
+        env:
+          P12: ${{ secrets.MACOS_SIGN_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGN_P12_PASSWORD }}
+          IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -z "$P12" ] || [ -z "$IDENTITY" ]; then
+            echo "::warning::no Developer ID secrets: the macOS app is ad-hoc signed and not notarized"
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/atech-sign.keychain-db"
+          kcpw="$(uuidgen)"
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          echo "ATECH_MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          if [ -n "$APPLE_ID" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$APPLE_APP_PASSWORD" ]; then
+            xcrun notarytool store-credentials atech-notary --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --keychain "$kc"
+            echo "ATECH_NOTARY_PROFILE=atech-notary" >> "$GITHUB_ENV"
+          else
+            echo "::warning::no notarization secrets: the disk image is signed but not notarized"
+          fi
+
+      - name: Build the macOS app and disk image
+        # build_macos.sh downloads the pinned FreeCAD DMG for this arch and
+        # refuses it unless its sha256 matches branding/upstream.env and the
+        # app inside carries the FreeCAD Project Association's signature.
+        # --brand-from-repo: the logo trace gate needs Inkscape and already
+        # runs in the Linux job; the SVGs it guards are the committed ones.
+        run: |
+          mkdir -p out
+          name="$(python3 branding/release_meta.py dmgname ${{ matrix.arch }})"
+          bash branding/build_macos.sh --arch ${{ matrix.arch }} --brand-from-repo \
+            --artifacts "$ATECH_ARTIFACTS" --build-dir "$RUNNER_TEMP/build" -o "out/$name"
+          rm -f out/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: out/
+          if-no-files-found: error
+
+  release:
+    needs: [appimage, macos]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: SHA256SUMS (every platform, one file)
         working-directory: out
         run: |
+          rm -f SHA256SUMS
           ls -la
-          files="$APPIMAGE_NAME"
-          if [ -f "$APPIMAGE_NAME.zsync" ]; then
-            files="$files $APPIMAGE_NAME.zsync"
-          else
-            echo "::warning::no .zsync: ATECH_UPDATE_INFO is not set, so the image has no update channel"
+          if ! ls *.zsync >/dev/null 2>&1; then
+            echo "::warning::no .zsync: ATECH_UPDATE_INFO is not set, so the AppImage has no update channel"
           fi
+          files="$(ls *.AppImage *.AppImage.zsync *.dmg 2>/dev/null | tr '\n' ' ')"
           sha256sum $files > SHA256SUMS
           cat SHA256SUMS
+          sha256sum -c SHA256SUMS
           echo "RELEASE_FILES=$files SHA256SUMS" >> "$GITHUB_ENV"
 
       - name: Draft release
@@ -149,11 +259,19 @@ jobs:
           {
             echo "Atech Atelier $GITHUB_REF_NAME (preview)."
             echo
-            echo "Built from the official FreeCAD 1.1.3 AppImage (unmodified),"
-            echo "sha256 $FREECAD_SHA256, FreeCAD commit $FREECAD_COMMIT."
+            echo "Install (macOS and Linux):"
+            echo
+            echo '    curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash'
+            echo
+            echo "Or download the file for your computer: the .dmg for macOS (arm64 = Apple silicon,"
+            echo "x86_64 = Intel), the .AppImage for Linux x86_64."
+            echo
+            echo "Built from the official FreeCAD 1.1.3 releases (FreeCAD's program files unmodified),"
+            echo "FreeCAD commit $FREECAD_COMMIT."
             echo
             echo "Code: LGPL-2.1-or-later (LICENSE). Module models: CC BY-NC 4.0 (LICENSE-models.md)."
-            echo "Verify the download with: sha256sum -c SHA256SUMS --ignore-missing"
+            echo "Verify a download with: sha256sum -c SHA256SUMS --ignore-missing"
+            echo "(macOS: shasum -a 256 -c SHA256SUMS --ignore-missing)"
             echo
             echo "See CHANGELOG.md for what changed."
           } > notes.md

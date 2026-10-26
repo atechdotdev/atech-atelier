@@ -193,3 +193,64 @@ def _migrate(new, old, items):
     _write_marker(new, record)
     _log("migrated from %s: %s" % (old, record))
     return record
+
+
+# ------------------------------------------------ sessions.json v2 (R365)
+#: Since R365 a chat is keyed by the document's AtechProjectId instead of
+#: its Uid. projects_store stamps a document's FIRST id from its Uid, so
+#: every v1 record (keyed by Uid) is already keyed by the right id: what
+#: changes is the record. v2 records carry "v": 2 and, once known, "path"
+#: (the realpath of the project file), which is how a Finder copy is told
+#: from the original and how prune_sessions knows a project was deleted.
+SESSIONS_V = 2
+
+
+def migrate_sessions(path):
+    """Bring sessions.json to v2 in place. Idempotent (records already v2
+    are left alone); never raises. A v1 record whose chat folder is gone
+    and whose document never had a file (an "Unnamed" that was closed)
+    can never be reopened: it is dropped. Returns {"migrated": n,
+    "dropped": [ids]}."""
+    out = {"migrated": 0, "dropped": []}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return out
+    if not isinstance(data, dict):
+        return out
+    changed = False
+    for key, rec in list(data.items()):
+        if not isinstance(rec, dict):
+            data.pop(key)
+            out["dropped"].append(key)
+            changed = True
+            continue
+        if rec.get("v") == SESSIONS_V:
+            continue
+        ws = rec.get("ws")
+        if not rec.get("path") and not (isinstance(ws, str)
+                                        and os.path.isdir(ws)):
+            data.pop(key)
+            out["dropped"].append(key)
+            changed = True
+            continue
+        rec["v"] = SESSIONS_V
+        rec.setdefault("path", "")
+        prev = rec.get("prev")
+        if isinstance(prev, dict) and prev.get("uid") not in (None, key):
+            # The build record names the document build.py should find:
+            # the same id as the chat.
+            prev["uid"] = key
+        out["migrated"] += 1
+        changed = True
+    if changed:
+        try:
+            tmp = path + ".tmp"
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, indent=1)
+            os.replace(tmp, path)
+        except OSError as exc:
+            _log("sessions.json not migrated: %r" % (exc,))
+    return out

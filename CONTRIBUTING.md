@@ -67,6 +67,48 @@ build the tree first (`--tree-only` is enough): they look for
 in `ATECH_FREECADCMD`. Set `ATECH_REQUIRE_FREECADCMD=1` to make them fail instead of skip. A skip is
 reported as a skip and never counts as a pass.
 
+### On a Mac
+
+The same tests run on macOS, plus `test_macos` (the macOS sandbox, the
+orphan guard, the bundle identity) and the installer test:
+
+```bash
+cd addon/AcadAgent/tests
+python3 -m unittest -v test_macos
+cd -
+bash branding/tests/test_install.sh      # install.sh end to end, throwaway HOME
+```
+
+`test_macos`'s live sandbox tests need a built app. They build a hostile
+model.py through `sandbox.run()` and through `./check`, and require that
+it can't list your home folder, reach the network or rewrite `./check`:
+
+```bash
+./branding/build_macos.sh --app-only --brand-from-repo
+ATECH_FREECADCMD="$PWD/dist/build-macos-$(uname -m)/Atech Atelier.app/Contents/Resources/bin/freecadcmd" \
+    python3 -m unittest -v addon/AcadAgent/tests/test_macos.py
+```
+
+Some Qt suites (`test_chat_robustness`, `test_ws_chat_panel`, rounds 5 and
+11, one shell test) measure Linux-only things (`/proc`, DejaVu font metrics,
+`PR_SET_PDEATHSIG`) and fail on macOS. They run in Linux CI.
+
+### The Atech SDK catalog
+
+The agent learns what each module does (its C++ API, events, actions,
+cautions and the ports the firmware accepts) from the Atech SDK
+(`pip install atech`). `agent_kit/atech_firmware.py` uses the installed
+package when Studio's Python can import it, and otherwise the snapshot in
+`agent_kit/atech_sdk_catalog.json`. After a new SDK release, refresh the
+snapshot (the SDK needs Python 3.10 or newer, and it is a pre-release):
+
+```bash
+uv run --no-project --python 3.12 --prerelease=allow --with atech \
+    python addon/AcadAgent/acadagent/agent_kit/atech_firmware.py --sync
+```
+
+Then run `tests/test_firmware_r630.py`.
+
 ## Rules that matter
 
 **Measure, do not assert.** A claim about the product, such as a size, a

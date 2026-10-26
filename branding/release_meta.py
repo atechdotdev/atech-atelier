@@ -15,6 +15,7 @@ The value is the OWNER's (ADR-006). This script reads it and never writes it.
 
     python3 branding/release_meta.py version
     python3 branding/release_meta.py outname [arch]
+    python3 branding/release_meta.py dmgname <arm64|x86_64>
     python3 branding/release_meta.py desktop  <file> <version>
     python3 branding/release_meta.py metainfo <file> <version> <YYYY-MM-DD>
     python3 branding/release_meta.py screenshots <file> [url ...]
@@ -50,6 +51,13 @@ def read_version(path=VERSION_FILE):
 
 def out_name(version, arch="x86_64"):
     return "%s-%s-%s.AppImage" % (FILE_STEM, version, arch)
+
+
+def dmg_name(version, arch):
+    """The macOS disk image: AtechAtelier-<version>-macOS-<arch>.dmg."""
+    if arch not in ("arm64", "x86_64"):
+        raise ValueError("macOS arch must be arm64 or x86_64, got %r" % arch)
+    return "%s-%s-macOS-%s.dmg" % (FILE_STEM, version, arch)
 
 
 def stamp_desktop(text, version):
@@ -126,6 +134,8 @@ def main(argv):
             print(read_version())
         elif argv[:1] == ["outname"] and len(argv) <= 2:
             print(out_name(read_version(), *argv[1:]))
+        elif argv[:1] == ["dmgname"] and len(argv) == 2:
+            print(dmg_name(read_version(), argv[1]))
         elif argv[:1] == ["desktop"] and len(argv) == 3:
             _rewrite(argv[1], stamp_desktop, argv[2])
         elif argv[:1] == ["metainfo"] and len(argv) == 4:

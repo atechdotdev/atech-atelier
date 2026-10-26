@@ -238,6 +238,9 @@ def restore_view_prefs(clear=True):
             own.RemString(_SEEDED_KEY)
         if clear:
             own.RemString(_SNAP_KEY)
+        # The user's own value is back: the next activation writes ours
+        # afresh instead of reading theirs as a change made inside Atech.
+        own.RemString(NAV_WRITTEN_KEY)
     except Exception as exc:                           # noqa: BLE001
         FreeCAD.Console.PrintWarning("Atech: view prefs not restored (%s)\n" % exc)
         return False
@@ -301,10 +304,21 @@ def apply_view_theme():
         put("Unsigned", "AxisLetterColor", _pack(ink))
 
         # --- mouse: drag to spin, scroll to zoom
-        # Gesture style: left-drag orbits, right-drag pans, wheel zooms, a
-        # plain click still selects. CAD style (FreeCAD's default) needs
-        # middle+left held together to orbit, which reads as "can't move it".
-        put("String", "NavigationStyle", NAV_STYLE)  # Python API is SetString; SetASCII is the C++ name
+        # Gesture style by default: left-drag orbits, right-drag pans, wheel
+        # zooms, a plain click still selects. CAD style (FreeCAD's default)
+        # needs middle+left held together to orbit, which reads as "can't
+        # move it". R304: the style is the user's choice (nav_style(), set
+        # in Appearance & navigation), and a style picked in FreeCAD's own
+        # Preferences while Atech is active is adopted as that choice
+        # instead of being overwritten on the next activation or restyle.
+        own = FreeCAD.ParamGet(_OWN)
+        written = own.GetString(NAV_WRITTEN_KEY, "")
+        _adopt_user_nav(own, have.get("NavigationStyle"), written)
+        nav = nav_style()
+        nav_changed = have.get("NavigationStyle") != ("String", nav) \
+            or not written
+        put("String", "NavigationStyle", nav)  # Python API is SetString; SetASCII is the C++ name
+        own.SetString(NAV_WRITTEN_KEY, nav)
         # Trackball-style free orbit (OrbitStyle enum, View3DSettings.cpp:294).
         put("Int", "OrbitStyle", 1)
         # Rotate about the point under the cursor, not the origin — otherwise a
@@ -325,14 +339,146 @@ def apply_view_theme():
         # It only takes effect for views opened afterwards, so it is written
         # once, never re-written by a theme apply (S23).
         put("Int", "AntiAliasing", 3)
-        _apply_nav_to_open_views(g)
+        # Only when the style itself changed: a restyle (theme flip) must not
+        # undo a per-view style the user picked from the status bar.
+        if nav_changed:
+            _apply_nav_to_open_views(g, nav)
+        _studio_look()
         return True
     except Exception as exc:
         FreeCAD.Console.PrintWarning("Atech: view theme not applied (%s)\n" % exc)
         return False
 
 
+def _studio_look():
+    """The board and modules drawn as studio.atech.dev draws them
+    (board_look: the module GLBs and their materials; display only, the
+    STL meshes still measure). Idempotent; report-only."""
+    try:
+        from . import board_look
+        board_look.install()
+    except Exception as exc:                           # noqa: BLE001
+        FreeCAD.Console.PrintLog("Atech: studio look not installed (%s)\n" % exc)
+
+
 NAV_STYLE = "Gui::GestureNavigationStyle"
+
+# ------------------------------------------------- navigation style (R304)
+# Kept in Atech's own group: the View group's NavigationStyle is the user's
+# global preference (snapshotted and given back, R31). NAV_WRITTEN_KEY is
+# the value apply_view_theme() last wrote; a different value found there
+# while Atech is active was set by the user (Preferences), and is adopted.
+NAV_CHOICE_KEY = "NavigationChoice"
+NAV_WRITTEN_KEY = "NavigationWritten"
+HINT_SEEN_KEY = "OrbitHintSeen"
+
+#: The four styles offered, in the order the Appearance panel lists them.
+#: Class names MEASURED in libFreeCADGui.dylib 1.1.3 (OpenInventor's is
+#: Gui::InventorNavigationStyle). "how": what each mouse action is.
+NAV_STYLES = (
+    {"key": "gesture", "label": "Gesture", "cls": "Gui::GestureNavigationStyle",
+     "blurb": "Drag to orbit. Best for a trackpad or a mouse.",
+     "how": (("Orbit", "Drag with the left button or one finger"),
+             ("Pan", "Drag with the right button, or Ctrl + drag"),
+             ("Zoom", "Scroll, or pinch on a trackpad"),
+             ("Select", "Click"))},
+    {"key": "blender", "label": "Blender", "cls": "Gui::BlenderNavigationStyle",
+     "blurb": "Middle button to orbit, as in Blender.",
+     "how": (("Orbit", "Drag with the middle button"),
+             ("Pan", "Shift + drag with the middle button"),
+             ("Zoom", "Scroll"),
+             ("Select", "Click"))},
+    {"key": "touchpad", "label": "Touchpad", "cls": "Gui::TouchpadNavigationStyle",
+     "blurb": "Keys plus pointer moves, no buttons held.",
+     "how": (("Orbit", "Hold Alt and move the pointer"),
+             ("Pan", "Hold Shift and move the pointer"),
+             ("Zoom", "Hold Ctrl + Shift and move, or Page Up / Down"),
+             ("Select", "Click"))},
+    {"key": "openinventor", "label": "OpenInventor",
+     "cls": "Gui::InventorNavigationStyle",
+     "blurb": "Classic Open Inventor: left drag orbits, Ctrl + click selects.",
+     "how": (("Orbit", "Drag with the left button"),
+             ("Pan", "Drag with the middle button"),
+             ("Zoom", "Scroll, or drag with left + middle"),
+             ("Select", "Ctrl + click"))},
+)
+
+
+def _adopt_user_nav(own, cur, written):
+    """A NavigationStyle that differs from the one Atech last wrote was set
+    by the user while Atech was active (FreeCAD's Preferences): it becomes
+    their Atech choice instead of being overwritten (R304). True if so."""
+    if written and cur and cur[0] == "String" and cur[1] and cur[1] != written:
+        own.SetString(NAV_CHOICE_KEY, cur[1])
+        return True
+    return False
+
+
+def nav_info(cls=None):
+    """The NAV_STYLES entry for a class name (the current style when None).
+    A style chosen in FreeCAD's Preferences that Atech does not list gets a
+    plain entry of its own, so the panel can still name it."""
+    cls = cls or nav_style()
+    for s in NAV_STYLES:
+        if s["cls"] == cls:
+            return s
+    name = cls.replace("Gui::", "").replace("NavigationStyle", "") or cls
+    return {"key": name.lower(), "label": name, "cls": cls,
+            "blurb": "Set in FreeCAD's Preferences.", "how": ()}
+
+
+def nav_style():
+    """The navigation style class Atech applies: the user's choice, else
+    Gesture (NAV_STYLE)."""
+    try:
+        v = FreeCAD.ParamGet(_OWN).GetString(NAV_CHOICE_KEY, "").strip()
+    except Exception:                                  # noqa: BLE001
+        v = ""
+    return v or NAV_STYLE
+
+
+def set_nav_style(cls, live=True):
+    """Store the user's navigation style (a class name or a NAV_STYLES key)
+    and, with `live` (Atech is active), write it and switch the open views.
+    Returns the class name stored."""
+    for s in NAV_STYLES:
+        if cls == s["key"]:
+            cls = s["cls"]
+    if not isinstance(cls, str) or not cls.startswith("Gui::"):
+        raise ValueError("not a navigation style: %r" % (cls,))
+    own = FreeCAD.ParamGet(_OWN)
+    own.SetString(NAV_CHOICE_KEY, cls)
+    if live and saved_view_prefs() is not None:
+        # The user's own value is in the snapshot already, so this write
+        # is given back on deactivate like every other Atech view key.
+        FreeCAD.ParamGet(_VIEW_GROUP).SetString("NavigationStyle", cls)
+        own.SetString(NAV_WRITTEN_KEY, cls)
+        g = _gui()
+        if g is not None:
+            try:
+                _apply_nav_to_open_views(g, cls)
+            except Exception as exc:                   # noqa: BLE001
+                _log("nav style: %r" % (exc,))
+    return cls
+
+
+def orbit_hint_seen():
+    try:
+        return bool(FreeCAD.ParamGet(_OWN).GetBool(HINT_SEEN_KEY, False))
+    except Exception:                                  # noqa: BLE001
+        return True                     # cannot tell: do not nag
+
+
+def set_orbit_hint_seen(seen=True):
+    try:
+        own = FreeCAD.ParamGet(_OWN)
+        if seen:
+            own.SetBool(HINT_SEEN_KEY, True)
+        else:
+            own.RemBool(HINT_SEEN_KEY)
+        return True
+    except Exception:                                  # noqa: BLE001
+        return False
 
 
 def _apply_nav_to_open_views(g, nav=NAV_STYLE):
@@ -1207,6 +1353,76 @@ def view_top():
 
 def view_right():
     return _send("viewRight")
+
+
+def view_rear():
+    return _send("viewRear")
+
+
+def view_left():
+    return _send("viewLeft")
+
+
+def view_bottom():
+    return _send("viewBottom")
+
+
+def fit_selection():
+    """Frame the selection (FreeCAD's Std_ViewFitSelection, V, S); with
+    nothing selected, frame everything instead of doing nothing."""
+    g = _gui()
+    if g is None or _view() is None:
+        return False
+    try:
+        if not g.Selection.getSelection():
+            return fit_all()
+        g.runCommand("Std_ViewFitSelection")
+        return True
+    except Exception as exc:                           # noqa: BLE001
+        _log("fit selection: %r" % (exc,))
+        return False
+
+
+def camera_type(v=None):
+    """'Perspective' or 'Orthographic' for the active view, None without."""
+    v = v or _view()
+    if v is None:
+        return None
+    try:
+        return str(v.getCameraType())
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def set_perspective(on):
+    """Perspective (True) or orthographic (False) camera on the active view."""
+    v = _view()
+    if v is None:
+        return False
+    try:
+        v.setCameraType("Perspective" if on else "Orthographic")
+        return True
+    except Exception as exc:                           # noqa: BLE001
+        _log("camera type: %r" % (exc,))
+        return False
+
+
+# Std_DrawStyle's items, in FreeCAD 1.1's order (StdCmdDrawStyle).
+DRAW_AS_IS, DRAW_WIREFRAME = 0, 2
+
+
+def set_wireframe(on):
+    """Wireframe (True) or the normal shaded-with-edges look (False) on the
+    active view, through FreeCAD's own draw-style command."""
+    g = _gui()
+    if g is None or _view() is None:
+        return False
+    try:
+        g.runCommand("Std_DrawStyle", DRAW_WIREFRAME if on else DRAW_AS_IS)
+        return True
+    except Exception as exc:                           # noqa: BLE001
+        _log("draw style: %r" % (exc,))
+        return False
 
 
 def spin(enable=True):

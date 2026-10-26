@@ -154,6 +154,45 @@ whether it autostarts is an owner decision (release PRD R10). `--mcp-guard`
 applies the prepared token + Origin + Content-Type + Host guard
 (`vendor/freecad-mcp/optional/`, tested by `tests/test_mcp_auth.py`).
 
+## macOS (`build_macos.sh`)
+
+The macOS app is built the same way from FreeCAD's official macOS disk
+image (one per architecture, pinned in `upstream.env`). FreeCAD.app's
+`Contents/Resources/` is FreeCAD's AppHomePath and has the AppImage's `usr/`
+layout, so every file lands where `build_appimage.sh` puts it. What differs:
+
+| step | macOS |
+|---|---|
+| upstream | the DMG's sha256 must match, **and** `codesign --verify --deep --strict` must pass on FreeCAD.app with team `289DJRF23X` (the FreeCAD Project Association) |
+| identity | `Contents/Info.plist` stamped by `macos_bundle.py`: `dev.atech.Atelier`, name, version, `atech.icns` (rendered by the bundle's own Qt), FreeCAD's document types at rank Alternate, its UTI imported rather than exported |
+| launcher | none added: there is no AppRun, so there's no environment snapshot or agent-backend block. The profile migration isn't needed (there's never been a macOS release under an older name) |
+| bytecode | `site-packages/atech-no-bytecode.pth` turns bytecode writing off at interpreter start, and `encodings` is precompiled (unchecked-hash). A `.pyc` written at runtime would break the bundle's seal |
+| gate | `verify_tree.py` with Info.plist checks in place of the desktop entry, metainfo and AppRun ones |
+| signing | only the outer bundle is re-signed (never `--deep`). Every nested program and library keeps FreeCAD's Developer ID signature. The build asserts that signing changed exactly `MacOS/FreeCAD` (its signature) and `_CodeSignature/CodeResources` |
+| order | copy, add files, write ATECH_CHANGES, **sign**, then gate and smoke test (read-only) |
+| smoke | the signed bundle's own `freecadcmd` imports the addon, reports `isolation=seatbelt`, and the seal still verifies afterwards |
+| output | `dist/AtechAtelier-<version>-macOS-<arch>.dmg` + `SHA256SUMS` |
+
+Environment: `ATECH_MAC_SIGN_IDENTITY` (a Developer ID Application identity;
+empty = ad-hoc) and `ATECH_NOTARY_PROFILE` (`xcrun notarytool
+store-credentials` profile; set = notarize and staple the DMG). An ad-hoc
+build runs on the Mac that built it and when installed by `install.sh`, but
+Gatekeeper blocks it as a browser download.
+
+Two things MEASURED on macOS 26.6:
+
+- App Management refuses writes into a protected app bundle ("Operation
+  not permitted"). A bundle becomes protected once a program inside it has
+  run (it gains `com.apple.macl` on its root folder), and a copy of the
+  whole bundle carries that marker. So the build clones only `Contents/`
+  into a fresh root folder. It runs nothing from the bundle it is building
+  until that bundle is signed: the build's own FreeCAD runs use a second,
+  throwaway "runner" copy. The gate and smoke test then run read-only on
+  the signed app, and the tree is re-measured to prove they changed
+  nothing (measured 2026-10-20).
+- Never `xattr -c` the bundle. FreeCAD's signature of
+  `Contents/packages.txt` lives in that file's extended attributes.
+
 ## Brand assets are GENERATED — do not hand-edit
 
 Every icon, logo, splash, stylesheet and theme file is generated from two

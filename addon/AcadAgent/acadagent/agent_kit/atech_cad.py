@@ -40,6 +40,9 @@ merely looks fine. The FreeCAD traps each one closes:
                     (Mesh features have no .Shape).
     place_on        a lid seated ON its box (measured), not floating above
                     it - the assembled product is what intent.json sizes.
+    detail          `with cad.detail("grille"): ...` - a detail that fails
+                    with a geometry error is skipped and reported by
+                    ./check, not fatal to the whole build (R400).
 
 Conventions: millimetres and degrees. Points and directions may be tuples or
 FreeCAD Vectors. Shapes are Part.Shape objects; add the final one to the
@@ -58,7 +61,7 @@ __all__ = [
     "revolve", "snap_fit_cantilever", "snap_fit_pair", "cantilever_strain",
     "last_reason",
     "spur_gear", "gear_shift_for", "bound_of", "place_on", "wedge",
-    "pin_hinge", "socket_opening",
+    "pin_hinge", "socket_opening", "detail",
 ]
 
 TOL = 1e-6          # volumes below this (mm^3) are "nothing"
@@ -161,6 +164,50 @@ def measure(shape):
 
 
 # ---------------------------------------------------------------- booleans
+# R250: removeSplitter may not change the volume by more than this
+# (relative). 1e-6 is too tight: GProp's volume of the same solid with its
+# seam faces merged differs by 1.2e-6 (MEASURED: examples/toy_car.py's tub
+# + axles + flares, 82887.24 -> 82887.34 mm3, both valid); a broken merge
+# is off by percent.
+UNSPLIT_RTOL = 1e-5
+
+
+def _unsplit(shape, bounds=None):
+    """R250: shape.removeSplitter() only when it is safe, else `shape`.
+    On a filleted spline body removeSplitter merged faces into a
+    self-intersecting solid that later cuts treated as outside (MEASURED:
+    a car body). Its result must be valid and keep the number of solids;
+    when `shape` itself is valid, also its volume within UNSPLIT_RTOL -
+    removing seam edges changes no volume, a merge that does is a broken
+    shape. An INVALID `shape` (a fuse with touching faces) has no volume to
+    trust (MEASURED: 97 742 mm3 for the 82 887 the valid fuse holds), so
+    there removeSplitter is the repair it always was, judged only against
+    `bounds` = (lo, hi) mm3 when the caller knows them (fuse_one: the
+    largest input .. the sum of the inputs)."""
+    try:
+        res = shape.removeSplitter()
+    except Exception:                                   # noqa: BLE001
+        return shape
+    try:
+        if res.isNull() or not res.isValid():
+            return shape
+        if len(res.Solids) != len(shape.Solids):
+            return shape
+        v = res.Volume
+        if bounds is not None:
+            lo, hi = bounds
+            slack = UNSPLIT_RTOL * max(abs(hi), 1e-9)
+            if v < lo - slack or v > hi + slack:
+                return shape
+        if shape.isValid():
+            v0 = shape.Volume
+            if abs(v - v0) > UNSPLIT_RTOL * max(abs(v0), 1e-9):
+                return shape
+    except Exception:                                   # noqa: BLE001
+        return shape
+    return res
+
+
 def fuse_one(*shapes):
     """Fuse shapes that must become ONE body. Raises unless exactly 1 solid.
 
@@ -175,10 +222,8 @@ def fuse_one(*shapes):
         if not p.Solids:
             raise CadError("fuse_one: input %d has no solid (a face or wire?)" % i)
     res = parts[0] if len(parts) == 1 else parts[0].fuse(parts[1:])
-    try:
-        res = res.removeSplitter()
-    except Exception:                                   # noqa: BLE001
-        pass
+    vols = [p.Volume for p in parts]
+    res = _unsplit(res, (max(vols), sum(vols)))         # R250
     if res.isNull() or not res.isValid():
         raise CadError(
             "fuse_one: the fused result is INVALID - almost always two faces "
@@ -196,11 +241,14 @@ def fuse_one(*shapes):
     return res.Solids[0]
 
 
-def cut(shape, *tools):
+def cut(shape, *tools, optional=False):
     """shape minus tools (several, or a list: one boolean), checked valid and
     that something was actually removed.
     cut(body, t1, t2) or cut(body, [t1, t2, ...]): disjoint cutters are fine
-    here (never fuse_one them first)."""
+    here (never fuse_one them first). optional=True (R270): tools that
+    remove nothing return the shape unchanged with a printed NOTE instead
+    of raising - for cutters that only SOMETIMES reach the body (a vent
+    pattern over a curved roof). The default stays strict."""
     tl = _flat(tools)
     if not tl:
         raise CadError("cut: no tools given")
@@ -208,8 +256,16 @@ def cut(shape, *tools):
     res = shape.cut(tl if len(tl) > 1 else tl[0])
     _check(res, "cut")
     if v0 - res.Volume <= TOL:
+        if optional:
+            # R270: 24 "removed nothing" failures in round 1, most of them
+            # an optional detail on a body the agent had just reshaped
+            print("cut NOTE: the %d tool(s) removed nothing (optional=True) - the "
+                  "shape is returned unchanged; check their positions if the "
+                  "cut matters" % len(tl))
+            return shape
         raise CadError("cut: the tools removed nothing - they do not overlap the "
-                       "shape. Check their positions.")
+                       "shape. Check their positions (or optional=True for a cut "
+                       "that may miss).")
     if not res.Solids:
         raise CadError("cut: the tools removed the whole shape")
     stray = _stray(res, shape)
@@ -505,7 +561,7 @@ def _obround(size, axis, short, r, at):
         dims = [0.0, 0.0, 0.0]
         dims[ia], dims[ish], dims[il] = h, 2 * r, long_ - 2 * r
         parts.append(Part.makeBox(dims[0], dims[1], dims[2], at + unit[il] * r))
-        res = parts[0].fuse(parts[1:]).removeSplitter()
+        res = _unsplit(parts[0].fuse(parts[1:]))         # R250
     else:
         res = parts[0]
     _check(res, "rounded_box (full round ends)", solids=1)
@@ -592,10 +648,7 @@ def revolve(points_xz, angle=360.0):
             res = Part.Solid(res)
         except Exception:                               # noqa: BLE001
             pass
-    try:
-        res = res.removeSplitter()
-    except Exception:                                   # noqa: BLE001
-        pass
+    res = _unsplit(res)                                 # R250
     _check(res, "revolve", solids=1)
     return _one(res)
 
@@ -731,11 +784,7 @@ def _shell_by_core(shape, t, faces, why):
                            "part has no flat inside face behind an open face. Build "
                            "the cavity as a separate cut." % (what, why))
         tools.extend(f.extrude(n * span) for f in ends)
-    res = shape.cut(tools)
-    try:
-        res = res.removeSplitter()
-    except Exception:                                   # noqa: BLE001
-        pass
+    res = _unsplit(shape.cut(tools))                    # R250
     if res.isNull() or not res.isValid() or len(res.Solids) != 1:
         raise CadError("%s: FreeCAD could not hollow this shape (%s) and the core "
                        "cut gave %s. Build the cavity as a separate cut."
@@ -1543,11 +1592,14 @@ def socket_opening(wall, module, margin=1.5, board=None):
     far = 200.0
     lift = 0.05
     ends = []
+    centre = None
     for fu, fw in ((0, 0), (-1, -1), (-1, 1), (1, -1), (1, 1)):
         q = base + u * (fu * 0.45 * ou) + w * (fw * 0.45 * ow) + d * (mouth + lift)
         rr = _runs_on_line(wall, q, q + d * far)
         if rr:
             ends.append(rr[0])
+            if (fu, fw) == (0, 0):
+                centre = rr[0]
     if not ends:
         raise CadError("socket_opening: nothing of the wall stands in front of %s's "
                        "socket mouth (facing %s) within %g mm - pass the part the "
@@ -1562,10 +1614,20 @@ def socket_opening(wall, module, margin=1.5, board=None):
     tool.transformShape(m)                      # a rotation: (u, w, d) is right-handed
     tool.translate(base + d * (mouth + lift))
     out = cut(wall, tool)
+    # R250: the wall IN FRONT of the mouth is the centre ray's first run
+    # (a corner ray can run along a sloped or thickened part of the same
+    # wall: desk_robot printed 6.12 mm for its 1.05 mm wall); the cut
+    # still goes to the deepest exit, said separately when it differs
+    run = centre if centre is not None else min(ends, key=lambda e: e[1] - e[0])
+    wall_mm = run[1] - run[0]
+    deep = exit_ - first
     print("socket_opening: %s's socket mouth faces %s; opening %.2f x %.2f mm (the "
-          "mouth %.2f x %.2f + %.2f a side) through %.2f mm of wall, %.2f mm in "
-          "front of the mouth" % (module.Label, atech_geom.normal_text(dv), ou, ow,
-                                  su, sw, margin, exit_ - first, first + lift))
+          "mouth %.2f x %.2f + %.2f a side) through a %.2f mm wall, %.2f mm in "
+          "front of the mouth%s" % (
+              module.Label, atech_geom.normal_text(dv), ou, ow, su, sw, margin,
+              wall_mm, run[0] + lift,
+              "" if deep - wall_mm < 0.05 else
+              " (cut %.2f mm deep, to where the wall ends at the opening's corners)" % deep))
     return out
 
 
@@ -1656,6 +1718,61 @@ def place_on(shape, base, gap=0.0, direction="+Z"):
     return out
 
 
+# ------------------------------------------------------------ detail guard
+#: R400: the details a cad.detail block skipped in this run, as
+#: (name, reason). ./check prints each as a WARNING (skipped_details()).
+_SKIPPED = []
+
+#: What a detail may fail with and still be skipped: the geometry errors.
+#: A NameError, TypeError, AttributeError ... is a bug in the script and
+#: still fails the build - skipping it would hide the mistake.
+_DETAIL_ERRORS = tuple(e for e in (CadError, ValueError, RuntimeError,
+                                   getattr(Part, "OCCError", None))
+                       if isinstance(e, type))
+
+
+class detail(object):
+    """A DETAIL feature that may fail without failing the whole build.
+
+        with cad.detail("speaker grille"):
+            shell = cad.speaker_grille(shell, c, "-Y", 30)
+
+    When the block raises a geometry error (CadError, an OCC failure, a
+    null shape), the build goes on with the values from before the block
+    and ./check prints WARNING detail skipped: "speaker grille": <why>.
+    A bug in the code (NameError, TypeError ...) still fails the build.
+
+    R400 (round 1: 36 of 40 live previews of one product failed, most on a
+    single detail cut): wrap each detail-list item that comes after the
+    shell is done; never wrap the main body, the hollow, the split or the
+    hardware - those must work. Fix every skipped detail before the last
+    level: a skipped detail is a missing one."""
+
+    def __init__(self, name):
+        self.name = str(name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, kind, exc, tb):
+        if kind is None or not issubclass(kind, _DETAIL_ERRORS):
+            return False
+        why = (str(exc).strip().splitlines() or [kind.__name__])[0][:200]
+        _SKIPPED.append((self.name, "%s: %s" % (kind.__name__, why)))
+        print("DETAIL SKIPPED %r: %s: %s" % (self.name, kind.__name__, why))
+        return True
+
+
+def skipped_details():
+    """[(name, reason)] of the cad.detail blocks skipped so far this run."""
+    return list(_SKIPPED)
+
+
+def reset_details():
+    """Forget the skipped details (./check calls it before each run)."""
+    del _SKIPPED[:]
+
+
 # ------------------------------------------------------------ atech parts
 def bound_of(*objs):
     """One world App.BoundBox (not a shape) around shapes, document objects
@@ -1683,3 +1800,29 @@ def bound_of(*objs):
     if not n:
         raise CadError("bound_of: nothing given")
     return out
+
+
+# ------------------------------------------------------------ re-exports
+# R230: the body helpers (atech_form: profile_body, loft, hollow, split, ...)
+# and the finish/detail helpers (atech_detail: soften, grille, wheel, text,
+# screw, color, ...) are reached as cad.<name>. Both files import atech_cad
+# lazily or only for names defined above, so this must stay at the very end.
+# A kit copy without one of the files (an older workspace, a test's scratch
+# copy) keeps the rest working: only that file's own absence is forgiven.
+try:
+    from atech_form import *    # noqa: E402,F401,F403
+except ModuleNotFoundError as _exc:
+    if _exc.name != "atech_form":
+        raise
+try:
+    from atech_detail import *  # noqa: E402,F401,F403
+except ModuleNotFoundError as _exc:
+    if _exc.name != "atech_detail":
+        raise
+# cad.__all__ lists them too. A file still half loaded (it imported
+# atech_cad first) has no __all__ yet: it adds its names itself when it
+# finishes (atech_detail._register).
+import sys as _sys  # noqa: E402
+__all__ += [_n for _m in ("atech_form", "atech_detail")
+            for _n in getattr(_sys.modules.get(_m), "__all__", [])
+            if _n not in __all__]

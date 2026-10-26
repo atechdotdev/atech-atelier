@@ -14,10 +14,13 @@ WHAT THIS DOES
         shared with the agent's own self-check (PRD S09);
       - has a scratch HOME (a fresh temp dir), and - where the kernel allows -
         no network and no view of the user's home: `bwrap` (read-only root,
-        tmpfs over $HOME, /tmp and /run, only the workspace writable), else
-        `unshare -rn` (no network, scratch HOME), else neither (reported as
-        isolation="none", never silently; isolation_caveat() is the sentence
-        Studio tells the user once - PRD R115);
+        tmpfs over $HOME, /tmp and /run, only the workspace writable), on
+        macOS `sandbox-exec` with SEATBELT_PROFILE (no network, no file
+        contents under the home folders, /Volumes or the temp folders, writes
+        only to the workspace and the scratch HOME), else `unshare -rn` (no
+        network, scratch HOME), else neither (reported as isolation="none",
+        never silently; isolation_caveat() is the sentence Studio tells the
+        user once - PRD R115);
       - is killed, with its whole process group, after `timeout` seconds;
       - writes one <Name>.brep per end result plus result.json into
         <workspace>/.atech_sandbox/ (a sub-folder: build.snapshot only scans
@@ -58,6 +61,7 @@ under system Python (the eval harness) or inside Studio alike.
 """
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -69,14 +73,35 @@ HERE = os.path.dirname(os.path.realpath(__file__))
 KIT_DIR = os.path.join(HERE, "agent_kit")
 CHECK = os.path.join(KIT_DIR, "check.py")
 OUT_SUBDIR = ".atech_sandbox"
-DEFAULT_TIMEOUT = 60.0
+DEFAULT_TIMEOUT = 60.0          # fast mode (R230)
+#: R230: quality mode's build and ./check timeout. A detailed product
+#: (fillets on every visible edge, grilles, wheels with treads) is far
+#: heavier than a 30-line draft; r1 #16/#17 proposed 180 s.
+QUALITY_TIMEOUT = 180.0
+
+
+def default_timeout():
+    """R230: the build / ./check timeout of the agent mode (settings
+    "agent_quality", $ATECH_PROMPT_MODE): QUALITY_TIMEOUT in quality mode,
+    DEFAULT_TIMEOUT in fast mode. The prompt states the same number
+    (build.system_prompt)."""
+    try:
+        from . import build
+        quality = build.quality_mode()
+    except Exception:                                  # noqa: BLE001
+        quality = (os.environ.get("ATECH_PROMPT_MODE") or "").strip().lower() \
+            != "fast"
+    return QUALITY_TIMEOUT if quality else DEFAULT_TIMEOUT
 MARK = "ATECH_CHECK="
 # User parameter (BaseApp/Preferences/Mod/AcadAgent) that keeps the old
 # in-process exec for GUI-only scripts. Read by the caller, not here.
 IN_PROCESS_SETTING = "BuildInProcess"
 # Files Studio writes into the workspace for the agent (build.prepare_
 # workspace). Bound read-only into the child under bwrap.
-PROTECTED = ("check", "atech_cad.py", "TRAPS.md", "examples")
+# R250: the helper files atech_cad re-exports (build.KIT_MODULES) and the
+# review sheet's code are kit files too - a model.py must not rewrite them.
+PROTECTED = ("check", "atech_cad.py", "atech_form.py", "atech_detail.py",
+             "review.py", "TRAPS.md", "examples")
 # R140: fonts for Part.makeWireString. The usual host locations first (a
 # stable path - model.py keeps it), then the bundled tree's own copy under
 # _fc_root, which every mode can read (bwrap binds it). MEASURED 2026-09-25 inside the bwrap argv
@@ -87,6 +112,38 @@ FONT_NAME = "DejaVuSans.ttf"
 HOST_FONTS = ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
               "/usr/share/fonts/dejavu/DejaVuSans.ttf",
               "/usr/share/fonts/TTF/DejaVuSans.ttf")
+# Modes that hide the user's files from the child (RequireBwrap accepts
+# these; isolation_caveat() is silent for them).
+FULL_ISOLATION = ("bwrap", "seatbelt")
+SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+# macOS (Seatbelt). In SBPL the LAST matching rule wins, so each deny is
+# followed by the narrower allows. MEASURED 2026-10-17 on macOS 26.6 with the
+# FreeCAD 1.1.3 arm64 bundle:
+#   - denying file-read* (metadata included) under the home folder makes
+#     freecadcmd fail to initialise ("Unknown runtime error"), because it
+#     stats the account's home; file-read-data hides every file's contents
+#     and every folder's listing, which is what matters;
+#   - FreeCAD on macOS takes its user folders from the account, not $HOME,
+#     so the child also gets FREECAD_USER_HOME=<scratch> (Job/wrapper env);
+#   - with this profile a model.py could not list ~/Documents, /Volumes,
+#     /private/tmp or the temp folders, could not write outside the
+#     workspace, could not rewrite ./check, and could not connect out, while
+#     Part.makeBox built and measured normally.
+# Parameters: HOME0..n (homes to hide), FC (the FreeCAD tree), WS (the
+# workspace), SCRATCH (the scratch HOME), RO0..n (extra read-only folders),
+# P0..n (protected workspace files).
+_SEATBELT_HEAD = """(version 1)
+(allow default)
+(deny network*)
+(deny file-read-data %(hidden)s (subpath "/Volumes") (subpath "/private/tmp")
+    (subpath "/private/var/folders"))
+(allow file-read-data (subpath (param "FC")) (subpath (param "WS"))
+    (subpath (param "SCRATCH"))%(ro)s)
+(deny file-write*)
+(allow file-write* (literal "/dev/null") (literal "/dev/zero")
+    (literal "/dev/dtracehelper") (subpath "/dev/fd")
+    (subpath (param "WS")) (subpath (param "SCRATCH")))
+"""
 
 
 # ------------------------------------------------------------- freecadcmd
@@ -124,12 +181,17 @@ def _works(argv):
 
 
 def isolation():
-    """'bwrap', 'unshare' or 'none' - probed once, by actually running it."""
+    """'bwrap', 'seatbelt', 'unshare' or 'none' - probed once, by actually
+    running it."""
     global _ISOLATION
     if _ISOLATION is None:
         mode = os.environ.get("ATECH_SANDBOX_ISOLATION")
-        if mode in ("bwrap", "unshare", "none"):
+        if mode in ("bwrap", "seatbelt", "unshare", "none"):
             _ISOLATION = mode
+        elif sys.platform == "darwin":
+            _ISOLATION = "seatbelt" if (os.access(SANDBOX_EXEC, os.X_OK) and _works(
+                [SANDBOX_EXEC, "-p", "(version 1)(allow default)(deny network*)",
+                 "/usr/bin/true"])) else "none"
         elif shutil.which("bwrap") and _works(
                 ["bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
                  "--unshare-net", "--die-with-parent", "true"]):
@@ -146,8 +208,12 @@ def isolation_caveat(mode=None):
     sentence for the USER saying what the build can still reach (R115:
     without bwrap the scratch HOME hides nothing from an absolute path)."""
     mode = mode or isolation()
-    if mode == "bwrap":
+    if mode in FULL_ISOLATION:
         return None
+    if mode == "none" and sys.platform == "darwin":
+        return ("Designs are built without isolation here (the macOS sandbox, "
+                "sandbox-exec, did not work): the design script can read your "
+                "files and use the network.")
     if mode == "unshare":
         return ("Designs are built without bubblewrap (bwrap) here: the design "
                 "script has no network and a scratch home folder, but it can "
@@ -172,8 +238,45 @@ def _homes():
 
 
 def _fc_root(fc):
-    """The install tree freecadcmd needs to see (…/usr of the AppImage)."""
+    """The install tree freecadcmd needs to see (…/usr of the AppImage,
+    …/Contents/Resources of the macOS bundle)."""
     return os.path.dirname(os.path.dirname(fc))
+
+
+def seatbelt_profile(n_homes, n_ro, n_protected):
+    """The SBPL text for sandbox-exec -p, with that many HOMEi, ROi and Pi
+    parameters (values passed with -D, so no path is ever spliced into the
+    profile text)."""
+    hidden = " ".join('(subpath (param "HOME%d"))' % i for i in range(n_homes))
+    ro = "".join(' (subpath (param "RO%d"))' % i for i in range(n_ro))
+    text = _SEATBELT_HEAD % {"hidden": hidden, "ro": ro}
+    if n_protected:
+        text += "(deny file-write* %s)\n" % " ".join(
+            '(literal (param "P%d"))' % i for i in range(n_protected))
+    return text
+
+
+def _seatbelt_argv(fc, workspace, home, extra_ro):
+    homes = _homes()
+    font = font_path(fc)
+    ro = []
+    for p in [KIT_DIR, font and os.path.dirname(font)] + list(extra_ro):
+        if p and os.path.exists(p):
+            p = os.path.realpath(p)
+            if p not in ro:
+                ro.append(p)
+    prot = [os.path.join(workspace, n) for n in PROTECTED
+            if os.path.lexists(os.path.join(workspace, n))
+            and not os.path.islink(os.path.join(workspace, n))]
+    a = [SANDBOX_EXEC, "-p", seatbelt_profile(len(homes), len(ro), len(prot))]
+    params = ([("HOME%d" % i, h) for i, h in enumerate(homes)]
+              + [("RO%d" % i, p) for i, p in enumerate(ro)]
+              + [("P%d" % i, p) for i, p in enumerate(prot)]
+              + [("FC", os.path.realpath(_fc_root(fc))), ("WS", workspace),
+                 ("SCRATCH", home)])
+    for k, v in params:
+        a += ["-D", "%s=%s" % (k, v)]
+    return a
 
 
 def font_path(fc=None):
@@ -224,9 +327,29 @@ def _argv(mode, fc, workspace, home, extra_ro):
         a += ["--bind", home, home, "--chdir", workspace, "--unshare-net", "--unshare-ipc",
               "--unshare-pid", "--die-with-parent", "--new-session"]
         return a + base
+    if mode == "seatbelt":
+        return _seatbelt_argv(fc, workspace, home, extra_ro) + base
     if mode == "unshare":
         return ["unshare", "-rn"] + base
     return base
+
+
+#: R270: the epoch second the agent's turn started. claude_cli.ClaudeRun
+#: (the app) and run_eval.claude_turn (the eval) put it in the CLI child's
+#: environment; ./check forwards it to check.py (its TURN CLOCK, WS3) and
+#: Job passes it on when its own process has it.
+TURN_T0_ENV = "ATECH_TURN_T0"
+_TURN_T0_RE = re.compile(r"^[0-9]{9,12}(\.[0-9]{1,6})?$")
+
+
+def turn_t0(value=None):
+    """R270: a well-formed ATECH_TURN_T0 (epoch seconds, as a string) from
+    `value` or this process's environment, else "" - never free text, since
+    the value is spliced into the ./check script."""
+    v = os.environ.get(TURN_T0_ENV) if value is None else value
+    v = ("%d" % v) if isinstance(v, (int, float)) and not isinstance(v, bool) \
+        else str(v or "").strip()
+    return v if _TURN_T0_RE.match(v) else ""
 
 
 def _passthrough_env():
@@ -237,7 +360,64 @@ def _passthrough_env():
     lib = (os.environ.get("ATECH_ARTIFACTS") or "").strip()
     if lib:
         out["ATECH_ARTIFACTS"] = os.path.abspath(os.path.expanduser(lib))
+    # R275: the agent mode reaches check.py (its R270 quality gates read
+    # $ATECH_PROMPT_MODE, and env -i / the Job env drop it): without this a
+    # user in fast mode (settings "agent_quality" off) got quality gates.
+    out["ATECH_PROMPT_MODE"] = "quality" if _quality_mode() else "fast"
     return out
+
+
+def _quality_mode():
+    """R275: build.quality_mode() (settings, then $ATECH_PROMPT_MODE); the
+    env alone when build cannot be imported (a bare sandbox)."""
+    try:
+        from . import build
+        return build.quality_mode()
+    except Exception:                                  # noqa: BLE001
+        return (os.environ.get("ATECH_PROMPT_MODE") or "").strip().lower() != "fast"
+
+
+# R250: why a child ended without check.py's result line. A shell exit
+# status (128 + n for signal n; `timeout` 124) or a Popen returncode (-n).
+_SIGNAL_WHY = {
+    24: "it used more CPU time than its limit (SIGXCPU - RLIMIT_CPU, "
+        "check.py cpu_limit)",
+    9: "it was killed (SIGKILL: the hard wall-clock stop, or the system "
+       "ran out of memory)",
+    14: "it ran past the hard wall-clock stop (SIGALRM)",
+    15: "it was stopped (SIGTERM)",
+    11: "it crashed inside FreeCAD (SIGSEGV - often a geometry operation "
+        "on a broken shape)",
+    6: "it aborted inside FreeCAD (SIGABRT)",
+    10: "it crashed inside FreeCAD (SIGBUS)",
+}
+
+
+def death_text(returncode, timeout=None, shell=False):
+    """R250: one sentence on why the build process ended with no result.
+    shell=True reads a shell exit status (128 + signal, 124 = timeout(1)),
+    else a Popen returncode (negative = signal)."""
+    rc = returncode
+    sig = None
+    if rc is None:
+        return "the build process ended without a result"
+    if shell:
+        if rc == 124:
+            sig = 14
+        elif rc > 128:
+            sig = rc - 128
+    elif rc < 0:
+        sig = -rc
+    elif rc > 128:                  # bwrap / sandbox-exec pass 128 + n on
+        sig = rc - 128
+    if sig is None:
+        return ("the build process exited with code %s without a result "
+                "(FreeCAD failed to start, or model.py ended the process)" % rc)
+    why = _SIGNAL_WHY.get(sig, "it was killed by signal %d" % sig)
+    lim = (" The time limit is %g s of wall clock." % timeout) if timeout else ""
+    return ("the build process ended with no result: %s.%s A build that heavy "
+            "(many fillets, booleans on detailed solids) must be made lighter - "
+            "build it in steps and run ./check after each." % (why, lim))
 
 
 # -------------------------------------------------------------------- job
@@ -267,12 +447,12 @@ class Result(object):
 class Job(object):
     """One child build. start() returns at once; poll() never blocks."""
 
-    def __init__(self, workspace, script="model.py", timeout=DEFAULT_TIMEOUT,
+    def __init__(self, workspace, script="model.py", timeout=None,
                  freecadcmd=None, extra_path=(), mode=None, render=False,
                  context=None):
         self.workspace = os.path.realpath(workspace)
         self.script = os.path.join(self.workspace, script)
-        self.timeout = float(timeout)
+        self.timeout = float(timeout or default_timeout())   # R230
         self.fc = freecadcmd or find_freecadcmd()
         self.extra_path = [os.path.realpath(p) for p in extra_path if p]
         self.mode = mode or isolation()
@@ -301,7 +481,9 @@ class Job(object):
         elif os.path.isdir(self.out_dir):
             shutil.rmtree(self.out_dir, ignore_errors=True)
         os.makedirs(self.out_dir)
-        self._home = tempfile.mkdtemp(prefix="atech-sandbox-home-")
+        # realpath: the Seatbelt profile matches resolved paths, and macOS's
+        # temp folder sits behind the /var -> /private/var link.
+        self._home = os.path.realpath(tempfile.mkdtemp(prefix="atech-sandbox-home-"))
         env = {
             "HOME": self._home,
             "PATH": "/usr/bin:/bin",
@@ -319,7 +501,13 @@ class Job(object):
             "ATECH_CHECK_TIMEOUT": str(self.timeout),
             "ATECH_CHECK_PATH": os.pathsep.join(self.extra_path),
         }
+        t0 = turn_t0()                     # R270: the turn clock, when in a turn
+        if t0:
+            env[TURN_T0_ENV] = t0
         env.update(_passthrough_env())
+        if sys.platform == "darwin":
+            # FreeCAD on macOS ignores $HOME for its user folders (MEASURED).
+            env["FREECAD_USER_HOME"] = self._home
         if self.context:
             env["ATECH_CHECK_CONTEXT"] = self.context
         argv = _argv(self.mode, self.fc, self.workspace, self._home, self.extra_path)
@@ -394,8 +582,10 @@ class Job(object):
                     pass
                 break
         if report is None:
-            return Result(False, "the build process ended without a result "
-                          "(exit code %s):\n%s" % (self.proc.returncode, text[-3000:]),
+            # R250: say WHY (a CPU limit, a crash) - never a bare exit code
+            return Result(False, "%s (exit code %s):\n%s" % (
+                death_text(self.proc.returncode, self.timeout),
+                self.proc.returncode, text[-3000:]),
                           seconds=secs, isolation=self.mode, stdout=text,
                           returncode=self.proc.returncode)
         err = report.get("error") or ""
@@ -422,7 +612,7 @@ class Job(object):
 
 
 def wrapper_script(workspace, extra_path=(), freecadcmd=None, mode=None,
-                   timeout=DEFAULT_TIMEOUT, context=None):
+                   timeout=None, context=None, turn_start=None):
     """The text of the agent's ./check (PRD S09): build model.py in the same
     isolated child Studio uses, print check.py's lines, write check.png.
 
@@ -434,17 +624,38 @@ def wrapper_script(workspace, extra_path=(), freecadcmd=None, mode=None,
     The agent is allowed to run exactly this file, so it must not be a way
     around the sandbox: it runs check.py under the same bwrap/unshare argv,
     with a scratch HOME, one check at a time (flock), and a hard `timeout`
-    on top of check.py's own. Returns None when no freecadcmd is found."""
+    on top of check.py's own. Returns None when no freecadcmd is found.
+
+    R270: ATECH_TURN_T0 (the turn's start, epoch s) reaches check.py: the
+    value in the environment ./check runs in (the agent's shell inherits it
+    from the CLI child, claude_cli / run_eval), else `turn_start` or this
+    process's own ATECH_TURN_T0 baked in at write time, else empty. ./check
+    also prints how long it waited for .check.lock and how long the build
+    ran (ATECH_CHECK_TIMING), so the eval can tell contention from the
+    agent's own iteration speed."""
     import shlex
     fc = freecadcmd or find_freecadcmd()
     if fc is None:
         return None
+    # R230: the mode's timeout (180 s in quality mode) - ./check passes it
+    # to check.py as ATECH_CHECK_TIMEOUT, so the agent's own check is as
+    # long as Studio's build.
+    timeout = float(timeout or default_timeout())
     ws = os.path.realpath(workspace)
     mode = mode or isolation()
     extra = [os.path.realpath(p) for p in extra_path if p]
     placeholder = "/@ATECH_HOME@"
     argv = _argv(mode, fc, ws, placeholder, extra)
-    cmd = " ".join('"$h"' if a == placeholder else shlex.quote(a) for a in argv)
+
+    def _q(a):
+        # The scratch HOME is made when ./check runs; the placeholder may
+        # be a whole argument (bwrap) or part of one (-D SCRATCH=..., seatbelt).
+        if placeholder not in a:
+            return shlex.quote(a)
+        pre, post = a.split(placeholder, 1)
+        return ((shlex.quote(pre) if pre else "") + '"$h"'
+                + (shlex.quote(post) if post else ""))
+    cmd = " ".join(_q(a) for a in argv)
     env = {
         "PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "QT_QPA_PLATFORM": "offscreen",
         "ATECH_CHECK_SCRIPT": os.path.join(ws, "model.py"),
@@ -456,25 +667,62 @@ def wrapper_script(workspace, extra_path=(), freecadcmd=None, mode=None,
         env["ATECH_CHECK_CONTEXT"] = os.path.realpath(context)
     env.update(_passthrough_env())
     env_s = " ".join("%s=%s" % (k, shlex.quote(v)) for k, v in env.items())
+    # R270: the runtime value wins (a later turn re-uses this file in the
+    # eval); the baked one is digits only (turn_t0), safe inside the quotes.
+    env_s += ' %s="${%s:-%s}"' % (TURN_T0_ENV, TURN_T0_ENV, turn_t0(turn_start))
+    # FreeCAD on macOS takes its user folders from the account, not $HOME.
+    fc_home = ' FREECAD_USER_HOME="$h"' if sys.platform == "darwin" else ""
     return """#!/bin/sh
 # Atech Atelier self-check - written by Atelier, rewritten every turn.
 # Builds model.py headless in a sandbox, prints what it measured, writes
 # check.png. The last line is CHECK PASS or CHECK FAIL: <reasons>.
 cd %(ws)s || exit 3
 h=$(mktemp -d "${TMPDIR:-/tmp}/atech-check-home-XXXXXX") || exit 3
+h=$(cd "$h" && pwd -P) || exit 3
 trap 'rm -rf "$h"' EXIT INT TERM
 lock=""
-if command -v flock >/dev/null 2>&1; then lock="flock -w 120 .check.lock"; fi
+if command -v flock >/dev/null 2>&1; then lock="flock -w %(wait)d .check.lock"
+elif command -v lockf >/dev/null 2>&1; then lock="lockf -t %(wait)d .check.lock"; fi
 stop=""
-if command -v timeout >/dev/null 2>&1; then stop="timeout -k 5 %(hard)d"; fi
+if command -v timeout >/dev/null 2>&1; then stop="timeout -k 5 %(hard)d"
+elif command -v perl >/dev/null 2>&1; then
+  stop="perl -e alarm(shift);exec(@ARGV)||exit(127) %(hard)d"; fi
+t_ask=$(date +%%s)
 env -i HOME="$h" TMPDIR="$h" XDG_CONFIG_HOME="$h/.config" \
     XDG_DATA_HOME="$h/.local/share" XDG_CACHE_HOME="$h/.cache" \
-    MPLCONFIGDIR="$h/.mpl" %(env)s \
-    $lock $stop %(cmd)s
-""" % {"ws": shlex.quote(ws), "hard": int(timeout) + 30, "env": env_s, "cmd": cmd}
+    MPLCONFIGDIR="$h/.mpl"%(fc_home)s %(env)s \
+    $lock /bin/sh -c 'date +%%s >"$0.t"; "$@"; echo $? >"$0"' "$h/rc" $stop %(cmd)s >"$h/out" 2>&1
+rc=$?
+t_end=$(date +%%s)
+# R250: the child's own status (lockf turns a signal into 70)
+[ -s "$h/rc" ] && rc=$(cat "$h/rc")
+# R270: seconds spent waiting for .check.lock vs building (contention)
+if [ -s "$h/rc.t" ]; then t_got=$(cat "$h/rc.t"); else t_got=$t_end; fi
+echo "ATECH_CHECK_TIMING lock_wait_s=$((t_got - t_ask)) run_s=$((t_end - t_got))"
+cat "$h/out"
+# R250: a child killed by a signal or the hard stop prints nothing - say so
+if ! grep -Eq '^CHECK (PASS|FAIL)' "$h/out"; then
+  case $rc in
+    124|142) why="it ran past the hard wall-clock stop of %(hard)d s" ;;
+    137) why="it was killed (SIGKILL: the hard stop, or out of memory)" ;;
+    152) why="it used more CPU time than its limit (SIGXCPU)" ;;
+    139|138) why="it crashed inside FreeCAD (a geometry operation on a broken shape)" ;;
+    134) why="it aborted inside FreeCAD" ;;
+    75|1) why="the build process exited with code $rc (another ./check may hold the lock)" ;;
+    *) why="the build process exited with code $rc" ;;
+  esac
+  echo "ERROR: model.py produced no result: $why. Make the build lighter (build it in steps, ./check after each) or find the endless loop."
+  echo "CHECK FAIL: no result ($why)"
+  [ "$rc" -eq 0 ] && rc=1
+fi
+exit $rc
+""" % {"ws": shlex.quote(ws), "hard": int(timeout) + 30, "env": env_s,
+       "cmd": cmd, "fc_home": fc_home,
+       # R230: a second ./check waits out a whole first one (120 s at 60).
+       "wait": max(120, int(timeout) + 60)}
 
 
-def run(workspace, script="model.py", timeout=DEFAULT_TIMEOUT, **kw):
+def run(workspace, script="model.py", timeout=None, **kw):
     """Build model.py in a child process and wait. Returns a Result."""
     return Job(workspace, script, timeout, **kw).start().wait()
 

@@ -218,8 +218,11 @@ class TestWorkspaceAndPrompt(unittest.TestCase):
         for p in (a, b):
             self.assertTrue(os.path.isdir(p))
             self.assertEqual(os.listdir(p), [])
-            self.assertTrue(p.startswith(os.path.join(home, ".local", "share")),
-                            p)
+            # FreeCAD's per-platform user data folder (acadagent's fallback).
+            want = (os.path.join(home, "Library", "Application Support")
+                    if sys.platform == "darwin"
+                    else os.path.join(home, ".local", "share"))
+            self.assertTrue(p.startswith(want), p)
             self.assertEqual(os.path.basename(os.path.dirname(p)), "agent")
 
     def test_system_prompt_names_the_script_path(self):

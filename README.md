@@ -25,6 +25,24 @@ It also knows the Atech hardware: the 14-port board and its plug-in modules
 ship inside the app, so you can design enclosures and parts around real
 modules that sit where they really go.
 
+### What you can do
+
+- **Describe it, get a real model.** The agent writes, builds and measures
+  every part, and you can ask for changes in the same chat.
+- **Start from one of 19 example projects**, each a complete build around real
+  Atech modules: a toy car, desk robot, RC tank, smart speaker, video
+  doorbell, mini arcade, pet feeder, smart planter, macro pad, music box and
+  more. Open one from Home and ask the agent to make it yours.
+- **Edit by hand, TinkerCAD-style.** Press **R** to add boxes, cylinders and
+  other shapes, type exact sizes in mm (imported **STEP** and STL parts too),
+  move, turn, and cut holes. [More below](#edit-by-hand).
+- **Build around real hardware.** Place modules on the 14-port Atech board,
+  shown as in [Atech Studio](https://studio.atech.dev); each one is checked
+  for fit.
+- **Get back to your projects anytime.** Click the Atech logo or press
+  **Ctrl+0** for Home.
+- **Export** as STEP or STL for printing, or keep the `.FCStd`.
+
 Atech AI CAD is the official FreeCAD 1.1.3 release, with FreeCAD's program
 files unmodified (no FreeCAD source patched or recompiled), plus the Atech
 workbench, theme and module library. Atech changes only the launcher
@@ -149,7 +167,9 @@ chmod +x Atech*-x86_64.AppImage
 Atech AI CAD opens on its own workbench. The sidebar has a project picker at the
 top (open, recent and new projects), then **3D CAD** (the chat with the agent)
 and **Atech modules** (the board). The app comes with ready-made example
-projects (a toy car, a desk robot, an RC tank and more) in your projects folder.
+projects (19 of them: a toy car, a desk robot, a video doorbell, a mini arcade
+and more) in your projects folder. They are all on **Home** (the Atech logo,
+or Ctrl+0).
 
 ## Set up Claude Code (once)
 

@@ -61,8 +61,9 @@ please report them.
 
 ## Screenshots
 
-**Starter projects, built around real Atech hardware.** Each one is shown
-finished, cut open to the Atech board and modules inside, and exploded:
+**Starter projects, built around real Atech hardware.** All 24 open from
+Home. Each one is shown finished, cut open to the Atech board and modules
+inside, and exploded:
 
 | Product | Inside (the Atech hardware) | Exploded |
 |:---:|:---:|:---:|
@@ -78,6 +79,42 @@ finished, cut open to the Atech board and modules inside, and exploded:
 | **a motion-sensing night light**: a PIR sensor, four lights behind a frosted moon, a mode key | | |
 | ![A toy car](docs/screenshots/projects/toy_car_product.png) | ![The toy car cut open: the board and its modules](docs/screenshots/projects/toy_car_inside.png) | ![The toy car exploded](docs/screenshots/projects/toy_car_exploded.png) |
 | **a toy car**: four DC motors (one per wheel), headlights, a distance sensor | | |
+| ![A desk robot](docs/screenshots/projects/desk_robot_product.png) | ![The desk robot cut open: the board and its modules](docs/screenshots/projects/desk_robot_inside.png) | ![The desk robot exploded](docs/screenshots/projects/desk_robot_exploded.png) |
+| **a desk robot**: a screen face, a speaker and a microphone, a button on its head | | |
+| ![A smart speaker](docs/screenshots/projects/smart_speaker_product.png) | ![The smart speaker cut open: the board and its modules](docs/screenshots/projects/smart_speaker_inside.png) | ![The smart speaker exploded](docs/screenshots/projects/smart_speaker_exploded.png) |
+| **a smart speaker**: a light ring, two buttons, a speaker and a microphone | | |
+| ![A bedside lamp](docs/screenshots/projects/bedside_lamp_product.png) | ![The bedside lamp cut open: the board and its modules](docs/screenshots/projects/bedside_lamp_inside.png) | ![The bedside lamp exploded](docs/screenshots/projects/bedside_lamp_exploded.png) |
+| **a bedside lamp**: three lights in a frosted globe, a touch button on the base | | |
+| ![A handheld console](docs/screenshots/projects/handheld_console_product.png) | ![The handheld console cut open: the board and its modules](docs/screenshots/projects/handheld_console_inside.png) | ![The handheld console exploded](docs/screenshots/projects/handheld_console_exploded.png) |
+| **a handheld console**: a big screen, a D-pad and A / B buttons | | |
+| ![An alarm clock](docs/screenshots/projects/alarm_clock_product.png) | ![The alarm clock cut open: the board and its modules](docs/screenshots/projects/alarm_clock_inside.png) | ![The alarm clock exploded](docs/screenshots/projects/alarm_clock_exploded.png) |
+| **an alarm clock**: a screen face, a speaker, a snooze bar and keys | | |
+| ![A desk fan](docs/screenshots/projects/desk_fan_product.png) | ![The desk fan cut open: the board and its modules](docs/screenshots/projects/desk_fan_inside.png) | ![The desk fan exploded](docs/screenshots/projects/desk_fan_exploded.png) |
+| **a desk fan**: a DC motor drives the fan; a button and a light on the foot | | |
+| ![A weather station](docs/screenshots/projects/weather_station_product.png) | ![The weather station cut open: the board and its modules](docs/screenshots/projects/weather_station_inside.png) | ![The weather station exploded](docs/screenshots/projects/weather_station_exploded.png) |
+| **a weather station**: a screen, and a temperature / humidity sensor in a louvred hut | | |
+| ![An RC tank](docs/screenshots/projects/rc_tank_product.png) | ![The RC tank cut open: the board and its modules](docs/screenshots/projects/rc_tank_inside.png) | ![The RC tank exploded](docs/screenshots/projects/rc_tank_exploded.png) |
+| **an RC tank**: two DC motors drive the tracks; lights and a distance sensor | | |
+| ![A smart planter](docs/screenshots/projects/smart_planter_product.png) | ![The smart planter cut open: the board and its modules](docs/screenshots/projects/smart_planter_inside.png) | ![The smart planter exploded](docs/screenshots/projects/smart_planter_exploded.png) |
+| **a smart planter**: a soil and air readout, a temperature / humidity sensor, a status glow | | |
+| ![A pet feeder](docs/screenshots/projects/pet_feeder_product.png) | ![The pet feeder cut open: the board and its modules](docs/screenshots/projects/pet_feeder_inside.png) | ![The pet feeder exploded](docs/screenshots/projects/pet_feeder_exploded.png) |
+| **a pet feeder**: a motor turns the portion rotor; a FEED key, a light and a screen | | |
+| ![A video doorbell](docs/screenshots/projects/video_doorbell_product.png) | ![The video doorbell cut open: the board and its modules](docs/screenshots/projects/video_doorbell_inside.png) | ![The video doorbell exploded](docs/screenshots/projects/video_doorbell_exploded.png) |
+| **a video doorbell**: a glowing button, a distance sensor, a microphone and a speaker | | |
+| ![A mini arcade](docs/screenshots/projects/mini_arcade_product.png) | ![The mini arcade cut open: the board and its modules](docs/screenshots/projects/mini_arcade_inside.png) | ![The mini arcade exploded](docs/screenshots/projects/mini_arcade_exploded.png) |
+| **a mini arcade**: a spinner, two buttons, a screen and a speaker | | |
+| ![A music box](docs/screenshots/projects/music_box_product.png) | ![The music box cut open: the board and its modules](docs/screenshots/projects/music_box_inside.png) | ![The music box exploded](docs/screenshots/projects/music_box_exploded.png) |
+| **a music box**: a speaker, a lit LED window and a knob on a glowing ring | | |
+| ![A parking sensor](docs/screenshots/projects/parking_sensor_product.png) | ![The parking sensor cut open: the board and its modules](docs/screenshots/projects/parking_sensor_inside.png) | ![The parking sensor exploded](docs/screenshots/projects/parking_sensor_exploded.png) |
+| **a parking sensor**: a distance sensor, a traffic light and a screen | | |
+| ![A desk organizer](docs/screenshots/projects/desk_organizer_product.png) | ![The desk organizer cut open: the board and its modules](docs/screenshots/projects/desk_organizer_inside.png) | ![The desk organizer exploded](docs/screenshots/projects/desk_organizer_exploded.png) |
+| **a desk organizer**: a screen, a temperature / humidity sensor and a key | | |
+| ![A photo frame](docs/screenshots/projects/photo_frame_product.png) | ![The photo frame cut open: the board and its modules](docs/screenshots/projects/photo_frame_inside.png) | ![The photo frame exploded](docs/screenshots/projects/photo_frame_exploded.png) |
+| **a photo frame**: a portrait screen, a backlight, an orientation sensor and a key | | |
+| ![A metronome](docs/screenshots/projects/metronome_product.png) | ![The metronome cut open: the board and its modules](docs/screenshots/projects/metronome_inside.png) | ![The metronome exploded](docs/screenshots/projects/metronome_exploded.png) |
+| **a metronome**: a tempo dial, a click speaker, a BPM screen, a beat light and a tap key | | |
+| ![A macro pad](docs/screenshots/projects/macro_pad_product.png) | ![The macro pad cut open: the board and its modules](docs/screenshots/projects/macro_pad_inside.png) | ![The macro pad exploded](docs/screenshots/projects/macro_pad_exploded.png) |
+| **a macro pad**: two keys, a label screen, a status strip and a volume dial | | |
 
 To see your own design these ways in the app: **E** (or **Exploded view** in
 the view bar) pulls the parts apart and puts them back; the slider in **Show

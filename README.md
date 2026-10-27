@@ -3,6 +3,16 @@
 *Atech AI CAD, powered by FreeCAD.* (Formerly **Atech Atelier**.)
 
 <p align="center">
+  <sub>BASED ON</sub><br><br>
+  <a href="https://www.freecad.org">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/brand/freecad/FreeCAD-wordmark-light.svg">
+      <img src="docs/brand/freecad/FreeCAD-wordmark.svg" alt="FreeCAD" height="56">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
   <a href="#install">Install</a> ·
   <a href="#common-questions">Common questions</a> ·
   <a href="https://discord.gg/B6kuhUW27S">Discord</a> ·
@@ -52,6 +62,13 @@ one command, and nothing is installed system-wide.
 > licensed "LGPL2+": the GNU LGPL version 2 or any later version). It is not
 > endorsed by, affiliated with, or a product of the FreeCAD project or the
 > FreeCAD Project Association.
+>
+> FreeCAD itself is free: you can download it from
+> [freecad.org](https://www.freecad.org) and use it on its own. The FreeCAD
+> inside Atech AI CAD is FreeCAD's official release with its program files
+> unmodified, and the complete source of FreeCAD and of every copyleft library
+> it bundles is published on each
+> [release page](https://github.com/atechdotdev/atech-atelier/releases).
 
 **Status: a preview.** The latest release is 0.1.2, the first under
 the new name and the first with a Mac download. Expect rough edges, and
@@ -432,15 +449,25 @@ its own files.
 |---|---|---|
 | Atech's code: the Atech workbench (`addon/AcadAgent`), the branding and build scripts | **LGPL-2.1-or-later** | [`LICENSE`](LICENSE) |
 | Atech board and module 3D models, and `presets.yaml` | **CC BY-NC 4.0**: share and adapt for non-commercial purposes, crediting Atech, keeping the notices, linking the licence and saying if you changed them | [`LICENSE-models.md`](LICENSE-models.md) |
-| FreeCAD and the libraries it bundles | their own licences (FreeCAD: "LGPL2+", the GNU LGPL version 2 or any later version, per its `LICENSE.html`; its source files mostly carry LGPL-2.1-or-later) | FreeCAD's list: `usr/share/doc/FreeCAD/ThirdPartyLibraries.html`; every package: `packages.txt` at the image root; texts: `usr/share/doc/<package>/`, `usr/share/licenses/`, `site-packages/*.dist-info/` in the app |
-| third-party components Atech added (FreeCADMCP, Lucide, Feather, the AppImage type-2 runtime and the libraries it statically links), theme files derived from FreeCAD's own, and licence texts Atech adds for bundled libraries that lacked them | their own licences | `usr/share/doc/atech-ai-cad/third_party/` in the app |
+| FreeCAD and the libraries it bundles | their own licences (FreeCAD: "LGPL2+", the GNU LGPL version 2 or any later version, per its `LICENSE.html`; its source files mostly carry LGPL-2.1-or-later) | FreeCAD's list: `share/doc/FreeCAD/ThirdPartyLibraries.html`; every package: `packages.txt` (Linux: at the image root; macOS: `Contents/packages.txt`); texts: `share/doc/<package>/`, `share/licenses/`, `site-packages/*.dist-info/` in the app |
+| third-party components Atech added (FreeCADMCP, Lucide, Feather, the AppImage type-2 runtime and the libraries it statically links), theme files derived from FreeCAD's own, and licence texts Atech adds for bundled libraries that lacked them | their own licences | `share/doc/atech-atelier/third_party/` in the app |
 
-Inside the app, `usr/share/doc/atech-ai-cad/` also holds `SOURCE_OFFER.txt`
-(where to get the source) and `ATECH_CHANGES.txt` (every file Atech added or
-changed compared with the upstream FreeCAD image, measured file by file). To
-browse them without running the app:
-`./AtechAtelier-*-x86_64.AppImage --appimage-extract`, then look under
+Inside the app, `share/doc/atech-atelier/` also holds `CREDITS.md`,
+`SOURCE_OFFER.txt` (where to get the source) and `ATECH_CHANGES.txt` (every
+file Atech added or changed compared with the upstream FreeCAD image, measured
+file by file). On a Mac that folder is in `Atech Atelier.app/Contents/Resources/`
+(right-click the app, **Show Package Contents**). On Linux it is in `usr/`
+inside the AppImage; to browse it without running the app, run
+`./AtechAtelier-*-x86_64.AppImage --appimage-extract` and look under
 `squashfs-root/usr/share/doc/`.
+
+**Source code.** Atech's own source is this repository. The complete
+corresponding source of FreeCAD and of every bundled copyleft (GPL, LGPL, MPL,
+EPL) library is attached to each
+[release](https://github.com/atechdotdev/atech-atelier/releases):
+`freecad_source_<version>.tar.gz`, the `copyleft-sources-*.tar` files (each
+library's upstream source plus its build recipe and patches) and `SOURCES.md`,
+which says what is where.
 
 Claude Code is a proprietary Anthropic product. It is **not** part of Atech
 AI CAD: the app runs the copy you installed, under Anthropic's terms. Atech
@@ -448,8 +475,12 @@ AI CAD is not endorsed by or affiliated with Anthropic.
 
 The FreeCAD logo is a registered trademark (Benelux) of the FreeCAD Project
 Association AISBL (FPA), which holds the rights over commercial use of the
-FreeCAD name and logo; we use the name only to say what Atech AI CAD is built
-on. These licences do not grant any right to use the names "Atech" or "Atech
+FreeCAD name and logo. We use the FreeCAD name and the official, unaltered
+FreeCAD wordmark (top of this page, from the FPA's logo kit) only to say that
+Atech AI CAD is built on FreeCAD and to link to freecad.org, as the FPA's
+[brand guidelines](https://fpa.freecad.org/handbook/process/logo.html) and
+FreeCAD's [licence page](https://wiki.freecad.org/License) allow. It is not
+Atech's logo. These licences do not grant any right to use the names "Atech" or "Atech
 AI CAD" or the Atech logos except to describe where the software comes from.
 
 ## Credits

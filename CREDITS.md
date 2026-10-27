@@ -13,6 +13,14 @@ version was measured is in the table at the end. Paths such as
 `usr/share/doc/...` are relative to the root of the AppImage (run it with
 `--appimage-extract` to browse them).
 
+0.1.2 adds a macOS app (Apple silicon and Intel), built the same way from
+FreeCAD 1.1.3's official macOS release; see the macOS rows of the table
+below. In the macOS app, `usr/` is `Atech Atelier.app/Contents/Resources/`
+and `packages.txt` is `Contents/packages.txt`. The macOS app bundles
+FreeCAD's macOS package set (its own `packages.txt`), so library versions
+can differ from the Linux ones listed here; the source of each is listed in
+the release's `SOURCES.md`.
+
 ---
 
 ## FreeCAD — the foundation
@@ -29,6 +37,7 @@ and its community.
 |---|---|
 | What we ship | the official FreeCAD **1.1.3** Linux AppImage, with FreeCAD's program files **unmodified**: no FreeCAD source file is patched or recompiled. Atech changes only the AppImage's launcher script (`AppRun`), its icon and its desktop/AppStream entries, and adds its own files (among them a FreeCAD branding file, `usr/bin/branding.xml`, which sets the name and the About text); every change is listed in `ATECH_CHANGES.txt` |
 | Upstream image | `FreeCAD_1.1.3-Linux-x86_64-py311.AppImage`, sha256 `3a853eb69ee595f779f2255dbf80a765926981d8ff68903cefee4dfb03a8f5ef`, from the FreeCAD tag 1.1.3 (commit `145529fe741292ff0b3977a01195bf0247425794`) |
+| Upstream images (macOS, from 0.1.2) | `FreeCAD_1.1.3-macOS-arm64-py311.dmg`, sha256 `f5c0ece7cd7c932466d6effadc0fc6e179b0538a9d9a6a77a6769eae3af2667c`, and `FreeCAD_1.1.3-macOS-x86_64-py311.dmg`, sha256 `8434bd6ad32f597605d184e5b996f496e9cbc7e6d8ffb6db4dbd6e2ce6d1612b`, from the same FreeCAD tag and commit; the `FreeCAD.app` inside is signed by the FreeCAD Project Association (Developer ID team `289DJRF23X`). FreeCAD's program files are unmodified; Atech rewrites `Contents/Info.plist` (name, icon, version), adds its icon and files, and re-signs the bundle; every change is listed in `ATECH_CHANGES.txt` |
 | Copyright | "(C) 2001-2026 FreeCAD contributors" (FreeCAD 1.1.3's own About banner, verbatim) |
 | Licence | the GNU LGPL, version 2 or (at your option) any later version: **"LGPL2+"**, as FreeCAD states it in its licence page (`usr/share/doc/FreeCAD/LICENSE.html`: "The FreeCAD application is licensed under the terms of the LGPL2+ license") and its About banner ("FreeCAD is free and open-source software licensed under the terms of LGPL2+ license"). SPDX writes LGPL2+ as `LGPL-2.0-or-later`. FreeCAD's repository `LICENSE` file is the LGPL 2.1 text, and many of its source files carry `SPDX-License-Identifier: LGPL-2.1-or-later` (1027 of the 1533 Python files FreeCAD ships under `usr/Mod`) |
 | Licence text in the app | `usr/share/doc/FreeCAD/LICENSE.html` (the GNU Library General Public License, version 2) |
@@ -40,7 +49,12 @@ Atech Atelier is **not** endorsed by, affiliated with, or a product of the
 FreeCAD project or the FreeCAD Project Association. The FreeCAD logo is a
 registered trademark (Benelux) of the FreeCAD Project Association AISBL (FPA),
 which holds the rights over commercial use of the FreeCAD name and logo. We
-use the name only to say what Atech Atelier is built on.
+use the name, and the official unaltered FreeCAD wordmark in the README,
+only to say what Atech Atelier is built on and to link to
+https://www.freecad.org, as the FPA's brand guidelines
+(https://fpa.freecad.org/handbook/process/logo.html) and FreeCAD's licence
+page (https://wiki.freecad.org/License) allow. FreeCAD itself is free: anyone
+can download it from https://www.freecad.org and use it on its own.
 
 ### How the FreeCAD binaries were built
 

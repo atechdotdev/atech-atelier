@@ -984,6 +984,29 @@ ATECH_CASE = "atech_case.py"
 #: ratios or percentages (the toy car agent spent its level grepping the
 #: checker for them and never designed anything).
 ARCHETYPES = (
+    # R802: the ten starter examples added 2026-10-27, first so their
+    # specific words win ("pet feeder" before robot's "pet", "arcade"
+    # before handheld's "game", "parking" before vehicle's "car").
+    ('planter', ('planter', 'plant pot', 'flower pot', 'flowerpot', 'herb garden', 'cachepot'),
+     'a soil cavity open at the top behind a flat instrument face; an inner pot over a drip tray, the readout and the sensor vent lead'),
+    ('feeder', ('feeder', 'pet feeder', 'cat feeder', 'dog feeder', 'kibble', 'treat dispenser'),
+     'a hopper with a window over a base unit; a motor-driven rotor drops portions down a spout into a bowl in front, the controls on the face'),
+    ('doorbell', ('doorbell', 'door bell', 'intercom', 'entry phone', 'door camera'),
+     'a tall rounded slab on a wall plate: the big round press low on the centre line, the sensor and microphone behind a visor up top, a grille for the voice'),
+    ('arcade', ('arcade', 'bartop', 'arcade cabinet'),
+     'a side profile known at a glance: a marquee over a screen leaning back, a deck of controls in front, side art inside a dark border'),
+    ('music box', ('music box', 'musicbox', 'jukebox', 'record player'),
+     'a box you keep on a shelf: a body and a lid over a lid line, the controls on the lid top - the grille, the lit window and the knob lead'),
+    ('parking sign', ('parking', 'garage'),
+     "a wall sign read from the driver's seat: a big traffic light that leads, the distance on a screen, the sensor low toward the bumper, on a wall plate"),
+    ('organizer', ('organizer', 'organiser', 'pen holder', 'pencil holder', 'pen cup', 'pencil cup', 'desk tidy', 'desk caddy', 'caddy', 'stationery'),
+     'a low tray: cups of different heights, slots and a small display on it; the cups and the display lead'),
+    ('frame', ('photo frame', 'picture frame', 'digital frame', 'photoframe', 'frame display'),
+     'a flat panel leaning back on a kickstand: a moulding round a mat or glass, the picture leads'),
+    ('metronome', ('metronome', 'tempo', 'bpm'),
+     'a pyramid that narrows from a wide foot to a small flat top and leans back; the tempo dial, the beat light and the click grille on its face, a tap key near the apex'),
+    ('macro pad', ('macro pad', 'macropad', 'stream deck', 'keypad', 'keyboard'),
+     'a low wedge deck leaning toward the hand; big keys under their label screen, a dial standing in its own crown, a status strip'),
     ("vehicle", ("car", "truck", "tank", "boat", "vehicle", "rover",
                  "buggy", "4x4", "bus", "tractor", "train", "kart"),
      "long and low, a wheel at each corner under its arch, a cabin set "

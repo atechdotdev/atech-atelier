@@ -274,6 +274,17 @@ def stage_at(minutes):
 # speaker robot" is a robot), the fan before the lamp words ("a desk fan
 # with lights" is a fan).
 FORKS = [
+    # R802: the ten starter examples, first (their words are specific)
+    (r'\b(planters?|(?:plant|flower) ?pots?|flowerpots?|cachepots?|herb gardens?)\b', 'smart_planter'),
+    (r'\b(feeders?|kibble|feeding stations?)\b|\b(?:pet|cat|dog) food\b', 'pet_feeder'),
+    (r'\b(door ?bells?|intercoms?|entry ?phones?)\b', 'video_doorbell'),
+    (r'\b(arcades?|bartops?)\b', 'mini_arcade'),
+    (r'\b(music[ -]?box(es)?|juke[ -]?box(es)?|record[ -]?players?)\b', 'music_box'),
+    (r'\b(parking|garage)\b', 'parking_sensor'),
+    (r'\b(organi[sz]ers?|pen(cil)? ?(holders?|cups?)|desk ?tid(y|ies)|(desk )?cadd(y|ies)|stationery)\b', 'desk_organizer'),
+    (r'\b(photo ?frames?|picture ?frames?|digital (photo |picture )?frames?)\b', 'photo_frame'),
+    (r'\b(metronomes?|tempo|bpm)\b', 'metronome'),
+    (r'\b(macro[ -]?pads?|stream[ -]?decks?|keypads?|keyboards?)\b', 'macro_pad'),
     (r"\btanks?\b", "rc_tank"),
     (r"\b(cars?|vehicles?|trucks?)\b", "toy_car"),
     (r"\b(robots?|desk[ -]?pets?)\b", "desk_robot"),

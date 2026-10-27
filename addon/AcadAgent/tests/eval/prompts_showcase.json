@@ -5,23 +5,157 @@
     "Ids are unique across ALL sets (run_eval.load_expectations): the toy car is showcase_toy_car (R243), because the core set already has toy_car - the run showcasebase_showcase_1 saved it as toy_car."
   ],
   "prompts": [
-    {"id": "showcase_toy_car", "prompt": "a toy car",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "desk_robot", "prompt": "a little desk robot",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "smart_speaker", "prompt": "a smart speaker",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "handheld_console", "prompt": "a handheld game console",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "rc_tank", "prompt": "an RC tank",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "bedside_lamp", "prompt": "a bedside lamp",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "alarm_clock", "prompt": "an alarm clock",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "weather_station", "prompt": "a weather station",
-     "expect": {"min_objects": 1, "atech_check": true}},
-    {"id": "desk_fan", "prompt": "a small desk fan",
-     "expect": {"min_objects": 1, "atech_check": true}}
+    {
+      "id": "showcase_toy_car",
+      "prompt": "a toy car",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "desk_robot",
+      "prompt": "a little desk robot",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "smart_speaker",
+      "prompt": "a smart speaker",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "handheld_console",
+      "prompt": "a handheld game console",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "rc_tank",
+      "prompt": "an RC tank",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "bedside_lamp",
+      "prompt": "a bedside lamp",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "alarm_clock",
+      "prompt": "an alarm clock",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "weather_station",
+      "prompt": "a weather station",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "desk_fan",
+      "prompt": "a small desk fan",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "smart_planter",
+      "prompt": "a smart desk planter",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "pet_feeder",
+      "prompt": "a countertop pet feeder",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "video_doorbell",
+      "prompt": "a video doorbell",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "mini_arcade",
+      "prompt": "a mini arcade cabinet",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "music_box",
+      "prompt": "a music box",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "parking_sensor",
+      "prompt": "a garage parking assistant",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "showcase_desk_organizer",
+      "prompt": "a smart desk organizer",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "photo_frame",
+      "prompt": "a smart photo frame",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "metronome",
+      "prompt": "a digital metronome",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "macro_pad",
+      "prompt": "a macro pad",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    }
   ]
 }

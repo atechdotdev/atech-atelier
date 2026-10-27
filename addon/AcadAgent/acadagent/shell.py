@@ -635,7 +635,17 @@ EXAMPLE_ICONS = {"toy_car": "car", "desk_robot": "bot",
                  "smart_speaker": "speaker", "bedside_lamp": "sun",
                  "handheld_console": "keyboard", "alarm_clock": "bell",
                  "desk_fan": "rotate", "weather_station": "monitor",
-                 "rc_tank": "car"}
+                 "rc_tank": "car",
+                 "smart_planter": "tree",
+                 "pet_feeder": "cube",
+                 "video_doorbell": "bell",
+                 "mini_arcade": "monitor",
+                 "music_box": "speaker",
+                 "parking_sensor": "car",
+                 "desk_organizer": "layers",
+                 "photo_frame": "camera",
+                 "metronome": "bell",
+                 "macro_pad": "keyboard"}
 
 
 def example_entries():
@@ -661,6 +671,7 @@ def open_default(title):
     """R456: a fresh copy of the shipped default project `title` (its own
     project id and starter chat), opened as a new project. Returns the
     copy's path, or None (said in a notice)."""
+    _leave_home()
     try:
         from . import default_projects
         path = default_projects.new_from_default(title)
@@ -1031,6 +1042,24 @@ def _refresh_home():
             pass
 
 
+class _ClickFilter(QtCore.QObject):
+    """Calls fn() on a left click released over the watched widget."""
+
+    def __init__(self, fn, parent=None):
+        super().__init__(parent)
+        self._fn = fn
+
+    def eventFilter(self, obj, ev):                    # noqa: N802
+        if ev.type() == QtCore.QEvent.MouseButtonRelease \
+                and ev.button() == QtCore.Qt.LeftButton:
+            try:
+                self._fn()
+            except Exception as exc:                   # noqa: BLE001
+                _log("click: %r" % (exc,))
+            return True
+        return False
+
+
 class HomeView(QtWidgets.QWidget):
     """Home: shown in the viewport when no project is open (R308).
 
@@ -1045,6 +1074,13 @@ class HomeView(QtWidgets.QWidget):
     MAX_COLS = 5
     GAP = 12
     MARGIN = 32
+
+    def keyPressEvent(self, ev):                       # noqa: N802
+        """R801: Esc on Home (opened over a project) goes back to it."""
+        if ev.key() == QtCore.Qt.Key_Escape and home_open():
+            show_home(False)
+            return
+        super().keyPressEvent(ev)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1402,7 +1438,7 @@ class OrbitHint(QtWidgets.QFrame):
 #: R303: view-bar slots for tools other workstreams provide. Their buttons
 #: sit between the view toggles and Spin, in this order; a key not listed
 #: here goes after them. See register_view_tool().
-TOOL_ORDER = ("measure", "section", "show", "explode", "dims", "colour",
+TOOL_ORDER = ("measure", "section", "show", "explode", "dims", "shape", "colour",
               "export", "share")
 _TOOLS = {}
 #: R380: the slot shows two groups, inspect | output, with a thin line
@@ -1514,7 +1550,8 @@ BUILTIN_TOOLS = (("measure", "Measure"), ("section", "Section view"),
                  ("export", "Export for print"),
                  ("share", "Save a share image"))
 #: R700/R701: Show and hide (visibility.py) and Dimensions (dimensions.py).
-EDIT_TOOLS = (("show", "Show and hide"), ("dims", "Dimensions"))
+EDIT_TOOLS = (("show", "Show and hide"), ("dims", "Dimensions"),
+              ("shape", "Edit shapes"))
 
 
 def _measure_button(bar, key):
@@ -1567,6 +1604,9 @@ def _edit_button(bar, key):
     if key == "show":
         from . import visibility
         return visibility.view_bar_button(bar)
+    if key == "shape":
+        from . import manual_edit
+        return manual_edit.view_bar_button(bar)
     from . import dimensions
     return dimensions.view_bar_button(bar)
 
@@ -1953,6 +1993,9 @@ class Overlay(QtCore.QObject):
         self.place()
 
     def _on_sub(self, *_):
+        # A project brought to the front (opened from Home, picked in the
+        # project menu) means the user is back in the 3D view.
+        _leave_home()
         try:
             self.bar.sync_view()
         except Exception as exc:                       # noqa: BLE001
@@ -2035,22 +2078,23 @@ class Overlay(QtCore.QObject):
         except RuntimeError:                           # torn down
             return
         has_doc = bool(self.mdi.subWindowList())
-        free = self.free_rect(vp) if has_doc else vp
-        key = (vp.x(), vp.y(), vp.width(), vp.height(), has_doc,
+        home = not has_doc or home_open()          # R801: Home mode
+        free = self.free_rect(vp) if not home else vp
+        key = (vp.x(), vp.y(), vp.width(), vp.height(), has_doc, home,
                free.x(), free.width(), free.height())
         if not force and key == self._key:
             return
         self._key = key
-        self.bar.setVisible(has_doc)
-        self.empty.setVisible(not has_doc)
-        show_hint = has_doc and self.hint.wanted()
+        self.bar.setVisible(not home)
+        self.empty.setVisible(home)
+        show_hint = not home and self.hint.wanted()
         self.hint.setVisible(show_hint)
         if self._on_docs is not None:
             try:
                 self._on_docs()
             except Exception as exc:                   # noqa: BLE001
                 _log("docs hook: %r" % (exc,))
-        if has_doc:
+        if not home:
             avail = max(0, free.width() - 24)
             # Icons only in a small viewport (R84): the pill spanned the
             # whole view at 900x600 and covered the model.
@@ -2152,6 +2196,12 @@ class Sidebar(QtWidgets.QWidget):
         bl.addWidget(self.brand_word)
         bl.addStretch(1)
         hv.addWidget(self.brand)
+        # R801: the logo is the way Home (all projects), as on a website.
+        self.brand.setCursor(QtCore.Qt.PointingHandCursor)
+        self.brand.setToolTip("Home: all your projects (Ctrl+0)")
+        self.brand.setAccessibleName("Home")
+        self._home_click = _ClickFilter(toggle_home, self.brand)
+        self.brand.installEventFilter(self._home_click)
         prow = QtWidgets.QHBoxLayout()
         prow.setContentsMargins(0, 0, 0, 0)
         prow.setSpacing(4)
@@ -2580,6 +2630,7 @@ def _new_project():
     """Home's and the picker's "New project": W1's named-project flow
     (navbar.new_project_flow: asks a name, saves into the projects folder)
     when this build has it, else an empty document."""
+    _leave_home()
     fn = getattr(navbar, "new_project_flow", None)
     if callable(fn):
         try:
@@ -2696,6 +2747,7 @@ def open_file(path):
 
 def open_project_path(path):
     """Open a saved project from Home: switch to it when it is open already."""
+    _leave_home()
     name = _open_doc_named_by_path(path)
     try:
         if name is not None:
@@ -2722,6 +2774,7 @@ def open_path(path):
     """Open one dropped or chosen file (PRD Opening 4): a .FCStd as itself;
     STEP / STL / 3MF / IGES / BREP as a NEW project importing it, named
     after the file. Returns the document Name, or None on failure."""
+    _leave_home()
     low = path.lower()
     if low.endswith(OPEN_EXT):
         r = open_project_path(path)
@@ -2820,6 +2873,7 @@ def open_example(key):
     title), that is called instead, so the chat's workspace holds the
     example and the agent resumes from it. Returns the PendingBuild, the
     panel's result, or None."""
+    _leave_home()
     title = next((t for k, t, _s, _i in EXAMPLES if k == key), key)
     path = example_path(key)
     if path is None:
@@ -2946,6 +3000,8 @@ SHORTCUTS = (
      "Atech"),
     ("explode", "E", "Exploded view, or put the parts back", "Atech"),
     ("dims", "D", "Change the model's dimensions by hand", "Atech"),
+    ("shape", "R", "Edit shapes: add shapes, type exact sizes, holes", "Atech"),
+    ("home", "Ctrl+0", "Home: all your projects (Esc goes back)", "Atech"),
     ("ask", "Ctrl+Shift+A", "Ask about this view", "Atech"),
     ("full", "Ctrl+Shift+F", "Full-screen 3D (hide the sidebar)", "Atech"),
     ("sheet", "Ctrl+/", "Show these shortcuts", "Atech"),
@@ -3003,6 +3059,8 @@ def _shortcut_fn(sid):
         "see_through": lambda: _visibility_key("key_see_through"),
         "explode": lambda: _visibility_key("key_explode"),
         "dims": _open_dimensions,
+        "shape": _open_shape_editor,
+        "home": toggle_home,
     }[sid]
 
 
@@ -3014,6 +3072,52 @@ def _visibility_key(name):
 def _open_dimensions():
     from . import dimensions
     return dimensions.open_dialog(_mw_or_none())
+
+
+def _open_shape_editor():
+    from . import manual_edit
+    return manual_edit.open_editor(_mw_or_none())
+
+
+# ------------------------------------------------------- Home mode (R801)
+#: Home (the projects page) used to show only when no document was open: to
+#: see your other projects you had to close the one you were in. Home mode
+#: shows it over the 3D view with projects still open. The sidebar's logo
+#: and Ctrl+0 toggle it; opening any project from it, or Esc, leaves it.
+_HOME = {"on": False}
+
+
+def home_open():
+    return bool(_HOME["on"])
+
+
+def show_home(on=True):
+    """Show Home over the 3D view (on) or go back to the 3D view."""
+    on = bool(on)
+    if on == _HOME["on"]:
+        return on
+    _HOME["on"] = on
+    ov = _S.get("overlay")
+    if ov is not None:
+        try:
+            if on:
+                _refresh_home()
+            ov.place()
+            if on:
+                ov.empty.setFocusPolicy(QtCore.Qt.StrongFocus)
+                ov.empty.setFocus(QtCore.Qt.OtherFocusReason)
+        except RuntimeError:
+            pass
+    return on
+
+
+def toggle_home():
+    return show_home(not home_open())
+
+
+def _leave_home():
+    if home_open():
+        show_home(False)
 
 
 def _keys_of(act):

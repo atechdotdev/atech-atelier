@@ -64,6 +64,17 @@ PRODUCTS = {
     # R412 / R413
     "weather_station.py": ("weather station", "a weather station", "Lens"),
     "rc_tank.py": ("vehicle", "an RC tank", None),
+    # R802: the ten starter examples (2026-10-27)
+    'smart_planter.py': ('planter', 'a smart desk planter', 'Lens'),
+    'pet_feeder.py': ('feeder', 'a countertop pet feeder', 'Lens'),
+    'video_doorbell.py': ('doorbell', 'a video doorbell', None),
+    'mini_arcade.py': ('arcade', 'a mini arcade cabinet', 'Glass'),
+    'music_box.py': ('music box', 'a music box', None),
+    'parking_sensor.py': ('parking sign', 'a garage parking assistant', 'Screen_Lens'),
+    'desk_organizer.py': ('organizer', 'a smart desk organizer', 'Lens'),
+    'photo_frame.py': ('frame', 'a smart photo frame', None),
+    'metronome.py': ('metronome', 'a digital metronome', 'Lens'),
+    'macro_pad.py': ('macro pad', 'a macro pad', 'Label_Window'),
 }
 MARKERS = ("# === PARAMETERS (restyle here) ===",
            "# === STAGE A: hardware, shell, every working-face opening, fasteners ===",

@@ -6,6 +6,62 @@ change behaviour.
 
 ## [Unreleased]
 
+### Ten new starter examples
+
+- New detailed examples on Home's **Start from an example** row:
+  **smart planter, pet feeder, video doorbell, mini arcade, music box,
+  parking sensor, desk organizer, photo frame, metronome and macro pad.**
+  Each is a complete product around real Atech modules on ports the
+  firmware can drive (never 8 or 12): screw bosses, an opening for every
+  working face, lenses, grilles and key caps. Each passes the agent's own
+  `./check`, and so does every style variation of it (each RESTYLE knob at
+  its minimum and maximum).
+- Asking the agent for one of these products ("a doorbell", "an arcade
+  game", "a pencil holder", "a garage parking sensor") now starts from the
+  matching example. The new product words go first, so "a pet feeder" no
+  longer starts from the desk robot, and "an arcade game" no longer from
+  the handheld console.
+
+### Fixed
+
+- The desk robot and smart speaker examples failed `./check` again
+  ("microphone_p5_4: interference FAIL"). The imported SimReady microphone
+  mesh sits 0.05 mm off the board's 4+5 socket pitch, so a microphone on
+  ports 4+5 grazed the socket. The library microphone mesh is used for fit
+  checks again, and its 3D look is unchanged (models/SIMREADY.json says
+  why).
+
+### Edit shapes by hand, TinkerCAD style
+
+- A new **Edit shapes** window: view bar button, or press **R**. It follows
+  what you select.
+- **Add a shape:** box, cylinder, sphere, cone, torus or roof, 20 mm, set
+  down beside the model.
+- **Size:** type the exact width, depth and height in mm, with **Keep
+  proportions**. A part keeps its footprint centre and its bottom when it
+  grows. This works for imported **STEP**, IGES and BREP parts (the solid
+  is scaled) and STL/3MF meshes, as well as for the shapes above (their
+  own numbers change). A cylinder made oval becomes a plain solid of
+  exactly that size, and the window says so.
+- **Position:** X and Y (the footprint centre) and the elevation (the
+  bottom). The arrow keys nudge by the chosen step; Shift moves up and down.
+- **Turn:** 90° about Z, and tilts about X and Y. A tilted part stays on
+  the floor.
+- **Solid / Hole:** a hole is cut out of the solids it is combined with.
+  **Combine** uses FreeCAD's own fuse and cut, so the parts stay editable
+  under it; **Ungroup** takes it apart. **Duplicate** and **Delete** too.
+- Every change is one undo step.
+- Parts the agent built keep their sizes in **Dimensions** (D) or in the
+  chat, so its next build can't silently undo a typed size; the window
+  says so and opens Dimensions. Atech hardware keeps its real size.
+
+### Home from anywhere
+
+- **Home** (all your projects and the examples) now opens over the 3D view
+  while projects are open. Click the Atech logo at the top of the sidebar,
+  press **Ctrl+0** (⌘0), or choose **All projects (Home)** at the top of
+  the project menu. Opening a project from Home, or **Esc**, goes back.
+
 ### Agent: products that work (Atech SDK)
 
 - An Atech product now gets its **firmware** as well as its CAD: beside

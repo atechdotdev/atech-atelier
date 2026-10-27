@@ -29,7 +29,10 @@ flag (tests/test_board_look.py).
     (models/SIMREADY.json): projects/import_simready.py writes its STL from
     the dataset's meshes WITH this rule, and its GLB is the renders v1.7
     file the dataset was built from (sha256 checked), so GLB and STL are
-    the same triangles and the rule holds exactly.
+    the same triangles and the rule holds exactly - except dc_motor and
+    speaker, whose STLs keep their old library frame (LIBRARY_FRAME there:
+    scripts and saved projects place them by it); the speaker's STL frame
+    differs in y (its body hangs below the board plane).
   * The four DERIVED modules (pir, scd40_air_quality, robot_arm,
     stepper_motor: no Atech CAD exists) have no renders GLB; the import
     writes one from the same dataset meshes.
@@ -75,7 +78,8 @@ SLUG = {
 _ONE, _TWO = (10.15, -2.54, 10.0), (20.15, -2.54, 10.0)
 OFFSETS_MM = {
     "button": _ONE, "light": _ONE, "usbc": (10.15, -2.54, 9.875),
-    "screen": _TWO, "speaker": _TWO, "dc_motor": _ONE, "orientation": _ONE,
+    "screen": _TWO, "speaker": (20.15, 24.261, 10.101),
+    "dc_motor": (10.15, -2.54, 10.1), "orientation": _ONE,
     "temp_humidity": _ONE, "distance_sensor": _ONE, "knob": _TWO,
     "microphone": _TWO, "pir": _ONE, "scd40_air_quality": _ONE,
     "robot_arm": _TWO, "stepper_motor": _TWO,

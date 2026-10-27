@@ -463,6 +463,12 @@ class ProjectPicker(QtWidgets.QToolButton):
 
     def _fill(self):
         self._menu.clear()
+        # R801: the way back to every project, first in the menu.
+        home = self._menu.addAction("All projects (Home)")
+        home.setShortcut("Ctrl+0")
+        home.setToolTip("Home: every project and the examples; Esc goes back")
+        home.triggered.connect(lambda _c=False: self._run(_show_home))
+        self._menu.addSeparator()
         docs, act = _open_docs()
         for kind, payload, text, checked in project_entries(
                 docs, act, recent_files()):
@@ -683,6 +689,11 @@ def picker_row(picker, save_button=None):
     picker.refresh = refresh
     w.save_button = btn
     return w
+
+
+def _show_home():
+    from . import shell
+    shell.show_home(True)
 
 
 def _open_path(path):

@@ -19,8 +19,9 @@ WHAT IS WRITTEN
     is the renders' GLB frame turned z-up (metres, connector at the origin,
     PCB underside on z = 0, outer face toward +y), so
         library = 1000 * (x, z, -y) + (10 * cells + 0.15, -2.54, 10.0)
-    which is board_look's offset rule exactly: the GLB origin lands at
-    x = 10 mm per port + 0.15, y = -2.54, z = 10.0 for every module.
+    which is board_look's offset rule: the GLB origin lands at x = 10 mm per
+    port + 0.15, y = -2.54, z = 10.0, except where LIBRARY_FRAME keeps a
+    module's old frame. A module in KEEP_LIBRARY_STL keeps its old STL.
     GLB: the release file, copied unchanged, for a module with Atech CAD. A
     DERIVED module (no Atech CAD; the dataset builds it from a module shell
     plus placeholder parts) has no GLB anywhere, so one is written here from
@@ -58,6 +59,30 @@ MODULES = {
     "scd40_air_quality": ("atech_scd40_air_quality", "scd40-air-quality", 1, "button"),
     "robot_arm": ("atech_robot_arm_integrator", "robot-arm", 2, "screen"),
     "stepper_motor": ("atech_stepper_motor", "stepper-motor", 2, "screen"),
+}
+
+
+#: Modules whose STL keeps the library's OLD frame: same CAD as before (the
+#: v1.5 GLB is byte-identical to v1.7), but their library STLs were offset
+#: from the GLB differently from the rule (MEASURED 2026-10-20, board_look).
+#: Scripts and saved projects place these meshes by that frame (test_agent_kit
+#: R222, the toy car), so the new STL keeps it: same place, new triangles.
+LIBRARY_FRAME = {
+    "dc_motor": (10.15, -2.54, 10.1),
+    "speaker": (20.15, 24.261, 10.101),
+}
+
+#: Modules whose library STL is KEPT, not replaced by the dataset's: the
+#: reason is recorded in SIMREADY.json ("stl_note") and the import refuses to
+#: overwrite it.
+KEEP_LIBRARY_STL = {
+    "microphone": "KEPT the library STL (sha below), not the dataset's (47e299df...). "
+                  "MEASURED 2026-10-27: the dataset STL's second connector sits 0.05 mm "
+                  "off the board's 4+5 socket pitch, so atech_ports.check() fails "
+                  "interference ('board: own socket', 0.05 mm) for a microphone on 4+5, "
+                  "and the desk_robot and smart_speaker examples fail ./check. The "
+                  "library STL passes on every pair. Re-import only once the dataset "
+                  "mesh passes on 4+5.",
 }
 
 
@@ -134,10 +159,15 @@ def parts(asset_dir, asset, sums):
     return out
 
 
-def to_library(T, cells):
+def offset_mm(name, cells):
+    """GLB/dataset origin -> library STL frame: the rule, or LIBRARY_FRAME."""
+    return LIBRARY_FRAME.get(name, (10.0 * cells + 0.15, -2.54, 10.0))
+
+
+def to_library(T, off):
     """Dataset frame (m, z-up) -> library STL frame (mm, y-up)."""
     L = np.stack([T[..., 0], T[..., 2], -T[..., 1]], axis=-1) * 1000.0
-    return L + np.array([10.0 * cells + 0.15, -2.54, 10.0])
+    return L + np.array(off)
 
 
 def to_glb(T):
@@ -228,9 +258,10 @@ def main():
         text, rgba = mjcf(d, asset)
         mp = parts(d, asset, bom(d))
         source = custom(text, "visual:source")
-        T = np.concatenate([to_library(t, cells) for _, t in mp])
+        T = np.concatenate([to_library(t, offset_mm(name, cells)) for _, t in mp])
         stl = os.path.join(models, "stl", name + ".stl")
-        write_stl(stl, T, "atech %s from %s@%s" % (name, asset, REVISION[:12]))
+        if name not in KEEP_LIBRARY_STL:
+            write_stl(stl, T, "atech %s from %s@%s" % (name, asset, REVISION[:12]))
         glb = os.path.join(models, "glb", slug + ".glb")
         if shell is None:
             src = os.path.join(ren, slug + ".glb")
@@ -249,6 +280,8 @@ def main():
             "derived": shell is not None, "visual_source": source,
             "size_mm": [round(float(v), 3) for v in hi - lo],
             "stl_sha256": sha256(stl), "glb_sha256": sha256(glb)}
+        if name in KEEP_LIBRARY_STL:
+            record["modules"][name]["stl_note"] = KEEP_LIBRARY_STL[name]
         print("%-18s %-28s %s" % (name, asset, record["modules"][name]["size_mm"]))
     with open(os.path.join(models, "SIMREADY.json"), "w", encoding="utf-8") as fh:
         json.dump(record, fh, indent=2, sort_keys=True)

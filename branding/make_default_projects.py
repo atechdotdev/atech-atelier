@@ -63,7 +63,7 @@ import zipfile
 
 sys.dont_write_bytecode = True
 
-MANIFEST_VERSION = 1            # default_projects.py re-installs when this grows
+MANIFEST_VERSION = 2            # default_projects.py re-installs when this grows
 THUMB_PX = 512
 THUMB = "thumbnails/Thumbnail.png"
 GUI_XML = "GuiDocument.xml"
@@ -79,6 +79,16 @@ CURATED = (
     ("desk_fan", "Desk fan"),
     ("weather_station", "Weather station"),
     ("rc_tank", "RC tank"),
+    ('smart_planter', 'Smart planter'),
+    ('pet_feeder', 'Pet feeder'),
+    ('video_doorbell', 'Video doorbell'),
+    ('mini_arcade', 'Mini arcade'),
+    ('music_box', 'Music box'),
+    ('parking_sensor', 'Parking sensor'),
+    ('desk_organizer', 'Desk organizer'),
+    ('photo_frame', 'Photo frame'),
+    ('metronome', 'Metronome'),
+    ('macro_pad', 'Macro pad'),
 )
 TITLES = dict(CURATED)
 
@@ -128,6 +138,26 @@ BLURBS = {
                 "drive the tracks, lights and a distance sensor look "
                 "ahead from the hull.",
                 ["Make the turret bigger", "Make the tracks wider"]),
+    'smart_planter': ('A smart desk planter: a soft-backed pot whose flat front shows the soil and air readout, a temperature / humidity sensor behind a vent and a status glow, with a terracotta inner pot standing in a drip tray.',
+        ['Make the pot taller and narrower', 'Give the back rounder corners']),
+    'pet_feeder': ('A countertop pet feeder: a hopper bin with a window and a hinged lid on a base unit whose motor turns a six-pocket rotor, dropping each portion down a curved spout into the bowl, with a FEED key, a status light and the schedule on the screen.',
+        ['Make the hopper taller for more food', 'Give it a bigger bowl']),
+    'video_doorbell': ('A video doorbell on a wall plate: a big round button in a frosted glow ring, a distance sensor and a microphone behind a smoked visor, a speaker grille up top.',
+        ['Make the button ring bigger', 'Give the slab a slimmer, rounder shape']),
+    'mini_arcade': ('A tabletop arcade cabinet: a spinner and two big buttons on the deck, a screen leaning back under a speaker grille, a lettered marquee and side art in a black border.',
+        ['Lean the screen back further', 'Make the marquee taller and add more side art']),
+    'music_box': ('A walnut-look music box with a lid line and brass hinges: a domed brass speaker grille, a frosted lit LED window, a knurled knob on a glowing ring and a brass key on the lid.',
+        ['Make the lid taller with a curved top', 'Turn the grille into a fabric panel across the front']),
+    'parking_sensor': ('A wall-mounted garage parking assistant: a distance sensor ranges the bumper, a red / amber / green traffic light with hooded lenses and a screen show how close the car is, on a sign plate with a blue P.',
+        ['Make the traffic lights bigger and round the pod', 'Add a second screen that shows STOP']),
+    'desk_organizer': ('A smart desk organizer on one tray: a display block with a screen for the time and temperature, a temperature / humidity sensor behind a vent and a key, three pen cups of different heights and a phone dock with a cable channel.',
+        ['Make the pen cups taller', 'Add a fourth cup for scissors']),
+    'photo_frame': ('A 5 x 7 wood photo frame round a small portrait screen in a bevelled mat, leaning back on a fold-out kickstand, with a key in the bottom rail, a backlight glowing on the wall behind and an orientation sensor inside.',
+        ['Make the moulding wider', 'Give the frame rounder corners']),
+    'metronome': ('A classic pyramid metronome: a tempo dial in a brass-rimmed pod, a click speaker, a BPM screen and a beat light behind one smoked lens, and a big brass tap key near the top.',
+        ['Make it taller and slimmer', 'Give the tap key a bigger brass cap']),
+    'macro_pad': ('A stream-deck style macro pad on a low wedge: two big keys under a label screen, a frosted status strip and a volume dial in its own crown.',
+        ['Make the keys bigger', 'Give the dial crown a brighter metal rim']),
 }
 
 #: Home's card subtitle per project (manifest "summary").
@@ -141,6 +171,16 @@ SUMMARIES = {
     "desk_fan": "A guarded fan head on a stem, motor-driven.",
     "weather_station": "A display slab with a louvred sensor hut.",
     "rc_tank": "A tracked tank with motors, lights and a sensor.",
+    'smart_planter': 'A desk planter with a readout and an inner pot.',
+    'pet_feeder': 'A hopper feeder with a rotary dispenser and a bowl.',
+    'video_doorbell': 'A wall slab with a big ring button and a sensor visor.',
+    'mini_arcade': 'A tabletop cabinet with a spinner, buttons and a marquee.',
+    'music_box': 'A walnut music box with a knob and a lit window.',
+    'parking_sensor': 'A wall traffic light that tells you when to stop.',
+    'desk_organizer': 'A tray with pen cups, a phone dock and a display.',
+    'photo_frame': 'A wood photo frame on a kickstand, a screen in its mat.',
+    'metronome': 'A pyramid metronome with a dial, a screen and a tap key.',
+    'macro_pad': 'A wedge keypad with big keys, a label screen and a dial.',
 }
 
 SAB = os.environ.get("ATECH_DEFAULTS_SABOTAGE", "")

@@ -204,6 +204,27 @@ inside the app. Nothing extra is downloaded. If the page says *"Atech modules
 are missing from this installation"*, the download is incomplete: download it
 again.
 
+## Edit by hand
+
+Not everything needs the chat. Press **R** (or the **Edit shapes** button
+in the view bar) and select a part:
+
+- **Add a shape**: a box, cylinder, sphere, cone, torus or roof, 20 mm, set
+  down beside the model.
+- **Type its size**: width, depth and height in mm, with **Keep
+  proportions**. This works for imported STEP, IGES, BREP and STL parts too.
+- **Place it**: X and Y, and the elevation of its bottom; the arrow keys
+  nudge it.
+- **Turn it** 90°, or tilt it.
+- **Make it a hole**, then **Combine**: holes are cut out of the solids,
+  as in TinkerCAD.
+
+Every change is one undo step (Ctrl+Z). Parts the design agent built
+change their sizes with **Dimensions** (D), so its next build keeps them.
+
+**Home**: click the Atech logo, or press Ctrl+0, to see all your projects
+and the examples at any time. Esc goes back.
+
 ## Privacy: what is sent, and what is stored
 
 The chat runs Claude Code **on your computer**, signed in to **your own**

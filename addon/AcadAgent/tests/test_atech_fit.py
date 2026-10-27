@@ -261,7 +261,15 @@ class Forks(unittest.TestCase):
             "a night light": "bedside_lamp",
             "an alarm clock": "alarm_clock",
             "a handheld game console": "handheld_console",
-            "a pencil holder": "atech_case",
+            # R802: a pencil holder is a desk organizer now there is one
+            "a pencil holder": "desk_organizer",
+            "a pet feeding station": "pet_feeder",
+            "an arcade game": "mini_arcade",
+            "a photo frame with a light": "photo_frame",
+            "a garage parking sensor for my car": "parking_sensor",
+            "a jukebox speaker": "music_box",
+            "a plant pot with a grow light": "smart_planter",
+            "a teapot": "atech_case",
             "": "atech_case",
         }
         for req, want in cases.items():

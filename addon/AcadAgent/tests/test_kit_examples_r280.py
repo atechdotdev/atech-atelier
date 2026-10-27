@@ -64,6 +64,17 @@ PRODUCTS = {
     "smart_speaker.py": "a smart speaker",
     "handheld_console.py": "a handheld game console",
     "bedside_lamp.py": "a bedside lamp",
+    # R802: the ten starter examples (2026-10-27)
+    'smart_planter.py': 'a smart desk planter',
+    'pet_feeder.py': 'a countertop pet feeder',
+    'video_doorbell.py': 'a video doorbell',
+    'mini_arcade.py': 'a mini arcade cabinet',
+    'music_box.py': 'a music box',
+    'parking_sensor.py': 'a garage parking assistant',
+    'desk_organizer.py': 'a smart desk organizer',
+    'photo_frame.py': 'a smart photo frame',
+    'metronome.py': 'a digital metronome',
+    'macro_pad.py': 'a macro pad',
 }
 PARAMS_MARKER = "# === PARAMETERS (restyle here) ==="
 STAGE_A_MARKER = "# === STAGE A: hardware, shell, every working-face opening, fasteners ==="

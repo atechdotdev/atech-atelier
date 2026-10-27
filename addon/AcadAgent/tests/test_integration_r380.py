@@ -90,7 +90,8 @@ class Case(ShellCase):
 class TestR380ViewBarTools(Case):
     # R700/R701 added Show and hide and Dimensions, and moved Exploded
     # view in with the ways of looking.
-    KEYS = ["measure", "section", "show", "explode", "dims", "colour",
+    # R800: Edit shapes (manual_edit.py) sits after Dimensions.
+    KEYS = ["measure", "section", "show", "explode", "dims", "shape", "colour",
             "export", "share"]
 
     def test_six_tools_in_order_with_names_and_icons(self):
@@ -99,7 +100,8 @@ class TestR380ViewBarTools(Case):
         self.assertEqual(keys, self.KEYS)
         names = [w.accessibleName() for w in bar.tools()]
         self.assertEqual(names, ["Measure", "Section view", "Show and hide",
-                                 "Exploded view", "Dimensions", "Colour",
+                                 "Exploded view", "Dimensions", "Edit shapes",
+                                 "Colour",
                                  "Export for print", "Save a share image"])
         for w in bar.tools():
             self.assertEqual(w.objectName(), "VBtn")
@@ -134,7 +136,8 @@ class TestR380ViewBarTools(Case):
         widths = [lv[i][0] for i in sorted(lv)]
         return (lv[0][1] == [] and not lv[0][2]
                 and lv[1][1] == ["dims", "share"] and lv[1][2]
-                and lv[2][1] == ["explode", "dims", "colour", "export", "share"]
+                and lv[2][1] == ["explode", "dims", "shape", "colour", "export",
+                                 "share"]
                 and all(a > b for a, b in zip(widths, widths[1:])))
 
     def test_narrow_bar_moves_tools_into_more_tools(self):

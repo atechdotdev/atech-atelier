@@ -26,7 +26,7 @@
         19.14,
         48.3
       ],
-      "stl_sha256": "0c256e1416f830e3485dd38be4e02af08653d17155b0c6edd560dab6c52e1442",
+      "stl_sha256": "5aab252bfa4e73fae8a404c779555bc79164391fa737b9c99bda58ab63ad770f",
       "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/dc-motor.glb"
     },
     "distance_sensor": {
@@ -82,7 +82,8 @@
         10.84,
         19.5
       ],
-      "stl_sha256": "47e299df376be5f7398e05c2fa78ae1b9aae304efddd7cbc5f474a74a6e3e63e",
+      "stl_note": "KEPT the library STL (sha below), not the dataset's (47e299df...). MEASURED 2026-10-27: the dataset STL's second connector sits 0.05 mm off the board's 4+5 socket pitch, so atech_ports.check() fails interference ('board: own socket', 0.05 mm) for a microphone on 4+5, and the desk_robot and smart_speaker examples fail ./check. The library STL passes on every pair. Re-import only once the dataset mesh passes on 4+5.",
+      "stl_sha256": "30e4d99dc237d09c7f0a9b1b13e3ca21502022c5c078f4d989982ec0e7e24c76",
       "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/microphone.glb"
     },
     "orientation": {
@@ -166,7 +167,7 @@
         20.199,
         40.0
       ],
-      "stl_sha256": "2ccc4838a512f8e693c194448cf08a899727368871f0b990cdce33e8d1b42013",
+      "stl_sha256": "580ff16efc4dbc258431717235472d0a079e5fe256846fd13b036c7118d39d62",
       "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/speaker.glb"
     },
     "stepper_motor": {

@@ -3,10 +3,6 @@
 *Atech AI CAD, powered by FreeCAD.* (Formerly **Atech Atelier**.)
 
 <p align="center">
-  <img src="docs/screenshots/hero.png" alt="Atech AI CAD: the chat on the left, a sailing yacht model in the 3D view" width="900">
-</p>
-
-<p align="center">
   <a href="#install">Install</a> ·
   <a href="#common-questions">Common questions</a> ·
   <a href="https://discord.gg/B6kuhUW27S">Discord</a> ·
@@ -64,21 +60,6 @@ please report them.
 ---
 
 ## Screenshots
-
-**Real Atech hardware inside the app.** Place modules on the 14-port board,
-and each one is checked: fully seated, touching nothing, sliding in freely.
-
-![The Modules page: five modules placed on the Atech 14-port board, each checked](docs/screenshots/modules.png)
-
-**Things people have built with it.** Each one was described in the chat, and
-written, built and measured by the agent:
-
-| | | |
-|:---:|:---:|:---:|
-| ![A Chinese dining table with a lazy Susan](docs/screenshots/built_table.png) | ![A desk lamp](docs/screenshots/built_lamp.png) | ![A spur gear](docs/screenshots/built_gear.png) |
-| a dining table with a lazy Susan | a desk lamp | a spur gear |
-| ![A Raspberry Pi 4 case](docs/screenshots/built_rpi4_case.png) | ![A mug](docs/screenshots/built_mug.png) | ![A toy car](docs/screenshots/built_toy_car.png) |
-| a Raspberry Pi 4 case | a mug | a toy car |
 
 **Starter projects, built around real Atech hardware.** Each one is shown
 finished, cut open to the Atech board and modules inside, and exploded:

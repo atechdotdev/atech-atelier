@@ -4,6 +4,30 @@ All notable changes to Atech Atelier are listed here. Versions follow
 [Semantic Versioning](https://semver.org). Before 1.0.0, any release may
 change behaviour.
 
+## [Unreleased]
+
+### Exploded view and hand edits: nothing gets lost
+
+- The exploded view only changes the picture, whatever else you do. A
+  part you move while the parts are apart keeps that move when they go
+  back together; Undo while apart puts the part back where it was, not
+  somewhere in between; and a file can no longer be saved with its parts
+  still pulled apart (using the menu's Exploded view and E together could
+  do that).
+- **Exploded view (E)** in the right-click and Atech menus now does the
+  same as E and the view-bar button: one click apart, one click back.
+  How far apart is the slider in **Show and hide**.
+- Edit shapes puts an exploded view back together when it opens and
+  before each change, so its numbers and its Undo are where the parts
+  really are. Export for print and the review sheet always show the
+  product assembled.
+- Pressing Enter in an Edit shapes box no longer also adds a box shape.
+- **Show and hide** opens above its button when there is no room below
+  (it opened partly off the bottom of the screen).
+- Deleting a part the design agent built now says that the next build
+  brings it back, and offers to hide it instead (a hidden part stays
+  hidden after every build).
+
 ## [0.1.2] - 2026-10-27 (preview)
 
 ### Five new Atech hardware examples

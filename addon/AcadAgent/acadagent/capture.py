@@ -687,6 +687,11 @@ def share_sheet(doc=None, out_dir=None, clipboard=False):
     import review
     import shutil
     import tempfile as _tf
+    try:                    # R720: the review sheet shows the product assembled
+        from . import export_tools
+        export_tools.restore_exploded(doc)
+    except Exception:                                     # noqa: BLE001
+        pass
     tmp = _tf.mkdtemp(prefix="atech-sheet-")
     try:
         res = review.draw(_scene_items(doc), tmp, title=getattr(doc, "Label", ""),

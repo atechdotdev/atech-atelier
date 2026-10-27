@@ -1078,6 +1078,8 @@ def export_for_print(doc, path, fmt="3MF", scope="product", quality=DEFAULT_DEVI
     if fmt not in FORMATS:
         raise ValueError("format must be one of %s" % ", ".join(FORMATS))
     deviation(quality)
+    # R720: a print is of the product, never of an exploded picture of it
+    restore_exploded(doc)
     if lay_flat is None:
         lay_flat = scope == "parts"
     objs, left = export_targets(doc, scope, selection, include_atech)
@@ -1203,13 +1205,25 @@ class Exploder(object):
 
     def __init__(self, doc, objs=None):
         self.doc = doc
+        # R720: one exploded view per document. A second one would take the
+        # first one's pulled-apart placements as "where the parts belong"
+        # (and that is what a save then wrote), so put the first one back.
+        old = _EXPLODERS.get(id(doc))
+        if old is not None and old is not self:
+            old.restore()
         if objs is None:
             objs = [o for o in doc.Objects if _visible(o) and _top_level(o)
                     and (_has_solid(o) or _is_mesh(o))
                     and getattr(o, "AtechRole", None) != "board"]
         self.objs = list(objs)
+        #: R720: by Name - an object deleted meanwhile is skipped, never used
+        self.names = [o.Name for o in self.objs]
         self.saved = {o.Name: o.Placement for o in self.objs}
         self.saved = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in self.saved.items()}
+        #: R720: the placement this exploder last gave each part. A part
+        #: whose placement differs from it was moved by someone else (a hand
+        #: edit or Undo) while apart, and restore() keeps that move.
+        self.applied = {}
         self.factor = 0.0
         boxes = [self._centre(o) for o in self.objs]
         self.centres = boxes
@@ -1239,28 +1253,69 @@ class Exploder(object):
             return (0.0, 0.0, 0.3 * self.span * factor)
         return tuple(x * self.SPREAD * factor for x in d)
 
+    def _live(self):
+        """(k, name, object) of each part still in the document."""
+        out = []
+        for k, name in enumerate(self.names):
+            try:
+                o = self.doc.getObject(name)
+            except Exception:                             # noqa: BLE001
+                o = None
+            if o is not None:
+                out.append((k, name, o))
+        return out
+
+    def _moved(self, name, o):
+        """True when `o` is no longer where this exploder put it."""
+        was = self.applied.get(name)
+        if was is None:
+            return False
+        try:
+            return not o.Placement.isSame(was, 1e-7)
+        except Exception:                                 # noqa: BLE001
+            return False
+
+    def absorb(self, assembled_space=False):
+        """R720: take in moves made by someone else while apart, so they
+        survive. A hand edit (Edit shapes, the property editor) is made on
+        the part where it shows, so its own offset comes off; Undo / Redo
+        put back a value from before, which is already where the part
+        belongs (assembled_space=True)."""
+        import FreeCAD
+        for k, name, o in self._live():
+            if not self._moved(name, o):
+                continue
+            pl = o.Placement.copy()
+            if not assembled_space:
+                pl.Base = pl.Base - FreeCAD.Vector(*self.offset(k, self.factor))
+            self.saved[name] = pl
+            self.applied.pop(name, None)
+
     def set_factor(self, factor):
         import FreeCAD
+        self.absorb()
         self.factor = max(0.0, min(1.0, float(factor)))
-        for k, o in enumerate(self.objs):
-            base = self.saved[o.Name]
+        for k, name, o in self._live():
+            base = self.saved[name]
             off = self.offset(k, self.factor)
             pl = base.copy()
             pl.Base = pl.Base + FreeCAD.Vector(*off)
             o.Placement = pl
+            self.applied[name] = pl.copy()
         try:
             self.doc.recompute()
         except Exception:                                 # noqa: BLE001
             pass
 
     def restore(self):
-        for o in self.objs:
+        self.absorb()
+        for _k, name, o in self._live():
             try:
-                if o.Name in self.saved and self.doc.getObject(o.Name) is not None:
-                    o.Placement = self.saved[o.Name]
+                o.Placement = self.saved[name]
             except Exception as exc:                      # noqa: BLE001
-                _log("restore %s: %r" % (getattr(o, "Name", "?"), exc))
+                _log("restore %s: %r" % (name, exc))
         self.factor = 0.0
+        self.applied = {}
         if _EXPLODERS.get(id(self.doc)) is self:
             _EXPLODERS.pop(id(self.doc), None)
 
@@ -1271,6 +1326,24 @@ def restore_exploded(doc=None):
         if doc is None or ex.doc is doc:
             ex.restore()
             _explode_changed(ex.doc, 0.0)
+
+
+def explode_after_undo(doc):
+    """R720: Undo / Redo while apart: the values they put back are where
+    the parts belong; keep them and show the parts apart again from there."""
+    ex = _EXPLODERS.get(id(doc)) if doc is not None else None
+    if ex is None:
+        return
+    ex.absorb(assembled_space=True)
+    ex.set_factor(ex.factor)
+
+
+def forget_exploded(doc):
+    """R720: doc is closing - drop its exploded view (keyed by id(doc), so
+    a later document could otherwise find it)."""
+    for key, ex in list(_EXPLODERS.items()):
+        if ex.doc is doc:
+            _EXPLODERS.pop(key, None)
 
 
 # R701: one exploded state per document that the view-bar toggle, the
@@ -1830,28 +1903,44 @@ def ExplodeDialog(parent=None, doc_fn=_active_doc):
     row.addStretch(1)
     row.addWidget(close)
     lay.addLayout(row)
-    d.exploder = None
+    # R720: the window drives the document's one exploded state (the view
+    # bar's toggle, the E key and Show and hide use the same), never its
+    # own Exploder: two of them put "where the parts belong" out of step.
+    d.doc = None
+    sync = {"busy": False}
 
     def moved(v):
-        if d.exploder is None:
-            doc = doc_fn()
-            if doc is None:
-                return
-            restore_exploded(doc)
-            d.exploder = Exploder(doc)
-        d.exploder.set_factor(v / 100.0)
-        _explode_changed(d.exploder.doc, d.exploder.factor)
+        if sync["busy"]:
+            return
+        doc = d.doc or doc_fn()
+        if doc is None:
+            return
+        d.doc = doc
+        sync["busy"] = True
+        try:
+            set_explode(doc, v / 100.0)
+        finally:
+            sync["busy"] = False
     d.slider.valueChanged.connect(moved)
 
+    def follow(doc, factor):
+        """E, the view bar or Show and hide changed it: show the amount."""
+        if sync["busy"] or d.doc is None or doc is not d.doc:
+            return
+        try:
+            sync["busy"] = True
+            d.slider.setValue(int(round(factor * 100)))
+        except RuntimeError:                              # the window is gone
+            pass
+        finally:
+            sync["busy"] = False
+    on_explode_changed(follow)
+    d.slider.setValue(int(round(explode_amount(doc_fn()) * 100)))
+
     def finished(*_):
-        if d.exploder is not None:
-            d.exploder.restore()
-            try:
-                d.exploder.doc.recompute()
-            except Exception:                             # noqa: BLE001
-                pass
-            _explode_changed(d.exploder.doc, 0.0)
-            d.exploder = None
+        if d.doc is not None:
+            set_explode(d.doc, 0.0)
+            d.doc = None
     d.finished.connect(finished)
     orig_close = d.closeEvent
 
@@ -1983,7 +2072,7 @@ def view_bar_buttons(parent=None, doc_fn=_active_doc, selection_fn=_selected):
         m.popup(out["colour"].mapToGlobal(out["colour"].rect().bottomLeft()))
 
     # R701: Exploded view is one click: apart, and back together. How far
-    # apart is the slider in Show and hide (or Exploded view... in the menu).
+    # apart is the slider in Show and hide.
     xb = out["explode"]
     xb.setCheckable(True)
     xb.setToolTip("Exploded view: pull the parts apart, click again to put "
@@ -2039,7 +2128,7 @@ def restyle_buttons(buttons):
 
 def menu_actions(parent=None, doc_fn=_active_doc, selection_fn=_selected):
     """Factory for the Atech menu / the 3D right-click menu: [QAction]:
-    Colour (a submenu), Export for print..., Exploded view..., Bill of
+    Colour (a submenu), Export for print..., Exploded view (E), Bill of
     materials..., Save share image, Save review sheet."""
     from PySide6 import QtGui
 
@@ -2057,8 +2146,7 @@ def menu_actions(parent=None, doc_fn=_active_doc, selection_fn=_selected):
     keep = {}
     add("Export for print...", lambda: keep.__setitem__(
         "export", ExportDialog(parent, doc_fn, selection_fn)) or keep["export"].show())
-    add("Exploded view...", lambda: keep.__setitem__(
-        "explode", ExplodeDialog(parent, doc_fn)) or keep["explode"].show())
+    add("Exploded view (E)", lambda: toggle_explode(doc_fn()))
     add("Bill of materials...", lambda: keep.__setitem__(
         "bom", BomDialog(parent, doc_fn)) or keep["bom"].show())
     add("Save share image", lambda: _say(None, share_now(parent, doc_fn)[1]))

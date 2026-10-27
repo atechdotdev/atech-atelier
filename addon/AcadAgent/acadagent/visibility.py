@@ -275,10 +275,29 @@ def show_popover(anchor, doc_fn=_active_doc):
         d = ShowHidePopover(anchor.window(), doc_fn)
         anchor._popover = d
     d.fill()
-    pos = anchor.mapToGlobal(anchor.rect().bottomLeft())
-    d.move(pos.x(), pos.y() + 6)
+    d.move(popover_pos(anchor, d.size()))
     d.show()
     return d
+
+
+def popover_pos(anchor, size, gap=6):
+    """R720: where a popover of `size` opens for `anchor`: under it, or
+    above it when there is no room below (the view bar sits at the bottom
+    of the window, so "under" was off the screen), kept on the screen."""
+    from PySide6 import QtCore, QtGui
+    below = anchor.mapToGlobal(anchor.rect().bottomLeft())
+    above = anchor.mapToGlobal(anchor.rect().topLeft())
+    x, y = below.x(), below.y() + gap
+    screen = QtGui.QGuiApplication.screenAt(below) or anchor.screen()
+    if screen is None:
+        return QtCore.QPoint(x, y)
+    area = screen.availableGeometry()
+    if y + size.height() > area.bottom() and \
+            above.y() - gap - size.height() >= area.top():
+        y = above.y() - gap - size.height()
+    x = max(area.left(), min(x, area.right() - size.width()))
+    y = max(area.top(), min(y, area.bottom() - size.height()))
+    return QtCore.QPoint(x, y)
 
 
 def view_bar_button(parent=None, doc_fn=_active_doc):

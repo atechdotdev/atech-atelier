@@ -317,8 +317,37 @@ def ShapeEditor(parent=None):
         o = state["obj"]
         if o is None:
             return
+        if getattr(o, "AtechAgentBuilt", False) and not confirm_delete_built(o):
+            load()
+            return
         run(lambda: se.remove(o), "delete")
         load()
+
+    def confirm_delete_built(o):
+        """R720: a part the agent built comes back at its next build, so
+        deleting it only lasts until then. Hiding it is kept across builds.
+        True: delete it anyway."""
+        box = QtWidgets.QMessageBox(d)
+        box.setWindowTitle("Delete %s" % o.Label)
+        box.setText("%s is built by the design agent, so the next build "
+                    "brings it back." % o.Label)
+        box.setInformativeText("Hide it instead: it stays hidden after every "
+                               "build. To take it out of the design, ask in "
+                               "the chat.")
+        hide = box.addButton("Hide it", QtWidgets.QMessageBox.AcceptRole)
+        anyway = box.addButton("Delete anyway", QtWidgets.QMessageBox.DestructiveRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.setDefaultButton(hide)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is hide:
+            try:
+                o.Visibility = False
+                say("%s is hidden. Show all (Shift+H) brings it back." % o.Label)
+            except Exception as exc:                   # noqa: BLE001
+                say("Could not hide it: %s" % exc)
+            return False
+        return clicked is anyway
 
     def dims():
         try:
@@ -326,6 +355,13 @@ def ShapeEditor(parent=None):
             dimensions.open_dialog(d.parent())
         except Exception as exc:                       # noqa: BLE001
             say("Dimensions is not available here: %s" % exc)
+
+    # R720: Enter in a size or position box applies that box only. A
+    # QDialog's buttons are "auto default", so Enter also clicked the first
+    # one (Box) and added a shape.
+    for b in d.findChildren(QtWidgets.QPushButton):
+        b.setAutoDefault(False)
+        b.setDefault(False)
 
     d.btn_combine.clicked.connect(lambda _=False: combine())
     d.btn_ungroup.clicked.connect(lambda _=False: ungroup())
@@ -449,6 +485,13 @@ def open_editor(parent=None):
             parent = shell._mw_or_none()
         except Exception:                              # noqa: BLE001
             parent = None
+    # R720: edits are made where the parts really are, so an exploded view
+    # goes back together (the boxes then show true positions)
+    try:
+        from . import export_tools
+        export_tools.restore_exploded(_doc())
+    except Exception:                                  # noqa: BLE001
+        pass
     d = _OPEN.get("dlg")
     try:
         alive = d is not None and d.isVisible()

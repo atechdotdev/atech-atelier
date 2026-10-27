@@ -2854,7 +2854,26 @@ def _child_path():
             if md:
                 out.append(os.path.dirname(md) if os.path.basename(md) == "models"
                            else md)
+        up = user_parts_dir()
+        if up and os.path.isdir(up):
+            out.append(up)
     return out
+
+
+def user_parts_dir():
+    """The user's imported parts folder (projects/user_parts.py), or None.
+    The sandboxed child reads it read-only and finds it through
+    $ATELIER_PARTS: its own home is a scratch folder."""
+    pd = _projects_dir()
+    if not pd:
+        return None
+    if pd not in sys.path:
+        sys.path.insert(0, pd)
+    try:
+        import user_parts
+        return user_parts.parts_dir()
+    except Exception:                                  # noqa: BLE001
+        return None
 
 
 # ------------------------------------------------------------ errors (S13)
@@ -3401,8 +3420,8 @@ def _free_part_lines(doc):
                 ", ".join("%g" % v for v in box[:3]),
                 ", ".join("%g" % v for v in box[3:]))
         lines.append(text)
-    return _section("FREE PARTS (Atech library parts placed by hand; "
-                    "never model these):", lines)
+    return _section("FREE PARTS (library or user-imported parts placed by "
+                    "hand; never model these):", lines)
 
 
 def _user_state_lines(doc):

@@ -300,11 +300,13 @@ class TestR381ContextMenu(Case):
             w.clicked.connect(lambda _=False, k=k: hits.append(k))
         s.run_command_action("export")
         self.assertEqual(hits, ["export"])
-        # R701: the bar's Exploded view toggles; the menu's "Exploded
-        # view..." opens the slider dialog.
-        with mock.patch.object(export_tools, "ExplodeDialog") as xd:
+        # R720: the menu's "Exploded view (E)" toggles like the bar and E
+        # (no separate slider window with its own state)
+        with mock.patch.object(export_tools, "toggle_explode") as tx, \
+                mock.patch.object(export_tools, "ExplodeDialog") as xd:
             s.run_command_action("explode")
-        xd.assert_called_once()
+        tx.assert_called_once()
+        xd.assert_not_called()
         with mock.patch.object(export_tools, "BomDialog") as bom:
             s.run_command_action("bom")
         bom.assert_called_once()

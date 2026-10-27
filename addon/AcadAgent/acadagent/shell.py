@@ -3450,8 +3450,8 @@ TOOL_COMMANDS = (
 EXPORT_COMMANDS = (
     ("Atech_ExportForPrint", "Export for print\u2026", "Save STL, 3MF or "
      "STEP files for a 3D printer", "export"),
-    ("Atech_ExplodedView", "Exploded view\u2026", "Spread the parts apart "
-     "to see how they fit", "explode"),
+    ("Atech_ExplodedView", "Exploded view (E)", "Pull the parts apart to "
+     "see how they fit, or put them back; how far: Show and hide", "explode"),
     ("Atech_BillOfMaterials", "Bill of materials\u2026", "Printed parts and "
      "Atech hardware, with a CSV export", "bom"),
     ("Atech_ShareImage", "Save a share image", "A 1920 x 1080 picture in "
@@ -3504,7 +3504,9 @@ def run_command_action(key):
     if key == "export":
         return _keep_dialog(export_tools.ExportDialog(parent)).show()
     if key == "explode":
-        return _keep_dialog(export_tools.ExplodeDialog(parent)).show()
+        # R720: the same one-click toggle as E and the view bar (a separate
+        # slider window kept its own state; how far is in Show and hide)
+        return export_tools.toggle_explode(export_tools._active_doc())
     if key == "bom":
         return _keep_dialog(export_tools.BomDialog(parent)).show()
     if key == "share":
@@ -3651,7 +3653,23 @@ class _DocObserver(object):
         tick leaves every view alone until the closing is over, and refresh
         the picker afterwards (queued: never inside FreeCAD's close)."""
         _closing_now()
+        try:                    # R720: its exploded view goes with it
+            from . import export_tools
+            export_tools.forget_exploded(doc)
+        except Exception:                              # noqa: BLE001
+            pass
         self._ping()
+
+    def slotUndoDocument(self, doc):                    # noqa: N802
+        """R720: Undo while the parts are apart: keep what it put back and
+        show the parts apart from there (never a stale exploded value)."""
+        try:
+            from . import export_tools
+            export_tools.explode_after_undo(doc)
+        except Exception as exc:                       # noqa: BLE001
+            _log("exploded view after undo: %r" % (exc,))
+
+    slotRedoDocument = slotUndoDocument
 
     def slotActivateDocument(self, doc):                # noqa: N802
         self._ping()

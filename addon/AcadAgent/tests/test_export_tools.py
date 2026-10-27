@@ -439,7 +439,7 @@ class Widgets(unittest.TestCase):
         self.assertFalse(any(b.icon().isNull() for b in btns.values()))
         acts = et.menu_actions(None, lambda: self.doc, lambda: [])
         self.assertEqual([a.text() for a in acts],
-                         ["Colour", "Export for print...", "Exploded view...",
+                         ["Colour", "Export for print...", "Exploded view (E)",
                           "Bill of materials...", "Save share image", "Save review sheet"])
         self.assertIsNotNone(acts[0].menu())
 

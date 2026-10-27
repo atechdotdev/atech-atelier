@@ -171,9 +171,26 @@ def position(obj):
     return ((bb.XMin + bb.XMax) / 2.0, (bb.YMin + bb.YMax) / 2.0, bb.ZMin)
 
 
+def _assemble(doc):
+    """R720: put an exploded view back (no-op when assembled)."""
+    try:
+        from . import export_tools
+        export_tools.restore_exploded(doc)
+    except Exception:                                     # noqa: BLE001
+        pass
+
+
+def _open(doc, name):
+    """Open the edit's undo step. R720: an exploded view is put back first,
+    so the edit and its undo step hold where the parts really are (an edit
+    made on pulled-apart parts would be undone into the wrong place)."""
+    _assemble(doc)
+    doc.openTransaction(name)
+
+
 def _txn(obj, name):
     doc = obj.Document
-    doc.openTransaction(name)
+    _open(doc, name)
     return doc
 
 
@@ -329,6 +346,7 @@ def move_to(obj, x, y, z):
 
 
 def nudge(obj, dx=0.0, dy=0.0, dz=0.0):
+    _assemble(obj.Document)          # R720: from where the part really is
     x, y, z = position(obj)
     return move_to(obj, x + dx, y + dy, z + dz)
 
@@ -419,7 +437,7 @@ def combine(doc, objs):
         raise EditRefused("Select two or more parts to combine.")
     if not solids:
         raise EditRefused("Combine needs at least one solid: these are all holes.")
-    doc.openTransaction("Combine %d parts" % len(objs))
+    _open(doc, "Combine %d parts" % len(objs))
     try:
         if len(solids) == 1:
             base = solids[0]
@@ -472,7 +490,7 @@ def ungroup(obj):
     if not getattr(obj, GROUP_TAG, False):
         raise EditRefused("This is not a combined group.")
     doc = obj.Document
-    doc.openTransaction("Ungroup %s" % obj.Label)
+    _open(doc, "Ungroup %s" % obj.Label)
     try:
         parts, todo, helpers = [], [obj], []
         while todo:
@@ -525,7 +543,7 @@ def add_shape(doc, shape_kind):
     if shape_kind not in SHAPES:
         raise EditRefused("Unknown shape %r." % shape_kind)
     type_id, label, props = SHAPES[shape_kind]
-    doc.openTransaction("Add %s" % label)
+    _open(doc, "Add %s" % label)
     try:
         o = doc.addObject(type_id, label)
         for k, v in props.items():
@@ -547,7 +565,7 @@ def duplicate(obj):
     if not can_move(obj) or kind(obj) == "agent":
         raise EditRefused(why_not(obj) or "This part cannot be copied.")
     doc = obj.Document
-    doc.openTransaction("Duplicate %s" % obj.Label)
+    _open(doc, "Duplicate %s" % obj.Label)
     try:
         new = doc.copyObject(obj, False)
         new.Label = obj.Label + " copy"
@@ -570,7 +588,7 @@ def remove(obj):
     if kind(obj) in ("hardware",):
         raise EditRefused(why_not(obj))
     doc = obj.Document
-    doc.openTransaction("Delete %s" % obj.Label)
+    _open(doc, "Delete %s" % obj.Label)
     try:
         doc.removeObject(obj.Name)
     except Exception:

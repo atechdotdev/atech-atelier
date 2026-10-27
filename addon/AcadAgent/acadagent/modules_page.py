@@ -578,6 +578,22 @@ CHECK_ALL_GAP_PX = 10
 FREE_ROLE = "part"
 
 
+def free_part_tooltip(sp, shown):
+    """The tooltip of a free-part button: its description, and for a part
+    the user imported, that it is theirs and what they said about wiring."""
+    text = (sp or {}).get("description") or shown
+    if (sp or {}).get("user"):
+        text += "\nYour part (not an Atech module; no Atech firmware)."
+        e = sp.get("electrical") or {}
+        bits = [str(e[k]) for k in ("interface", "connectors", "wiring") if e.get(k)]
+        if e.get("voltage_v") is not None:
+            bits.insert(1 if bits else 0, "%sV" % e["voltage_v"])
+        if bits:
+            text += "\nWiring: " + "; ".join(bits)
+        text += "\nRight-click to remove it from your parts."
+    return text
+
+
 def _lib():
     """(atech_ports, atech_modules) from this installation's projects/
     folder (installed bundle or dev checkout; projects._builder_dir).
@@ -1368,6 +1384,18 @@ class ModulesPage(QtWidgets.QWidget):
         self.free_list = QtWidgets.QVBoxLayout()
         self.free_list.setSpacing(2)
         lay.addLayout(self.free_list)
+        # Parts that are not Atech modules (user_parts.py): a board, a
+        # battery, a motor from another maker, imported from STEP or STL.
+        self.import_btn = QtWidgets.QPushButton("Import part…")
+        self.import_btn.setObjectName("MLink")
+        self.import_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.import_btn.setAccessibleName("Import a part that is not an Atech module")
+        self.import_btn.setToolTip(
+            "Add your own part from a STEP or STL file: an Arduino, a battery, "
+            "a servo. Its size is measured; the agent designs around it.")
+        self.import_btn.clicked.connect(lambda _=False: self._import_part())
+        self.import_btn.hide()
+        lay.addWidget(self.import_btn, 0, QtCore.Qt.AlignLeft)
         self._free_btns = []
         self._free_rows = []
         self._free_names = []
@@ -2087,17 +2115,74 @@ class ModulesPage(QtWidgets.QWidget):
             dims = sp.get("dimensions_mm") or {}
             sub = " × ".join("%g" % dims[k] for k in ("x", "z", "y") if k in dims)
             shown = display_name(name, self._specs)
-            b = QtWidgets.QPushButton("%s\n%s mm" % (shown, sub or "—"))
+            mine = bool(sp.get("user"))
+            b = QtWidgets.QPushButton("%s\n%s mm%s" % (
+                shown, sub or "—", " · your part" if mine else ""))
             b.setObjectName("MModule")
             b.setCursor(QtCore.Qt.PointingHandCursor)
-            b.setToolTip(sp.get("description") or shown)
+            b.setToolTip(free_part_tooltip(sp, shown))
             b.setAccessibleName("Add %s beside the board" % shown)
             b.clicked.connect(lambda _=False, n=name: self._add_free(n))
+            if mine:
+                b.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+                b.customContextMenuRequested.connect(
+                    lambda _pos, n=name, w=b: self._user_part_menu(n, w))
             self.free_grid.addWidget(b, i // 2, i % 2)
             self._free_btns.append(b)
         vis = bool(names) and self._unavailable is None
         self.free_label.setVisible(vis)
         self.free_sub.setVisible(vis)
+        self.import_btn.setVisible(self._unavailable is None)
+
+    def _import_part(self):
+        """R730: Import part... - a part that is not an Atech module."""
+        from . import import_part
+        try:
+            _lib()
+            dlg = import_part.ImportPartDialog(
+                self, on_done=lambda n: self._imported(n))
+        except Exception as exc:                       # noqa: BLE001
+            _log("import part: %r" % (exc,))
+            self._show_failure(exc, action="importing")
+            return
+        if dlg is not None:
+            dlg.exec()
+
+    def _imported(self, name):
+        self._load()
+        sp = self._specs.get(name) or {}
+        shown = display_name(name, self._specs)
+        if name in self._seatable:
+            text = ("%s has an Atech header: it is in the module list and "
+                    "seats on a port." % shown)
+        else:
+            text = ("%s is in your parts. Add it beside the board, or ask the "
+                    "agent to build around it." % shown)
+        if sp.get("mesh_note"):
+            text += " Note: %s." % sp["mesh_note"]
+        self.notice.setText(text)
+        self.notice.show()
+
+    def _user_part_menu(self, name, widget):
+        menu = QtWidgets.QMenu(widget)
+        act = menu.addAction("Remove from your parts")
+        if menu.exec(QtGui.QCursor.pos()) is not act:
+            return
+        shown = display_name(name, self._specs)
+        ok = QtWidgets.QMessageBox.question(
+            self, "Remove part",
+            "Remove %s from your parts? Copies already in a design stay." % shown)
+        if ok != QtWidgets.QMessageBox.Yes:
+            return
+        try:
+            import user_parts
+            user_parts.remove_part(name)
+        except Exception as exc:                       # noqa: BLE001
+            _log("remove user part %s: %r" % (name, exc))
+            self._show_failure(exc, action="removing")
+            return
+        self._specs.pop(name, None)
+        self._load()
 
     def _sync_free(self, doc):
         from . import projects

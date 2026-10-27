@@ -360,11 +360,31 @@ def _passthrough_env():
     lib = (os.environ.get("ATECH_ARTIFACTS") or "").strip()
     if lib:
         out["ATECH_ARTIFACTS"] = os.path.abspath(os.path.expanduser(lib))
+    # The user's imported parts (projects/user_parts.py): the child's home is
+    # a scratch folder, so it is told where they are; build._child_path binds
+    # the folder read-only.
+    parts = _user_parts_dir()
+    if parts:
+        out["ATELIER_PARTS"] = parts
     # R275: the agent mode reaches check.py (its R270 quality gates read
     # $ATECH_PROMPT_MODE, and env -i / the Job env drop it): without this a
     # user in fast mode (settings "agent_quality" off) got quality gates.
     out["ATECH_PROMPT_MODE"] = "quality" if _quality_mode() else "fast"
     return out
+
+
+def _user_parts_dir():
+    """$ATELIER_PARTS, else build.user_parts_dir() when that folder exists;
+    "" in a bare sandbox."""
+    env = (os.environ.get("ATELIER_PARTS") or "").strip()
+    if env:
+        return os.path.abspath(os.path.expanduser(env))
+    try:
+        from . import build
+        d = build.user_parts_dir()
+        return d if d and os.path.isdir(d) else ""
+    except Exception:                                  # noqa: BLE001
+        return ""
 
 
 def _quality_mode():

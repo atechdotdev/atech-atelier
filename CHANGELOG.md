@@ -4,7 +4,7 @@ All notable changes to Atech Atelier are listed here. Versions follow
 [Semantic Versioning](https://semver.org). Before 1.0.0, any release may
 change behaviour.
 
-## [Unreleased]
+## [0.1.2] - 2026-10-27 (preview)
 
 ### Five new Atech hardware examples
 

@@ -10,6 +10,15 @@
       <img src="docs/brand/freecad/FreeCAD-wordmark.svg" alt="FreeCAD" height="56">
     </picture>
   </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://studio.atech.dev/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="brand/assets/atech_logo-dark.svg">
+      <img src="brand/assets/atech_logo-light.svg" alt="Atech Studio" height="56">
+    </picture>
+  </a>
+  <br>
+  <sub><a href="https://www.freecad.org">FreeCAD</a> &nbsp;·&nbsp; <a href="https://studio.atech.dev/">Atech Studio</a></sub>
 </p>
 
 <p align="center">

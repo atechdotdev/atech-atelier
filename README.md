@@ -162,12 +162,12 @@ download the file for your computer and `SHA256SUMS`:
 
 | computer | file |
 |---|---|
-| Mac with Apple silicon (M1 and later) | `AtechAICAD-<version>-macOS-arm64.dmg` |
-| Mac with an Intel processor | `AtechAICAD-<version>-macOS-x86_64.dmg` |
-| Linux x86_64 | `AtechAICAD-<version>-x86_64.AppImage` |
+| Mac with Apple silicon (M1 and later) | `AtechAtelier-<version>-macOS-arm64.dmg` |
+| Mac with an Intel processor | `AtechAtelier-<version>-macOS-x86_64.dmg` |
+| Linux x86_64 | `AtechAtelier-<version>-x86_64.AppImage` |
 
-(Releases up to 0.1.1 are named `AtechAtelier-<version>-...`, from before the
-rename. 0.1.1 and earlier are Linux only.)
+(The files keep the earlier name, Atech Atelier, for now. 0.1.1 and earlier
+are Linux only.)
 
 **macOS**: check the download, then open the disk image and drag the app to
 Applications:
@@ -385,7 +385,7 @@ from your distribution (Ubuntu 24.04: `sudo apt install libfuse2t64`; Ubuntu
 22.04: `sudo apt install libfuse2`), or run without FUSE:
 
 ```bash
-./AtechAICAD-*-x86_64.AppImage --appimage-extract-and-run
+./AtechAtelier-*-x86_64.AppImage --appimage-extract-and-run
 ```
 
 **The chat says Claude Code is not found.** Check `claude --version` in a
@@ -421,7 +421,7 @@ Inside the app, `usr/share/doc/atech-ai-cad/` also holds `SOURCE_OFFER.txt`
 (where to get the source) and `ATECH_CHANGES.txt` (every file Atech added or
 changed compared with the upstream FreeCAD image, measured file by file). To
 browse them without running the app:
-`./AtechAICAD-*-x86_64.AppImage --appimage-extract`, then look under
+`./AtechAtelier-*-x86_64.AppImage --appimage-extract`, then look under
 `squashfs-root/usr/share/doc/`.
 
 Claude Code is a proprietary Anthropic product. It is **not** part of Atech
@@ -455,7 +455,7 @@ FreeCAD itself is not recompiled.
 
 ```bash
 ./branding/build_appimage.sh --tree-only   # build and verify the app folder
-./branding/build_appimage.sh               # ...and pack it into dist/AtechAICAD-<version>-x86_64.AppImage
+./branding/build_appimage.sh               # ...and pack it into dist/AtechAtelier-<version>-x86_64.AppImage
 dist/build/squashfs-root/AppRun            # run the built folder directly
 ```
 

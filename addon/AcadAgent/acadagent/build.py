@@ -984,6 +984,20 @@ ATECH_CASE = "atech_case.py"
 #: ratios or percentages (the toy car agent spent its level grepping the
 #: checker for them and never designed anything).
 ARCHETYPES = (
+    # R803: the five Atech-hardware examples (2026-10-27), first: "a
+    # balancing robot" and "a robot arm" before the robot words, "a motion
+    # sensor night light" before the lamp's "night light". The rover keeps
+    # the vehicle row (its "rover" word).
+    ('balancing robot', ('self-balancing', 'self balancing', 'balancing robot', 'balance bot',
+                         'balancing bot', 'balancebot', 'segway', 'inverted pendulum'),
+     'a tall narrow body standing on two wheels at its sides, the axle low, a face up top; a stand or bumper to rest on'),
+    ('robot arm dock', ('robot arm', 'robotic arm', 'arm dock', 'arm base', 'so-101', 'so101', 'so-arm100'),
+     'a heavy low base: a mounting plate for the arm on top, a control deck with a screen and keys in front, the arm cable leading to the plate'),
+    ('motion light', ('motion light', 'motion sensor light', 'motion sensor', 'motion-sensing',
+                      'motion sensing', 'motion-activated', 'motion activated', 'pir'),
+     'a soft object whose glowing diffuser leads, the motion eye a small dark window looking where people walk'),
+    ('air monitor', ('air monitor', 'air quality', 'air-quality', 'co2', 'carbon dioxide', 'air sensor', 'indoor air'),
+     'a calm desk object that breathes: vents low and high round a sensor chamber, the readout on a screen, a status light'),
     # R802: the ten starter examples added 2026-10-27, first so their
     # specific words win ("pet feeder" before robot's "pet", "arcade"
     # before handheld's "game", "parking" before vehicle's "car").

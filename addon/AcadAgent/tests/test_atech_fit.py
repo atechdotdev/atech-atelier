@@ -269,6 +269,17 @@ class Forks(unittest.TestCase):
             "a garage parking sensor for my car": "parking_sensor",
             "a jukebox speaker": "music_box",
             "a plant pot with a grow light": "smart_planter",
+            # R803: the five Atech-hardware examples
+            "a 4WD explorer rover": "rover",
+            "a mars rover with lights": "rover",
+            "a CO2 monitor for my office": "air_monitor",
+            "an air quality sensor with a screen": "air_monitor",
+            "a motion sensor night light": "motion_light",
+            "a PIR lamp for the hallway": "motion_light",
+            "a base for my SO-101 robot arm": "arm_dock",
+            "a robotic arm controller": "arm_dock",
+            "a self-balancing robot": "balance_bot",
+            "a balance bot with a screen face": "balance_bot",
             "a teapot": "atech_case",
             "": "atech_case",
         }

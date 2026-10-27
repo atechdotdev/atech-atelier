@@ -6435,6 +6435,22 @@ def _jsonable(v):
 # number and the fix. Keyed by the user's words in build.ARCHETYPES'
 # categories (test_check_gates_r280 holds the two tables equal).
 ARCHETYPE_GATES = (
+    # R802/R803: the starter examples' rows (build.ARCHETYPES order); no
+    # image gate of their own yet.
+    ('balancing robot', ('self-balancing', 'self balancing', 'balancing robot', 'balance bot', 'balancing bot', 'balancebot', 'segway', 'inverted pendulum'), None),
+    ('robot arm dock', ('robot arm', 'robotic arm', 'arm dock', 'arm base', 'so-101', 'so101', 'so-arm100'), None),
+    ('motion light', ('motion light', 'motion sensor light', 'motion sensor', 'motion-sensing', 'motion sensing', 'motion-activated', 'motion activated', 'pir'), None),
+    ('air monitor', ('air monitor', 'air quality', 'air-quality', 'co2', 'carbon dioxide', 'air sensor', 'indoor air'), None),
+    ('planter', ('planter', 'plant pot', 'flower pot', 'flowerpot', 'herb garden', 'cachepot'), None),
+    ('feeder', ('feeder', 'pet feeder', 'cat feeder', 'dog feeder', 'kibble', 'treat dispenser'), None),
+    ('doorbell', ('doorbell', 'door bell', 'intercom', 'entry phone', 'door camera'), None),
+    ('arcade', ('arcade', 'bartop', 'arcade cabinet'), None),
+    ('music box', ('music box', 'musicbox', 'jukebox', 'record player'), None),
+    ('parking sign', ('parking', 'garage'), None),
+    ('organizer', ('organizer', 'organiser', 'pen holder', 'pencil holder', 'pen cup', 'pencil cup', 'desk tidy', 'desk caddy', 'caddy', 'stationery'), None),
+    ('frame', ('photo frame', 'picture frame', 'digital frame', 'photoframe', 'frame display'), None),
+    ('metronome', ('metronome', 'tempo', 'bpm'), None),
+    ('macro pad', ('macro pad', 'macropad', 'stream deck', 'keypad', 'keyboard'), None),
     ("vehicle", ("car", "truck", "tank", "boat", "vehicle", "rover",
                  "buggy", "4x4", "bus", "tractor", "train", "kart"), "vehicle"),
     ("robot or character", ("robot", "character", "pet", "creature",

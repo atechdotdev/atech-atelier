@@ -512,7 +512,13 @@ class Job(object):
             env["ATECH_CHECK_CONTEXT"] = self.context
         argv = _argv(self.mode, self.fc, self.workspace, self._home, self.extra_path)
         self._log = open(os.path.join(self._home, "child.log"), "w+b")
-        self._t0 = time.time()
+        # time.monotonic, not time.time: the timeout bounds the build's own
+        # run, and time the machine spends asleep must not count (macOS:
+        # mach_absolute_time, Linux: CLOCK_MONOTONIC - both stop in sleep;
+        # the wall clock does not). MEASURED: with time.time() a ~50 s build
+        # started with the lid closed (pmset: 45 s dark wakes between
+        # minutes of sleep) was killed as "did not finish in 180 s".
+        self._t0 = time.monotonic()
         try:
             self.proc = subprocess.Popen(
                 argv, cwd=self.workspace, env=env, stdin=subprocess.DEVNULL,
@@ -524,7 +530,7 @@ class Job(object):
         return self
 
     def elapsed(self):
-        return 0.0 if self._t0 is None else time.time() - self._t0
+        return 0.0 if self._t0 is None else time.monotonic() - self._t0
 
     def poll(self):
         """The Result when finished, else None. Kills the child at timeout."""

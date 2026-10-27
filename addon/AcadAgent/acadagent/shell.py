@@ -645,7 +645,12 @@ EXAMPLE_ICONS = {"toy_car": "car", "desk_robot": "bot",
                  "desk_organizer": "layers",
                  "photo_frame": "camera",
                  "metronome": "bell",
-                 "macro_pad": "keyboard"}
+                 "macro_pad": "keyboard",
+                 "rover": "car",
+                 "air_monitor": "sparkles",
+                 "motion_light": "moon",
+                 "arm_dock": "cpu",
+                 "balance_bot": "bot"}
 
 
 def example_entries():

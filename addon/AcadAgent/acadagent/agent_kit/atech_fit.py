@@ -274,6 +274,15 @@ def stage_at(minutes):
 # speaker robot" is a robot), the fan before the lamp words ("a desk fan
 # with lights" is a fan).
 FORKS = [
+    # R803: the five Atech-hardware examples, first: a balancing robot and
+    # a robot arm before desk_robot's "robot", a motion sensor light before
+    # the lamp's "light" ("a night light" stays the bedside lamp), a rover
+    # before the car words
+    (r'\b(self[ -]?balanc\w*|balanc(e|ing)[ -]?(ro)?bots?|segways?|inverted[ -]pendulums?)\b', 'balance_bot'),
+    (r'\b(robot(ic)?[ -]?arms?|arm[ -]?(docks?|bases?|mounts?|controllers?)|so[ -]?101|so[ -]?arm\w*)\b', 'arm_dock'),
+    (r'\b(motion[ -]?(sensing|sensors?|activated|detecting|triggered|lights?|lamps?)|pir)\b', 'motion_light'),
+    (r'\b(air[ -]?(quality|monitors?|sensors?|meters?)|co2|carbon dioxide)\b', 'air_monitor'),
+    (r'\b(rovers?|4wd|crawlers?|all[ -]terrain)\b', 'rover'),
     # R802: the ten starter examples, first (their words are specific)
     (r'\b(planters?|(?:plant|flower) ?pots?|flowerpots?|cachepots?|herb gardens?)\b', 'smart_planter'),
     (r'\b(feeders?|kibble|feeding stations?)\b|\b(?:pet|cat|dog) food\b', 'pet_feeder'),

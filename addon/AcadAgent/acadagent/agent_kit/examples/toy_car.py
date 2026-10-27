@@ -7,10 +7,15 @@ ARCHETYPE: vehicle
 How it is built (R270, resculpted R610):
   * STAGE A - hardware, shell, every working-face opening, fasteners: the
     board FLAT under the floor, nose at the port-8 end (-Y), its height set
-    by the wheel radius (shaft centre = PCB top + 10.14); dc_motor on ports
-    1 and 9 drive the rear wheels directly through soft-square holes; the
+    by the wheel radius (shaft centre = PCB top + 10.14); a dc_motor per
+    wheel, each driving it directly through a soft-square hole: ports 1
+    and 9 seated (rear), ports 5 and 13 CABLED (front - R700: the rear pair
+    moved up the wheelbase, each in two U-saddles on the chassis floor); the
     headlights and the ToF CABLED to the nose (ap.cable), each held by two
-    ribs down from the hood; USB-C on port 7 in a pocket in the rounded tail.
+    ribs down from the hood; every ribbon on its own lane (lane(): the
+    motors' over the board and the front motors, the headlights' under
+    them, the ToF's over the top); USB-C on port 7 in a pocket in the
+    rounded tail.
     R610: the body is ONE sculpted surface (cad.profile_body with SPLINE
     side and plan outlines): a wedge side - a low rounded nose rising
     along the hood to a flat shoulder line, a rear deck falling to a
@@ -42,19 +47,21 @@ profile (low nose, rising hood); 3 shoulder line (the deck the cabin sits
 on); 4 sloping rear deck; 5-8 four wheel arches in the body, lined;
 9 Coke-bottle plan (haunches over the axles, pinched doors); 10 two-tone
 lofted cabin keyed by a lip; 11 raked windscreen; 12 fastback rear
-window; 13-14 side windows (smoked inserts); 15 A/C pillars; 16 soft-square
-shaft holes; 17-18 headlight lenses with retaining flanges; 19 chrome
+window; 13-14 side windows (smoked inserts); 15 A/C pillars; 16 four
+soft-square shaft holes, a motor in every wheel; 17-18 headlight lenses with retaining flanges; 19 chrome
 bezels in counterbores; 20 recessed grille insert; 21 five grille slots;
 22 clear ToF lens in the middle slot; 23 red tail lights; 24 USB-C pocket
 with liner; 25 door seams both sides; 26 door handle recesses; 27 hood
 panel line; 28 "ATECH" on the tail; 29 side mirrors on stalks;
-30 wrap-around bumpers on brackets; 31 board cradle; 32 four screws into
+30 wrap-around bumpers on brackets; 31 board cradle and front motor
+saddles; 32 four screws into
 insert bosses; 33 parting-line reveal round the tub; 34 block-tread tyres
 with five-window rims and centre caps.
 Materials: yellow body, white cabin, graphite chassis, black grille,
 smoked glass, clear lenses, chrome bezels and screws, red tail lights,
 rubber tyres, aluminium rims.
 MEASURED (R610, 2026-10-26): see test_kit_examples_r270 (TIMINGS line).
+R700 (2026-10-27): four motors - ./check 142 s here (110 s with two).
 """
 import time
 import Part
@@ -129,7 +136,8 @@ SIDE_WINDOWS = ((-18, -76), (-31, -58))
 GRILLE = [(13, 13), (47, 13), (47, 40), (13, 40)]                  # (x, z) on the nose
 SLOTS = ((17.5, 4.4), (23.75, 4.4), (30, 6.6), (36.25, 4.4), (42.5, 4.4))   # (x, w); the middle one: the ToF
 HL = 31.0                         # headlights at x = 30 -+ HL (the bezels clear the grille)
-LAMP_Z, EYE_Z = 14.0, 20.0        # R610: lamps / ToF centres over the PCB top (low nose)
+LAMP_Z, EYE_Z = 14.0, 14.0        # R610: lamps / ToF centres over the PCB top (low nose);
+                                  # R700: the ToF's ribbon leaves its top - 14 keeps it under the hood
 REVEAL_Z = 13.8                   # parting-line reveal round the tub
 SCREWS = [(-14, -95), (74, -95), (-4.5, 8.5), (64.5, 8.5)]
 COLOURS = {"Chassis": "graphite", "Body_Shell": "toy_yellow", "Hardtop": "matte_white",
@@ -142,18 +150,99 @@ FLAT = Rotation(Vector(1, 0, 0), 90)
 board = ap.board_object(doc)
 L = R - 10.14                     # PCB top: shaft centre 10.14 above it = R
 board.Placement = Placement(Vector(0, 0, L), FLAT)     # nose -Y (port 8 end)
-mot_l = ap.seat(doc, "dc_motor", 1)
+mot_l = ap.seat(doc, "dc_motor", 1)                    # rear wheels
 mot_r = ap.seat(doc, "dc_motor", 9)
 usb = ap.seat(doc, "usbc", 7)                          # rear, mouth +Y
-eye, eye_rib = ap.cable(doc, "distance_sensor", 8, ap.module_placement(
-    "distance_sensor", (30, -131.4 - NOSE, L + EYE_Z), face="-Y", cable="-Z"), via=[(30, -106 - NOSE, 18)])
-head_l, hl_rib = ap.cable(doc, "light", 6, ap.module_placement(
-    "light", (30 - HL, -132 - NOSE, L + LAMP_Z), face="-Y", cable="-Z"), via=[(1, -118 - NOSE, 17)])
-head_r, hr_rib = ap.cable(doc, "light", 14, ap.module_placement(
-    "light", (30 + HL, -132 - NOSE, L + LAMP_Z), face="-Y", cable="-Z"), via=[(59, -118 - NOSE, 17)])
 mb = ap.bbox(mot_l)
 SHAFT_Y = (mb.YMin + mb.YMax) / 2                      # rear axle, measured
 FRONT_Y = SHAFT_Y - WHEELBASE
+EYE_Y, LAMP_Y = -131.4 - NOSE, -132.0 - NOSE           # the nose modules' centres (y)
+
+
+def lane(*corners, step=1.5):
+    """R700: the via list for ap.cable - the polyline through corners
+    (x, y, z, r), its two ends the ribbon's lead points, each corner
+    rounded at r, sampled every `step` mm and 0.5 mm from each end.
+    MEASURED: a few far-apart vias let the ribbon's spline (OCCT scales
+    its end tangents) loop 15-30 mm past them; points this dense keep it
+    within 0.1 mm of the path."""
+    P = [V(*c[:3]) for c in corners]
+    rr = [0.0] + [float(c[3]) for c in corners[1:-1]] + [0.0]
+    for i in range(len(P) - 1):                       # two corners share a leg
+        ln = (P[i + 1] - P[i]).Length
+        if rr[i] + rr[i + 1] > 0.95 * ln:
+            k = 0.95 * ln / (rr[i] + rr[i + 1])
+            rr[i], rr[i + 1] = rr[i] * k, rr[i + 1] * k
+    pts = [P[0]]
+    for i in range(1, len(P) - 1):
+        a, p, b = P[i - 1], P[i], P[i + 1]
+        p0, p1 = p + (a - p).normalize() * rr[i], p + (b - p).normalize() * rr[i]
+        pts += [p0 * (1 - t) ** 2 + p * (2 * t * (1 - t)) + p1 * t * t for t in [k / 8.0 for k in range(9)]]
+    pts.append(P[-1])
+    clean = [pts[0]]
+    for q in pts[1:]:
+        if (q - clean[-1]).Length > 1e-6:
+            clean.append(q)
+    D = Part.makePolygon(clean).discretize(Distance=0.5)
+    k = max(1, int(round(step / 0.5)))
+    return [tuple(q) for q in [D[1]] + D[k:-k:k] + [D[-2]]]
+
+
+def mx(c):
+    """A lane corner mirrored to the right side (the board's middle, x = 30)."""
+    return (60.0 - c[0],) + tuple(c[1:])
+
+
+# R700: a dc_motor per wheel. The front pair is the rear pair moved up the
+# wheelbase (shaft on the front axle, its end out into the wheel), CABLED
+# from ports 5 and 13 (the SDK reserves 8 and 12), each in a chassis
+# saddle. The ribbons keep to their own layers (MEASURED, each lane
+# probed against the others): the motors' over the board and the front
+# motors' tops, down into the gap between the motors to the sockets; the
+# headlights' under the front motors (a tunnel between the saddles); the
+# ToF's up its riser between the board and the motors, over the top.
+# PLUG: measured - where each ribbon's straight lead out of its port ends
+# (the board does not move with the knobs); PZ: the plugs' and the motor
+# sockets' pin height
+PLUG = {5: (-3.28, -90.1), 6: (-3.23, -110.0), 8: (30.0, -123.23), 13: (63.23, -90.0), 14: (63.23, -110.0)}
+PZ = L + 1.27
+OVER = mb.ZMax + 4.5              # the motor ribbons over the front motors' tops
+TUN = mb.ZMin - 2.2               # the headlight ribbons under them
+YB, YF = mb.YMax - WHEELBASE, mb.YMin - WHEELBASE      # the front motors' back / front faces
+
+
+def moved(o, dy):
+    p = Placement(o.Placement)
+    p.Base = p.Base + V(0, dy, 0)
+    return p
+
+
+m_lead = (mb.XMax + 3.14, FRONT_Y, PZ)                 # measured: each socket's lead, 3.14 out
+m_mid = [(-7.5, PLUG[5][1], PZ, 3), (-7.5, PLUG[5][1], PZ + 14, 3), (8.5, PLUG[5][1], PZ + 14, 10),
+         (8.5, FRONT_Y, OVER, 10), (m_lead[0] + 5.2, FRONT_Y, OVER, 3), (m_lead[0] + 5.2, FRONT_Y, PZ, 3)]
+mot_fl, mfl_rib = ap.cable(doc, "dc_motor", 5, moved(mot_l, -WHEELBASE),
+                           via=lane(PLUG[5] + (PZ,), *m_mid, m_lead))
+mot_fr, mfr_rib = ap.cable(doc, "dc_motor", 13, moved(mot_r, -WHEELBASE),
+                           via=lane(PLUG[13] + (PZ,), *[mx(c) for c in m_mid], mx(m_lead)))
+# R700: the ToF looks out of the grille 6 mm lower (EYE_Z 14), its ribbon
+# out of its top (+Z) - under it the front motors' ribbons come together
+eye_lead = (30.0, EYE_Y + 3.5, L + EYE_Z + 12.89)      # measured, 3.14 over its socket
+RY = (PLUG[8][1] + YB) / 2 - 0.5                       # the riser, between the board and the motors
+eye, eye_rib = ap.cable(doc, "distance_sensor", 8, ap.module_placement(
+    "distance_sensor", (30, EYE_Y, L + EYE_Z), face="-Y", cable="+Z"),
+    via=lane(PLUG[8] + (PZ,), (30, RY, PZ, 4), (30, RY, OVER + 7, 5), (30, eye_lead[1], OVER + 7, 3), eye_lead))
+l_lead = (30 - HL, LAMP_Y + 3.5, L + LAMP_Z - 12.89)  # measured, 3.14 under its socket
+# up and back over its plug, round onto the lamp's line, down under the
+# motor: every leg in one plane, so the ribbon reaches the tunnel flat
+# (MEASURED: a lane drifting 7 mm sideways on its way down tilted it 12 deg
+# there, into the motor)
+l_mid = [(-14, PLUG[6][1], PZ, 3), (-14, PLUG[6][1], PZ + 7, 3), (l_lead[0], PLUG[6][1], PZ + 7, 9),
+         (l_lead[0], -122, PZ + 7, 6), (l_lead[0], YB + 1.25, TUN, 6), (l_lead[0], l_lead[1], TUN, 3)]
+head_l, hl_rib = ap.cable(doc, "light", 6, ap.module_placement(
+    "light", (30 - HL, LAMP_Y, L + LAMP_Z), face="-Y", cable="-Z"), via=lane(PLUG[6] + (PZ,), *l_mid, l_lead))
+head_r, hr_rib = ap.cable(doc, "light", 14, ap.module_placement(
+    "light", (30 + HL, LAMP_Y, L + LAMP_Z), face="-Y", cable="-Z"),
+    via=lane(PLUG[14] + (PZ,), *[mx(c) for c in l_mid], mx(l_lead)))
 LZ = ap.bbox(head_l).ZMin + ap.bbox(head_l).ZLength / 2
 tick("hardware")
 
@@ -348,9 +437,9 @@ ht = cad.fuse_one(ht, box(29, 31, -58, -44, SPINE + 0.2, HT_Z1 - 1.0))   # behin
 tick("hardtop")
 
 # ------------------------------------------------------------ motors and axles
-# rear: holes for the motor shafts; front: stub axles (soft squares, not
-# round holes: coaxial round holes in both walls would read as one hole
-# drilled through two walls)
+# a hole for each motor shaft, rear and front (soft squares, not round
+# holes: coaxial round holes in both walls would read as one hole drilled
+# through two walls)
 
 
 def shaft_hole(a, x0, x1, y=SHAFT_Y, z=R):
@@ -359,18 +448,16 @@ def shaft_hole(a, x0, x1, y=SHAFT_Y, z=R):
 
 # R610: every cut and every fuse on the sculpted shell is BATCHED - one
 # boolean with many tools (a spline shell costs 1-7 s per boolean)
-tub = cad.cut(tub, wells + [W(foot_prism(0.85, TOP - 3, TOP + 1)),
-                            shaft_hole(2.7, -19.0, -25.0), shaft_hole(2.7, 79.0, 85.0)])
+tub = cad.cut(tub, wells + [W(foot_prism(0.85, TOP - 3, TOP + 1))]
+              + [shaft_hole(2.7, x0, x1, y=y) for y in (SHAFT_Y, FRONT_Y) for x0, x1 in ((-19.0, -25.0), (79.0, 85.0))])
 # the hood panel line (a STAGE B detail cut here: with the holders fused
 # under the hood its band's common with the shell came back EMPTY, MEASURED)
 tub = cad.groove_outline(tub, soft_wire([(-4, -104, 80), (64, -104, 80), (64, -NF + 10, 80), (-4, -NF + 10, 80)], 5),
                          view="+Z", w=0.6, depth=0.5, both_sides=False)
 adds = []
 for xs, d in ((-21.7, -1), (81.7, 1)):
-    adds.append(cyl(1.5, (xs, FRONT_Y, R), (d, 0, 0), 12.0))                 # stub axle
-    spacer = cyl(4.2, (xs, SHAFT_Y, R), (d, 0, 0), 1.5)                      # hub spacers
-    adds.append(cad.cut(spacer, shaft_hole(2.75, xs - d, xs + 4 * d)))
-    adds.append(cyl(4.2, (xs, FRONT_Y, R), (d, 0, 0), 1.5))
+    for y in (SHAFT_Y, FRONT_Y):                                             # hub spacers
+        adds.append(cad.cut(cyl(4.2, (xs, y, R), (d, 0, 0), 1.5), shaft_hole(2.75, xs - d, xs + 4 * d, y=y)))
 tick("arches + axles")
 
 # ------------------------------------------------------------ chassis + fasteners
@@ -404,7 +491,15 @@ for x, y in SCREWS:
     bosses.append(t1.cut(t0))
     csks.append(c0.cut(c1))
     screws.append(cad.screw("csk_phillips", "M2", 10, at=(x, y, 7.5), axis="+Z"))
-chassis = cad.fuse_one(cad.cut(chassis, csks), cradle)
+# R700: the front motors' saddles - two U-brackets under each, either side
+# of the headlight ribbon's tunnel: a pad 0.1 mm under the motor, ribs
+# 0.3 mm off its back and front faces, standing 0.5 mm into the floor
+saddles = []
+for xa, xb in ((-19.0, -10.0), (12.5, mb.XMax - 0.5)):
+    for x0, x1 in ((xa, xb), (60.0 - xb, 60.0 - xa)):
+        saddles.append(cad.cut(box(x0, x1, YF - 1.9, YB + 1.9, 7.5 + WALL - 0.5, mb.ZMin + 12.0),
+                               box(x0 - 1, x1 + 1, YF - 0.3, YB + 0.3, mb.ZMin - 0.1, 60)))
+chassis = cad.fuse_one(cad.cut(chassis, csks), cradle, *saddles)
 z_boss = 7.5 + WALL + 0.1 + 0.6                 # 0.1 over the floor, clear of its fillet
 sleeves = [cyl(2.8, (x, y, z_boss), (0, 0, 1), 9.4) for x, y in SCREWS]
 pockets = [cyl(1.6, (x, y, z_boss), (0, 0, 1), 9.5) for x, y in SCREWS]

@@ -75,6 +75,12 @@ PRODUCTS = {
     'photo_frame.py': 'a smart photo frame',
     'metronome.py': 'a digital metronome',
     'macro_pad.py': 'a macro pad',
+    # R803: the five Atech-hardware examples (2026-10-27)
+    'rover.py': 'a 4WD explorer rover',
+    'air_monitor.py': 'a room air quality monitor',
+    'motion_light.py': 'a motion-sensing night light',
+    'arm_dock.py': 'a robot arm dock',
+    'balance_bot.py': 'a self-balancing robot',
 }
 PARAMS_MARKER = "# === PARAMETERS (restyle here) ==="
 STAGE_A_MARKER = "# === STAGE A: hardware, shell, every working-face opening, fasteners ==="

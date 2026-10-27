@@ -6,6 +6,44 @@ change behaviour.
 
 ## [Unreleased]
 
+### Five new Atech hardware examples
+
+- Five more detailed examples on Home's **Start from an example** row,
+  built to show off the Atech modules, the newer ones too: a **4WD
+  explorer rover** (four DC motors, each on its N20 wheel hub, a distance
+  sensor in the nose, an orientation sensor and lights), a **room air
+  monitor** (the SCD40 CO2 sensor and the temperature / humidity sensor
+  in a vented chamber, a screen and a status light), a **motion night
+  light** (the PIR motion sensor behind an open window, lights behind a
+  frosted moon diffuser and a mode key), a **robot arm dock** (the
+  SO-101 robot arm integrator on a UART port, a screen and controls, and a
+  marked mounting plate for the arm's base) and a **self-balancing
+  robot** (two DC motors on N20 wheel hubs, a level orientation sensor at
+  its centre, a tall narrow body with a screen face).
+- As with the other examples: only ports the firmware can drive (never 8
+  or 12; the robot arm on port 3 or 4, its UART ports), each passes
+  `./check`, and so does every RESTYLE knob at its minimum and maximum.
+- Asking for one of these ("a rover", "a CO2 monitor", "a motion sensor
+  light", "a robot arm base", "a balancing robot") starts from the
+  matching example. Their words go first, so "a robot arm" no longer starts
+  from the desk robot, and "a motion sensor night light" no longer from the
+  bedside lamp ("a night light" still does).
+
+### The toy car has four motors
+
+- The **toy car** example now has an Atech DC motor in every wheel: the
+  rear pair seated on ports 1 and 9 as before, the front pair cabled from
+  ports 5 and 13 and held in saddles in the chassis, each driving its
+  wheel directly. The headlight and distance-sensor ribbons are re-routed
+  round them, each in its own lane.
+
+### Fixed
+
+- A build started just before the Mac went to sleep (lid closed) could
+  stop with "did not finish in 180 s" even though it needed under a
+  minute. The build time limit now counts only time the computer is
+  awake.
+
 ### Ten new starter examples
 
 - New detailed examples on Home's **Start from an example** row:

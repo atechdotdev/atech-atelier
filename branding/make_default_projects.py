@@ -63,7 +63,7 @@ import zipfile
 
 sys.dont_write_bytecode = True
 
-MANIFEST_VERSION = 2            # default_projects.py re-installs when this grows
+MANIFEST_VERSION = 3            # default_projects.py re-installs when this grows
 THUMB_PX = 512
 THUMB = "thumbnails/Thumbnail.png"
 GUI_XML = "GuiDocument.xml"
@@ -89,13 +89,18 @@ CURATED = (
     ('photo_frame', 'Photo frame'),
     ('metronome', 'Metronome'),
     ('macro_pad', 'Macro pad'),
+    ('rover', 'Explorer rover'),
+    ('air_monitor', 'Air monitor'),
+    ('motion_light', 'Motion night light'),
+    ('arm_dock', 'Robot arm dock'),
+    ('balance_bot', 'Balance bot'),
 )
 TITLES = dict(CURATED)
 
 #: What each product is (one sentence) and two things to ask next.
 BLURBS = {
-    "toy_car": ("A chunky toy 4x4 built around the Atech board: two DC "
-                "motors drive the rear wheels, the headlights and a "
+    "toy_car": ("A chunky toy 4x4 built around the Atech board: four DC "
+                "motors, one in every wheel; the headlights and a "
                 "distance sensor sit in the nose.",
                 ["Make the wheels bigger", "Turn it into a pickup truck "
                  "with an open bed"]),
@@ -158,6 +163,16 @@ BLURBS = {
         ['Make it taller and slimmer', 'Give the tap key a bigger brass cap']),
     'macro_pad': ('A stream-deck style macro pad on a low wedge: two big keys under a label screen, a frosted status strip and a volume dial in its own crown.',
         ['Make the keys bigger', 'Give the dial crown a brighter metal rim']),
+    'rover': ('A 4WD explorer rover: four motor-driven block-tread wheels under flared fenders, a stepped orange hull with a ToF eye and a headlight in the nose, a caged amber beacon, a solar panel, a camera mast and a roll bar with an antenna.',
+        ['Make the wheels bigger', 'Give it a taller camera mast']),
+    'air_monitor': ('A desk air-quality monitor: a soft slab leaning back in a wedge plinth, the CO2 and temperature / humidity sensors in a walled-off chamber that breathes through a slotted vent panel and top exhaust slots, beside a smoked readout, a frosted status light and a MODE key.',
+        ['Make the vent panel wider with more slots', 'Lean the face back further on a taller plinth']),
+    'motion_light': ('A motion-sensing wall night light: an arched pebble whose big frosted moon glows from four LED grids, with a black PIR eye (an open window under a little visor) watching the hallway and a mode key beside it.',
+        ['Make the moon bigger and the pebble rounder', 'Add a speaker grille for a soft chime']),
+    'arm_dock': ('A heavy desk dock for an SO-101 robot arm: a sloped control deck with a joint-angle screen, REC / PLAY keys and a jog dial, and a raised podium with a brushed bolt-on arm plate, its servo cable leaving through a rubber grommet.',
+        ['Make the arm podium longer', 'Make the podium taller']),
+    'balance_bot': ('A two-wheeled self-balancing robot: a tall white body between big block-tread wheels, the orientation sensor at axle height on its centre line, a screen face with a glowing status eye, a START key, a carry handle and a parking foot so it rests upright.',
+        ['Make the wheels bigger', 'Give the head a wider face window']),
 }
 
 #: Home's card subtitle per project (manifest "summary").
@@ -181,6 +196,11 @@ SUMMARIES = {
     'photo_frame': 'A wood photo frame on a kickstand, a screen in its mat.',
     'metronome': 'A pyramid metronome with a dial, a screen and a tap key.',
     'macro_pad': 'A wedge keypad with big keys, a label screen and a dial.',
+    'rover': 'A 4WD rover with a mast, beacon and solar panel.',
+    'air_monitor': 'A leaning CO2 monitor with a vented sensor chamber.',
+    'motion_light': 'A wall pebble night light with a frosted moon and PIR eye.',
+    'arm_dock': 'A robot arm dock with a control deck and arm plate.',
+    'balance_bot': 'A balance bot with a screen face on two big wheels.',
 }
 
 SAB = os.environ.get("ATECH_DEFAULTS_SABOTAGE", "")

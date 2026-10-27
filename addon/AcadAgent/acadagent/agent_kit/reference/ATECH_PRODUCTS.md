@@ -59,7 +59,7 @@ gates. MEASURED times: ./check of the example with the review sheet off
 
 | Category | Start from this example | Board | Seated modules | Cabled modules | The example's silhouette | The example's hero element |
 |---|---|---|---|---|---|---|
-| vehicle (car, truck, rover) | `examples/toy_car.py` | FLAT under the floor, nose at port 8 | dc_motor 1 + 9 (rear axle), usbc 7 (tail) | headlights 6 + 14, distance_sensor 8 in the nose | a low wedge: length 1.56 x the width, height 0.55 x the width, arches cut into haunches over the wheels, a lofted cabin narrower than the body | the face: 2 lenses in bezels + grille with the ToF lens, 60 mm wide or more |
+| vehicle (car, truck, rover) | `examples/toy_car.py` | FLAT under the floor, nose at port 8 | dc_motor 1 + 9 (rear axle), usbc 7 (tail) | dc_motor 5 + 13 (front axle, in chassis saddles), headlights 6 + 14, distance_sensor 8 in the nose | a low wedge: length 1.56 x the width, height 0.55 x the width, arches cut into haunches over the wheels, a lofted cabin narrower than the body | the face: 2 lenses in bezels + grille with the ToF lens, 60 mm wide or more |
 | tank / tracked vehicle | `examples/rc_tank.py` (R413, CHECK PASS, ./check 26 s MEASURED) | FLAT under the deck, nose at port 8 | dc_motor 1 + 9 (rear sprockets), usbc 7 (rear plate) | distance_sensor 8 and headlights 6 + 14 in the glacis (the car's routes), each held by ribs | length >= 1.5 x the width over the tracks (MEASURED 1.64), two tracks the full length | turret on a pinned ring with a barrel; belts, tread pads, road wheels, sprockets, idlers |
 | robot / character / pet | `examples/desk_robot.py` | LANDSCAPE_UP in the torso, modules face -Y | speaker 1-2 (belly), button 3, microphone 4-5, usbc 7 (side) | screen 11-12 up the neck into the head | torso depth / width >= 0.6 with a crowned belly; head >= 40 % of the height, wider than deep | the head: a visor >= 35 mm wide with a raised bezel (the example: 100 x 60) and a neck collar |
 | speaker / radio / round gadget | `examples/smart_speaker.py` (TALL = True for a column) | FLAT on the puck's axis | speaker 11-12, microphone 4-5, buttons 2 + 3, usbc 7, lights 1/6/8/9/14 | - | puck: height >= 0.4 x the diameter (the example 0.44); column: height >= 1.2 x the diameter | the top: grille + frosted light ring over every light, 100 mm across |
@@ -78,6 +78,11 @@ gates. MEASURED times: ./check of the example with the review sheet off
 | photo frame / picture frame / digital frame | `examples/photo_frame.py` (R720, CHECK PASS, ./check 18 s MEASURED) | UPRIGHT_FRONT behind the picture, off the frame's centre line (no 2-port pair centres the screen: 3+4 fails its seat check), everything tilted back 12 deg as one Placement | screen 10-11 (portrait), orientation 5, usbc 2 (right side) | button from 7 straight down into the bottom rail (ribs + a pad), light from 14 straight out to the left, facing the back behind a frosted strip (ribs above and below) | a 136 x 190 portrait (5 x 7) flat wood moulding on a back box set in 3 mm, leaning on a hinged kickstand (lug + knuckle + pin) | the moulding's chamfered sight and the bevelled mat window round the screen |
 | metronome / tempo pyramid | `examples/metronome.py` (R620, CHECK PASS, ./check 35 s MEASURED) | INVERTED upright (`Rotation(Vector(1, 0, 0), 180)`: modules face -Y, port 7 at the TOP centre), the whole product tilted back ALPHA (half the back's slope) as one Placement | speaker 13-14 (click grille), knob 4-5 (in a dial pod, its cap flush with the rim), screen 9-10 (portrait) + light 2 behind one lens, usbc 1 (left flank) | tap button straight up from port 7 into the apex, in a cradle | a pyramid: a 154 wide foot to a ~47 wide top over 230, front and back leaning in alike, on a walnut plinth | the smoked lens that follows the taper, and the dial pod with its frosted LED ring |
 | macro pad / stream deck / keypad | `examples/macro_pad.py` (R620, CHECK PASS, ./check 31 s MEASURED) | FLAT ACROSS (long side left to right, modules up), the deck tilted back ALPHA as one Placement | screen 9-10 (labels, back-left), buttons 1 + 2 (big keys in front of it), light 5 (status strip), knob 13-14 (back-right, in a dial crown, its cap flush with the rim), usbc 7 (left end) | - | a low wedge 141 x 108, 19 mm thick at the front rising 13 mm to the back, rolled edges, a black base under a graphite top | the dial crown with its frosted LED ring, and the two big keys under the label window |
+| motion / night light / sensor light | `examples/motion_light.py` (R803, CHECK PASS, ./check 11 s MEASURED) | UPRIGHT_FRONT in the pebble, modules face the room (-Y), the wall behind | lights 5 / 6 / 13 / 14 (one frosted moon), pir 1 (open window, bottom right), button 9 (mode key, bottom left), usbc 7 (bottom, mouth down) | - | an arched wall pebble 108 x 190 x 30 (corners r 40, rolled front edge 5), split front / back, on a graphite wall plate 5 mm proud with keyholes and rubber bumpers | a 76 mm frosted moon diffuser, domed 2 mm, with a raised rim; a black PIR eye with an open flared window and a visor below it |
+| air monitor / CO2 meter / room sensor | `examples/air_monitor.py` (R803, CHECK PASS, ./check 30 s MEASURED) | LANDSCAPE_UP in the body (board x 0..120, z 16..76), the whole monitor leaning back 12 deg as one Placement, sunk in a wedge plinth | screen 10-11 behind a smoked lens, light 2 (frosted status pipe in a chrome halo), button 3 (MODE key cap), scd40_air_quality 6 + temp_humidity 14 in a partitioned sensor chamber at the right end (ports 5 / 13 empty for the partition), usbc 7 (left side) | - | a soft slab 160 x 38 x 108 with 22 mm face corners, rolled face and back edges, leaning back 12 deg in a stadium-plan wedge plinth | the graphite vent panel over the sensor chamber (low inlet slots over the CO2 sensor, high slots over temp / humidity, exhaust slots in the top wall: a chimney) beside the smoked readout and the traffic-light status ring |
+| robot arm dock / SO-101 base / machine controller | `examples/arm_dock.py` (R803, CHECK PASS, ./check 37 s MEASURED) | FLAT, turned so ports 1-6 run along the back and 7 is at the right end, under a deck tilted back 6 deg as one Placement; the podium is built upright in the world | robot_arm 3 (UART; servo-bus connector up through a rubber grommet), screen 10-11 (smoked window, black bezel), knob 13-14 (jog dial in a dial crown, cap flush), buttons 9 REC + 1 PLAY (key caps), light 5 (frosted lens), usbc 7 (right end) | - | a low heavy dock 145 x 224: a sloped control deck 20 mm thick at the front, a 47 mm podium behind it (REACH 120) for the arm, graphite top over a black wedge base, six rubber feet | the brushed arm plate in a recess on the podium: 4 bolt holes over M4 heat-set insert pockets (placeholder pattern - measure the real SO-101 base), corner locating lugs, embossed "SO-101" and an arrow to the arm's front; the arm cable's grommet leading into a gate in the podium's edge |
+| balancing robot / two-wheeled self-balancing bot / inverted pendulum | `examples/balance_bot.py` (R803, CHECK PASS, ./check 51 s MEASURED) | UPRIGHT_FRONT, height set by the wheels (shaft centre = WHEEL_R, board bottom = WHEEL_R - 9.99), modules face -Y | dc_motor 1 + 9 (shafts out sideways, an n20 hub on each D-shaft, hidden inside the rims' hex sockets; the rims drive through them), orientation 7 (centre line, axle height), button 3 (START), usbc 4 (right flank), light 6 (status eye), screen 13-14 (face) | - | one front silhouette x one plan, 143 x 98 x 218 overall: 105 mm hips between 80 mm wheels, a 76 mm waist, a 92 mm head with round top corners, 44 deep; fenders winged into the waist, a carry handle, a parking foot behind | the face plate (smoked screen window + domed blue status eye, a brow over it, ears on the head) over big block-tread wheels with orange five-spoke rims |
+| 4WD rover / explorer / RC crawler | `examples/rover.py` (R803, CHECK PASS, ./check 63 s MEASURED) | FLAT under the decks, nose at the port-8 end (8 and 12 empty), the height set by the measured tyre (shaft = PCB top + 10.14) | dc_motor 1 + 9 (rear) and 5 + 13 (front), each with an n20_wheel hub (hidden) in the rim's hex socket; orientation 3, light 4 (beacon), button 10 (GO key), usbc 7 (rear plate) | distance_sensor 14 and headlight 6 to the nose (vias (63,-118) / (-3,-118) at L+10.14), each held by two ribs | 152 x 184 x 105: a hull of three straight outlines (orange instrument deck 44 over the PCB with leaning sides, a rear deck stepped 20 mm down, a sloped nose over the lamp face, a raked chin), four 60 mm block-tread wheels under flared fenders, a bull bar on a skid plate | the instrument deck: a scored navy solar panel, a caged amber beacon, the camera mast with a smoked visor, the roll bar with an antenna |
 | generic case (no product named) | `examples/atech_case.py` - read for its CALLS, never fork its box | UPRIGHT | button 3, speaker 9-10 | - | a box shrink-wrapped round the board is NOT a product | - |
 
 ---
@@ -185,8 +190,9 @@ Route rules (MEASURED):
   two straight ribbons up a neck (desk_robot.py, 34 mm above the board).
 - **A nose sensor ahead of FLAT port 8** (`face="-Y", cable="-Z"`) needs
   its centre >= PCB top + 30 (at +27 the ribbon clipped the sensor);
-  y -131.4 (rc_tank.py; toy_car.py runs the same route NOSE = 24 mm
-  further forward, y -155.4, MEASURED R500).
+  y -131.4 (rc_tank.py, MEASURED R500). toy_car.py (R700) has front
+  motors under that route: its ToF sits at PCB top + 14 with
+  `cable="+Z"`, the ribbon over the motors.
 - **Headlights from FLAT ports 6/14 facing -Y** (`cable="-Z"`): one
   waypoint keeps the ribbon off the floor. Centre (30 -+ 34, -132, PCB
   top + 24) with `via=[(-3, -118, 24)]` / `[(63, -118, 24)]` ran z
@@ -214,7 +220,7 @@ Sizes are row x up x slide (mm). Features measured from height maps.
 | **speaker** | 40.00x20.20x40.00 | 2 | up | 38.7 sq top, round surround ~27 centred; hangs **20.6 mm outboard** of the board edge | `cad.speaker_grille(wall, c, n, 32-36, ring_pitch=2.6, hole=1.5)` (95-133 holes, 21-29 % open), 0.5-2 mm air gap |
 | **usbc** | 19.50x10.21x19.75 | 1 | out (its board edge) | receptacle 10.0x3.5, **centre 5.9 mm above the PCB top**, mouth 0.25 proud | `cad.socket_opening(wall, usb, margin=1.5)` = 13 x 6.5. **The wall must be <= ~1.5 mm in front of the mouth**: cut a pocket and fuse a liner whose back wall starts 0.25 mm off the mouth (all three examples) |
 | **dc_motor** (N20 + DRV8833) | 19.50x19.14x48.30 | 1 | out (shaft) | shaft 3.0 D, **10.14 mm above the PCB top**, 8.8 mm beyond the body; body overhangs the board edge 20.4, the shaft tip 29.2 | a hole >= 5 round the shaft (a soft square avoids a "hole through 2 walls" warning); a wheel bore 3.3 |
-| **knob** | - | **0** | - | no pin header: cannot be seated or cabled | do not use; two buttons (+/-) instead |
+| **knob** (rotary + LED ring) | 39.50x38.10x39.50 | 2 | up (shaft) | a rotary shaft centred on +Y with an LED ring round it (r ~11-13); hangs ~20 mm past the board edge | seat it on (13, 14): a round well (r ~19) for finger room round a ~12 mm cap, a frosted ring over the LEDs (macro_pad.py, arm_dock.py) |
 
 ---
 
@@ -327,16 +333,29 @@ R = 24.0; L = R - 10.14                                # wheel radius; PCB top (
 board.Placement = Placement(Vector(0, 0, L), FLAT)
 mot_l = ap.seat(doc, "dc_motor", 1); mot_r = ap.seat(doc, "dc_motor", 9)   # rear axle, shafts out
 usb = ap.seat(doc, "usbc", 7)                                              # tail, mouth +Y
+# R700: a motor per wheel - the front pair is the rear pair moved up the
+# wheelbase, CABLED from ports 5 and 13 (moved() = the placement + (0, dy, 0))
+mot_fl, _ = ap.cable(doc, "dc_motor", 5, moved(mot_l, -WHEELBASE), via=lane(...))
+mot_fr, _ = ap.cable(doc, "dc_motor", 13, moved(mot_r, -WHEELBASE), via=lane(...))
 eye, eye_rib = ap.cable(doc, "distance_sensor", 8, ap.module_placement(
-    "distance_sensor", (30, -131.4 - NOSE, L + 20), face="-Y", cable="-Z"),
-    via=[(30, -106 - NOSE, 18)])                              # behind the grille's ToF lens
+    "distance_sensor", (30, -131.4 - NOSE, L + 14), face="-Y", cable="+Z"),
+    via=lane(...))                                            # behind the grille's ToF lens
 head_l, hl_rib = ap.cable(doc, "light", 6, ap.module_placement(
-    "light", (-1, -132 - NOSE, L + 14), face="-Y", cable="-Z"), via=[(1, -118 - NOSE, 17)])
+    "light", (-1, -132 - NOSE, L + 14), face="-Y", cable="-Z"), via=lane(...))
 head_r, hr_rib = ap.cable(doc, "light", 14, ap.module_placement(
-    "light", (61, -132 - NOSE, L + 14), face="-Y", cable="-Z"), via=[(59, -118 - NOSE, 17)])
+    "light", (61, -132 - NOSE, L + 14), face="-Y", cable="-Z"), via=lane(...))
 # NOSE = 34: the hood and wheelbase stretched so the car is 1.56 x as long
 # as it is wide (R610: the haunches reach the tyres' outer faces)
 ```
+- **Ribbon lanes (R700, MEASURED):** with five cabled modules round the
+  front axle every ribbon keeps its own layer - the motors' over the
+  board and over the front motors, down into the gap between them to the
+  sockets; the headlights' flat through a tunnel under the front motors
+  (between the saddles); the ToF's up a riser behind the motors and over
+  the top. `lane(*corners)` in toy_car.py turns a corner polyline into
+  vias 1.5 mm apart: a few far-apart vias let the ribbon loop 15-30 mm
+  past them. A lane that drifts sideways while it descends tilts the
+  ribbon (12 deg here) - keep each leg in one plane.
 - **Product:** 137 W x 215 L x 76 H (bumpers included). A LOW coupe
   (R610 - the 4x4 tub read as "a box on wheels"): ONE spline body
   (`cad.profile_body`, spline side and plan) - a wedge side (the nose
@@ -348,8 +367,9 @@ head_r, hr_rib = ap.cable(doc, "light", 14, ap.module_placement(
   shoulder (110 x 92) to a smaller roof (44 x 70) 19 higher: raked
   windscreen, fastback, tumblehome. Wheels 48 x 14 at x 30 -+ 60.5,
   wheelbase 134 (100 + NOSE); ground clearance 7.5; chassis tops out at
-  z 13.0.
-- **Parts:** Chassis (fixed: floor, chin, sills, board cradle, bumpers),
+  z 13.0 (bar the front motors' saddles).
+- **Parts:** Chassis (fixed: floor, chin, sills, board cradle, front
+  motor saddles, bumpers),
   Body_Shell, Hardtop, Grille, ToF_Lens, 4 panes, 2 light pipes + 2
   bezels, 2 tail lights, 4 screws, 4 tyres + 4 rims - all but the
   chassis fitted after.

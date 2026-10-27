@@ -156,6 +156,46 @@
         "min_objects": 1,
         "atech_check": true
       }
+    },
+    {
+      "id": "rover",
+      "prompt": "a 4WD explorer rover",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "air_monitor",
+      "prompt": "a room air quality monitor",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "motion_light",
+      "prompt": "a motion-sensing night light",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "arm_dock",
+      "prompt": "a robot arm dock",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
+    },
+    {
+      "id": "balance_bot",
+      "prompt": "a self-balancing robot",
+      "expect": {
+        "min_objects": 1,
+        "atech_check": true
+      }
     }
   ]
 }

@@ -29,10 +29,11 @@ modules that sit where they really go.
 
 - **Describe it, get a real model.** The agent writes, builds and measures
   every part, and you can ask for changes in the same chat.
-- **Start from one of 19 example projects**, each a complete build around real
-  Atech modules: a toy car, desk robot, RC tank, smart speaker, video
-  doorbell, mini arcade, pet feeder, smart planter, macro pad, music box and
-  more. Open one from Home and ask the agent to make it yours.
+- **Start from one of 24 example projects**, each a complete build around real
+  Atech modules: a toy car, desk robot, RC tank, 4WD rover, self-balancing
+  robot, robot arm dock, room air monitor, motion night light, smart
+  speaker, video doorbell, mini arcade, pet feeder, macro pad and more.
+  Open one from Home and ask the agent to make it yours.
 - **Edit by hand, TinkerCAD-style.** Press **R** to add boxes, cylinders and
   other shapes, type exact sizes in mm (imported **STEP** and STL parts too),
   move, turn, and cut holes. [More below](#edit-by-hand).
@@ -78,6 +79,30 @@ written, built and measured by the agent:
 | a dining table with a lazy Susan | a desk lamp | a spur gear |
 | ![A Raspberry Pi 4 case](docs/screenshots/built_rpi4_case.png) | ![A mug](docs/screenshots/built_mug.png) | ![A toy car](docs/screenshots/built_toy_car.png) |
 | a Raspberry Pi 4 case | a mug | a toy car |
+
+**Starter projects, built around real Atech hardware.** Each one is shown
+finished, cut open to the Atech board and modules inside, and exploded:
+
+| Product | Inside (the Atech hardware) | Exploded |
+|:---:|:---:|:---:|
+| ![A 4WD explorer rover](docs/screenshots/projects/rover_product.png) | ![The rover cut open: the board and its modules](docs/screenshots/projects/rover_inside.png) | ![The rover exploded](docs/screenshots/projects/rover_exploded.png) |
+| **a 4WD explorer rover**: four DC motors, a distance sensor, an orientation sensor, lights | | |
+| ![A self-balancing robot](docs/screenshots/projects/balance_bot_product.png) | ![The balancing robot cut open: the board and its modules](docs/screenshots/projects/balance_bot_inside.png) | ![The balancing robot exploded](docs/screenshots/projects/balance_bot_exploded.png) |
+| **a self-balancing robot**: two DC motors and an orientation sensor at the axle, a screen face | | |
+| ![A robot arm dock](docs/screenshots/projects/arm_dock_product.png) | ![The arm dock cut open: the board and its modules](docs/screenshots/projects/arm_dock_inside.png) | ![The arm dock exploded](docs/screenshots/projects/arm_dock_exploded.png) |
+| **a robot arm dock**: the robot arm integrator on port 3, a screen, a jog dial, REC and PLAY keys | | |
+| ![A room air quality monitor](docs/screenshots/projects/air_monitor_product.png) | ![The air monitor cut open: the board and its modules](docs/screenshots/projects/air_monitor_inside.png) | ![The air monitor exploded](docs/screenshots/projects/air_monitor_exploded.png) |
+| **a room air quality monitor**: a CO2 sensor and a temperature/humidity sensor in a vented chamber, a screen, a status light | | |
+| ![A motion-sensing night light](docs/screenshots/projects/motion_light_product.png) | ![The night light cut open: the board and its modules](docs/screenshots/projects/motion_light_inside.png) | ![The night light exploded](docs/screenshots/projects/motion_light_exploded.png) |
+| **a motion-sensing night light**: a PIR sensor, four lights behind a frosted moon, a mode key | | |
+| ![A toy car](docs/screenshots/projects/toy_car_product.png) | ![The toy car cut open: the board and its modules](docs/screenshots/projects/toy_car_inside.png) | ![The toy car exploded](docs/screenshots/projects/toy_car_exploded.png) |
+| **a toy car**: four DC motors (one per wheel), headlights, a distance sensor | | |
+
+To see your own design these ways in the app: **E** (or **Exploded view** in
+the view bar) pulls the parts apart and puts them back; the slider in **Show
+and hide** sets how far. To see inside, pick the shell in **Show and hide**
+and choose **See-through** (or select it and press **T**), or cut the model
+open with **Section view** (Shift+S).
 
 **Light and dark.**
 
@@ -167,8 +192,8 @@ chmod +x Atech*-x86_64.AppImage
 Atech AI CAD opens on its own workbench. The sidebar has a project picker at the
 top (open, recent and new projects), then **3D CAD** (the chat with the agent)
 and **Atech modules** (the board). The app comes with ready-made example
-projects (19 of them: a toy car, a desk robot, a video doorbell, a mini arcade
-and more) in your projects folder. They are all on **Home** (the Atech logo,
+projects (24 of them: a toy car, a desk robot, a 4WD rover, a video doorbell,
+a mini arcade and more) in your projects folder. They are all on **Home** (the Atech logo,
 or Ctrl+0).
 
 ## Set up Claude Code (once)

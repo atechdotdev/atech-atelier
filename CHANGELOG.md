@@ -6,6 +6,38 @@ change behaviour.
 
 ## [Unreleased]
 
+### Five more Atech modules
+
+- New on the Modules page: Camera, Big Screen, Soil Sensor, Load Cell
+  Amplifier and Power Jack, from Atech's own simulation models
+  (atech-module-simready). They seat on the board, show in the 3D view
+  with their real colours and the agent designs around them like any
+  module: the soil probe sticks out through a wall, the camera gets a lens
+  opening, the power jack's socket faces out of the case.
+- The camera and big screen are Atech's CAD. The soil sensor, load cell and
+  power jack are drawn from Atech's renders on a real Atech case and pin
+  header: the parts on top are placeholders, and the app says so.
+- The power jack plugs into one port but covers the next one along; the
+  check stops another module going there.
+- Atech's software has no drivers for these five yet, so the agent writes
+  no firmware for them.
+- Not yet: the Micro-SD module. Its model's pins sit 0.13 mm off the
+  board's socket, so it would not fit. It comes once the model is fixed.
+
+### Open source, with credit to Atech and FreeCAD
+
+- Atech's code is now licensed under the GNU LGPL v3 or later, with one
+  added term: anyone who shares, sells or builds a product on it must keep
+  "Based on Atech Atelier by Atech, built on FreeCAD" in their app's credits
+  and documentation (`LICENSE-ATTRIBUTION.md`). It was LGPL v2.1 or later;
+  releases up to 0.1.2 keep that licence. The module models stay
+  CC BY-NC 4.0.
+- The FreeCAD logo now sits under the Atech Atelier name, on Home and in the
+  sidebar, as "Based on FreeCAD". Click it to open freecad.org.
+- The app is called Atech Atelier everywhere again, as its window, its icon
+  and its folders always were (0.1.2 showed "Atech AI CAD" inside the app).
+  Pictures and videos now go to the "Atech Atelier" folders.
+
 ### Real parts from NVIDIA SimReady
 
 - **Install from NVIDIA SimReady…** on the Modules page searches NVIDIA's

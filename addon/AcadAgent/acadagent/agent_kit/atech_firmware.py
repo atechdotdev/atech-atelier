@@ -59,6 +59,10 @@ SDK_ID = {
     "robot_arm": "robot_arm",
     "stepper_motor": "stepper_motor",
     "usbc": None,
+    "power_jack": None,
+    # Atech products the SDK has no driver for yet (its catalog's
+    # products/, not modules/): no firmware entry until it has one.
+    "soil_sensor": None, "load_cell": None, "big_screen": None, "camera": None,
 }
 
 #: SDK id -> the instance name plan() gives (btn, btn2, ...).

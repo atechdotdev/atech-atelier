@@ -33,9 +33,11 @@ flag (tests/test_board_look.py).
     speaker, whose STLs keep their old library frame (LIBRARY_FRAME there:
     scripts and saved projects place them by it); the speaker's STL frame
     differs in y (its body hangs below the board plane).
-  * The four DERIVED modules (pir, scd40_air_quality, robot_arm,
-    stepper_motor: no Atech CAD exists) have no renders GLB; the import
-    writes one from the same dataset meshes.
+  * The DERIVED modules (pir, scd40_air_quality, robot_arm,
+    stepper_motor, soil_sensor, load_cell, power_jack: no Atech CAD
+    exists) have no renders GLB; the import writes one from the same
+    dataset meshes. power_jack plugs into one port but its housing is two
+    cells long, footprint centred like the screen's: the two-cell rule.
   * usbc is not in the dataset: its STL and GLB are still the v1.5 pair,
     MEASURED 2026-10-20 (median nearest-vertex 0.03-0.12 mm), z = 9.875.
 The board's offset is the one atech_ports measures from the same GLB
@@ -72,6 +74,10 @@ SLUG = {
     # derived (import_simready.py writes these GLBs; no Atech CAD exists)
     "pir": "pir", "scd40_air_quality": "scd40-air-quality",
     "robot_arm": "robot-arm", "stepper_motor": "stepper-motor",
+    "soil_sensor": "soil-sensor", "load_cell": "load-cell",
+    "power_jack": "power-jack",
+    # Atech CAD (renders v1.7), added with dataset 0ba167be
+    "big_screen": "big-screen", "camera": "camera",
 }
 #: GLB frame -> STL frame, mm (see the module docstring). The board's comes
 #: from atech_ports.measure_board() at run time.
@@ -83,6 +89,8 @@ OFFSETS_MM = {
     "temp_humidity": _ONE, "distance_sensor": _ONE, "knob": _TWO,
     "microphone": _TWO, "pir": _ONE, "scd40_air_quality": _ONE,
     "robot_arm": _TWO, "stepper_motor": _TWO,
+    "soil_sensor": _ONE, "load_cell": _ONE, "power_jack": _TWO,
+    "big_screen": _TWO, "camera": _TWO,
 }
 #: Board materials not drawn: under the central cover, invisible from
 #: outside (atech_ports.HIDDEN_MATERIALS, measured by ray casting there).

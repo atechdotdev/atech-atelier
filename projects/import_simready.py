@@ -4,6 +4,10 @@ into the library: models/stl/<module>.stl and models/glb/<slug>.glb.
     SIMREADY_DIR=<dataset snapshot> RENDERS_DIR=<renders glb_plain dir> \\
         freecadcmd projects/import_simready.py        # from the repository root
 
+    IMPORT_ONLY=camera,big_screen ...  imports only those modules and keeps
+    the other entries of models/SIMREADY.json (the snapshot then needs only
+    their folders).
+
 SOURCES
     SIMREADY_DIR is a snapshot of huggingface.co/datasets/atechdev/
     atech-module-simready (CC BY 4.0) at REVISION; only its mjcf/ folders are
@@ -38,7 +42,7 @@ import struct
 
 import numpy as np
 
-REVISION = "020ea47813ef1f965718c71e0d7ef73cf42d1c4e"
+REVISION = "0ba167be220e32f61f1fdcada519a65fc7e366e0"
 RELEASE = "v1.7"
 
 #: library name -> (dataset asset, GLB slug, port cells, derived shell GLB).
@@ -59,6 +63,16 @@ MODULES = {
     "scd40_air_quality": ("atech_scd40_air_quality", "scd40-air-quality", 1, "button"),
     "robot_arm": ("atech_robot_arm_integrator", "robot-arm", 2, "screen"),
     "stepper_motor": ("atech_stepper_motor", "stepper-motor", 2, "screen"),
+    # Added at 0ba167be (the earlier fourteen are byte-identical to 020ea478,
+    # MEASURED 2026-10-28 against the Hub's file ids). Products the Atech
+    # SDK has no firmware for yet (atech/catalog/data/products).
+    "big_screen": ("atech_big_screen", "big-screen", 2, None),
+    "camera": ("atech_camera", "camera", 2, None),
+    "soil_sensor": ("atech_soil_sensor", "soil-sensor", 1, "temp-sensor"),
+    "load_cell": ("atech_load_cell", "load-cell", 1, "temp-sensor"),
+    # One port, a housing two cells long, footprint centred like the
+    # screen's (header on the -x cell): the two-cell rule holds.
+    "power_jack": ("atech_power_jack", "power-jack", 2, "screen"),
 }
 
 
@@ -83,6 +97,19 @@ KEEP_LIBRARY_STL = {
                   "and the desk_robot and smart_speaker examples fail ./check. The "
                   "library STL passes on every pair. Re-import only once the dataset "
                   "mesh passes on 4+5.",
+}
+
+
+#: Dataset modules NOT imported, and why. Seating is measured from the mesh's
+#: 6-pin header (atech_ports.measure_module_mesh); these cannot be measured.
+NOT_IMPORTED = {
+    "micro_sd_card": "MEASURED 2026-10-28 (dataset 0ba167be, renders v1.7 micro-sd.glb): "
+                     "each header is one closed body with its pins (no separate pin "
+                     "or header part to measure), its pin rows sit 0.13 mm off the "
+                     "board's socket rows and its tips 0.23 mm short of every other "
+                     "module's. The microphone already fails the socket interference "
+                     "check at 0.05 mm, so it would not seat. Import it once Atech's "
+                     "CAD has the standard header.",
 }
 
 
@@ -253,7 +280,16 @@ def main():
     record = {"dataset": "huggingface.co/datasets/atechdev/atech-module-simready",
               "revision": REVISION, "renders": "atechdotdev/atech-module-renders@" + RELEASE,
               "modules": {}}
+    only = [n for n in os.environ.get("IMPORT_ONLY", "").split(",") if n]
+    unknown = [n for n in only if n not in MODULES]
+    if unknown:
+        raise SystemExit("IMPORT_ONLY: not in MODULES: %s" % ", ".join(unknown))
+    if only:
+        with open(os.path.join(models, "SIMREADY.json"), encoding="utf-8") as fh:
+            record["modules"] = json.load(fh)["modules"]
     for name, (asset, slug, cells, shell) in MODULES.items():
+        if only and name not in only:
+            continue
         d = os.path.join(sim, asset)
         text, rgba = mjcf(d, asset)
         mp = parts(d, asset, bom(d))

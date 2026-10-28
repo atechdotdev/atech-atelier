@@ -361,7 +361,7 @@ nema17_stepper:
     the body and a cable exit at the back.
 
 # ---------------------------------------------------------------- DERIVED
-# The four modules below have NO Atech CAD. Their meshes come from the
+# The modules below have NO Atech CAD. Their meshes come from the
 # atech-module-simready dataset (models/SIMREADY.json), which builds each
 # from an Atech module shell plus placeholder parts: the case, PCB and pin
 # header are real Atech geometry (so seating and cables are measured as for
@@ -448,3 +448,110 @@ stepper_motor:
     it vents. The motor itself is placed separately. The chip and terminal
     are placeholder shapes: measure the real part before a design depends
     on their exact size.
+soil_sensor:
+  display_name: Soil Sensor
+  category: module
+  derived: Shell and pin header from Atech's temperature sensor; the probe,
+    its pads and the parts on top are placeholders drawn after Atech's
+    renders, not Atech CAD of this module.
+  description: Soil-moisture probe (two-prong, galvanic) with a CH32V003
+    co-processor on I2C at 0x37. The two 50 mm prongs leave the outer
+    face (-Z) and go into the soil.
+  file: soil_sensor.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 9.54, z: 68.5}
+  accessible_faces: ["-Z", "+Y", "+X", "-X"]
+  agent_notes: |
+    Build AROUND this probe — the two prongs leave the head's outer face
+    (-Z) at PCB level and must stand out of the enclosure into the soil:
+    seat it on a port on the board's edge, its -Z toward the outside, and
+    give the prongs a slot through the wall (is_hole=true box ~18 x 3 mm)
+    with nothing beyond it. The head and the board stay dry: put the slot
+    low in the wall and a drip lip above it, so water running down the
+    probe does not get in. Atech's SDK has no driver for it yet (no
+    firmware is generated). The probe is a placeholder shape: measure the
+    real part before a design depends on its exact size.
+load_cell:
+  display_name: Load Cell Amplifier
+  category: module
+  derived: Shell and pin header from Atech's temperature sensor; the
+    amplifier chip, header and parts on top are placeholders drawn after
+    Atech's PCB render, not Atech CAD of this module.
+  description: Amplifier for a strain-gauge load cell (a scale). The load
+    cell itself is a separate, off-board part wired to it.
+  file: load_cell.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 19.5, y: 9.54, z: 19.5}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this amplifier — it has no working face of its own: the
+    load cell (a metal bar with strain gauges) is a separate part wired to
+    it, and the design's mechanics carry the weight through that bar, not
+    through the module. Leave a way for the 4-wire cable from the bar to
+    the module, keep the module away from the load path, and do not clamp
+    it. Atech's SDK has no driver for it yet (no firmware is generated).
+    The parts on top are placeholders: measure the real part before a
+    design depends on their exact size.
+power_jack:
+  display_name: Power Jack
+  category: module
+  derived: Shell and pin header from Atech's screen module; the DC barrel
+    jack, regulator and parts on top are placeholders drawn after Atech's
+    renders, not Atech CAD of this module.
+  description: DC barrel-jack power input. One port, but a housing two
+    cells long; the jack's socket faces out of the +X end wall.
+  file: power_jack.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 41.5, y: 10.99, z: 19.5}
+  accessible_faces: ["+X", "+Y", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this power input — the plug goes into the socket on the
+    +X end wall, so that end must face a wall of the enclosure with a
+    round opening (is_hole=true cylinder ~9 mm) and at least 15 mm clear
+    outside for the plug. It plugs into ONE port but its housing covers
+    the next cell along its row (+X): leave that port empty. It carries
+    power only (no firmware). The jack is a placeholder shape: measure the
+    real part before a design depends on its exact size.
+
+# ------------------------------------------------- ATECH CAD, NO FIRMWARE YET
+# Atech CAD (renders v1.7) via the atech-module-simready dataset; the Atech
+# SDK has no driver for these yet (atech/catalog/data/products), so no
+# firmware is generated for them.
+big_screen:
+  display_name: Big Screen
+  category: module
+  description: Large display module, two ports wide; the display reaches
+    40 mm past the port cells toward the outer face (-Z). Its viewable
+    surface is on +Y.
+  file: big_screen.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 39.5, y: 9.5, z: 59.72}
+  accessible_faces: ["+Y", "+X", "-X", "-Z"]
+  agent_notes: |
+    Build AROUND this display — the +Y face over its whole 39.5 x 60 mm is
+    SACRED: no walls, tints or decoration over it; leave a window at least
+    its size. The display overhangs the board by 40 mm on the outer side
+    (-Z), so seat it on a port on the board's edge with -Z toward the
+    outside and let the enclosure grow to cover the overhang from below
+    (support it: a ledge or ribs under the overhang, it is not a
+    structural part). A thin bezel round the window is encouraged.
+camera:
+  display_name: Camera
+  category: module
+  description: Camera module, two ports wide; the lens barrel stands
+    14.4 mm above the board on +Y.
+  file: camera.stl
+  recommended_templates: []
+  default_params: {}
+  dimensions_mm: {x: 39.5, y: 14.35, z: 19.72}
+  accessible_faces: ["+Y", "+X", "-X", "+Z", "-Z"]
+  agent_notes: |
+    Build AROUND this camera — the lens on +Y must see out: a round
+    opening over it (is_hole=true cylinder a little wider than the 8.5 mm
+    barrel), or a clear window right on the lens; never tint or cap it,
+    and keep walls out of its view cone (a countersunk opening, wider
+    outside, avoids vignetting). Point +Y at what it should see.

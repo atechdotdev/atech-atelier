@@ -11,7 +11,7 @@ measures.
 Every module except `usb-c.glb` comes from the
 [atech-module-simready](https://huggingface.co/datasets/atechdev/atech-module-simready)
 dataset (Atech, CC BY 4.0), revision
-`020ea47813ef1f965718c71e0d7ef73cf42d1c4e`, through
+`0ba167be220e32f61f1fdcada519a65fc7e366e0`, through
 `projects/import_simready.py`. `models/SIMREADY.json` records, per module,
 the dataset asset, its visual source, and the sha256 of the STL and GLB
 written here.
@@ -26,9 +26,15 @@ written here.
   records as its visual source. Compared with v1.5, only `knob.glb` (it now
   has pins, so the knob can be seated) and `screen.glb` (blank display)
   changed.
-- **Derived** (pir, scd40-air-quality, robot-arm, stepper-motor): Atech has
-  no CAD of these modules. The dataset builds each from an Atech module
-  shell (button or screen) plus placeholder parts, and the import writes
+- **Atech CAD, added 2026-10-28** (big-screen, camera): the same release's
+  files, each checked against the sha256 the dataset records as its visual
+  source. The SDK has no driver for them yet. `micro-sd.glb` is in the
+  release and the dataset but not here: its header cannot be measured
+  (`NOT_IMPORTED` in the import script says why).
+- **Derived** (pir, scd40-air-quality, robot-arm, stepper-motor,
+  soil-sensor, load-cell, power-jack): Atech has no CAD of these modules.
+  The dataset builds each from an Atech module shell (button, temp-sensor
+  or screen) plus placeholder parts, and the import writes
   these GLBs from the dataset's own meshes. They use plain float32 with no
   quantization, the shell's materials taken from its GLB by name, and the
   MJCF colours for the placeholder parts. They are not Atech CAD of these

@@ -1,6 +1,20 @@
 {
   "dataset": "huggingface.co/datasets/atechdev/atech-module-simready",
   "modules": {
+    "big_screen": {
+      "asset": "atech_big_screen",
+      "cells": 2,
+      "derived": false,
+      "glb": "big-screen.glb",
+      "glb_sha256": "5b3257263e78596b92d2848034d46f9df50e5630f791cb02b6ee86efaae27824",
+      "size_mm": [
+        39.5,
+        9.5,
+        59.72
+      ],
+      "stl_sha256": "3dbee8d8052a97c3be86cd0553c64a45557d29e09d27e0e583bc9b49304e181a",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/big-screen.glb"
+    },
     "button": {
       "asset": "atech_button",
       "cells": 1,
@@ -14,6 +28,20 @@
       ],
       "stl_sha256": "a81a547e12ddd3574ef4ac796e942dc5f5569b1860fa7a1f98fae04a496304c7",
       "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/button.glb"
+    },
+    "camera": {
+      "asset": "atech_camera",
+      "cells": 2,
+      "derived": false,
+      "glb": "camera.glb",
+      "glb_sha256": "fbdc2194099c6eab24df9deb26dcd1d9bd19373c69f13f23e2610fd963fee874",
+      "size_mm": [
+        39.5,
+        14.35,
+        19.72
+      ],
+      "stl_sha256": "7fb00e131d473b4fb455c12e9774057f6d51b470d7938b3b18632f56b0335bdb",
+      "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/camera.glb"
     },
     "dc_motor": {
       "asset": "atech_dc_motor",
@@ -71,6 +99,20 @@
       "stl_sha256": "bda48f1caf6c9f1db276b2d88f30744906605bf513dfe54dac6dca660ef11101",
       "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/led-grid.glb"
     },
+    "load_cell": {
+      "asset": "atech_load_cell",
+      "cells": 1,
+      "derived": true,
+      "glb": "load-cell.glb",
+      "glb_sha256": "da81158810b75d48cada56d7e230e16746f3d8bfd372bd82d4c46498d581e772",
+      "size_mm": [
+        19.5,
+        9.54,
+        19.5
+      ],
+      "stl_sha256": "6996c63008f9e9026ac5a67585f6732d66bfc9a7d2b11dbc15bc73b64b710a8d",
+      "visual_source": "derived: shell of temp-sensor.glb (Atech CAD) + sim.yaml parts (amplifier, header, passive_1, passive_2, passive_3, passive_4); not Atech CAD of this module"
+    },
     "microphone": {
       "asset": "atech_microphone",
       "cells": 2,
@@ -114,6 +156,20 @@
       "stl_sha256": "b8d0c00386638a4aa1ec7c51bbcdf5fb94c44113539d0dadd789d95abb7eff5c",
       "visual_source": "derived: shell of button.glb (Atech CAD) + sim.yaml parts (lens_collar, lens_dome, passive_1, passive_2); not Atech CAD of this module"
     },
+    "power_jack": {
+      "asset": "atech_power_jack",
+      "cells": 2,
+      "derived": true,
+      "glb": "power-jack.glb",
+      "glb_sha256": "734f93aec5df8015af597c0562925bf087afcf6a032803a681eaa2f0556df91d",
+      "size_mm": [
+        41.5,
+        10.99,
+        19.5
+      ],
+      "stl_sha256": "068eaf071a3306f79b34d3de466cd0df17c7e6d699263625e79083ce07abd20b",
+      "visual_source": "derived: shell of screen.glb (Atech CAD) + sim.yaml parts (jack_body, jack_barrel, jack_socket, regulator, controller, passive_1, passive_2, passive_3); not Atech CAD of this module"
+    },
     "robot_arm": {
       "asset": "atech_robot_arm_integrator",
       "cells": 2,
@@ -155,6 +211,20 @@
       ],
       "stl_sha256": "7bea0dd66be3ce5e07251fef3039fd3f6c47d5589e4628adde6f32ec684da9fa",
       "visual_source": "atechdotdev/atech-module-renders@v1.7 glb_plain/screen.glb"
+    },
+    "soil_sensor": {
+      "asset": "atech_soil_sensor",
+      "cells": 1,
+      "derived": true,
+      "glb": "soil-sensor.glb",
+      "glb_sha256": "048060809ffead3cf1d4066d003b6916bff9dc9cbdc54c68d67fb79dcd1eab2e",
+      "size_mm": [
+        19.5,
+        9.54,
+        68.5
+      ],
+      "stl_sha256": "1ae343ff4f3f3baa6e9b9a8b0b30742068f1f84e62a2d95ea1c5672c77e65423",
+      "visual_source": "derived: shell of temp-sensor.glb (Atech CAD) + sim.yaml parts (probe_bridge, probe_left, probe_right, pad_left, pad_right, coprocessor, status_led, passive_1, passive_2, passive_3, passive_4); not Atech CAD of this module"
     },
     "speaker": {
       "asset": "atech_speaker",
@@ -200,5 +270,5 @@
     }
   },
   "renders": "atechdotdev/atech-module-renders@v1.7",
-  "revision": "020ea47813ef1f965718c71e0d7ef73cf42d1c4e"
+  "revision": "0ba167be220e32f61f1fdcada519a65fc7e366e0"
 }

@@ -990,7 +990,11 @@ def measure_module_mesh(mesh, name="?"):
         dims = sorted(_bbox_dims(c.BoundBox))
         if abs(dims[0] - PIN_SECTION) <= 0.03 and 5.0 < dims[2] < 20.0:
             pins.append(c)
-        elif _dims_match(dims, HEADER_DIMS, 0.05):
+        # ENV_TOL, as every recognition envelope: the camera and big-screen
+        # CAD (renders v1.7) model the header as a 2.5 x 2.6 x 15.2 box,
+        # pins on the same rows and 5.83 mm past its front as everywhere
+        # (5.84), MEASURED 2026-10-28. Finding only; nothing is placed by it.
+        elif _dims_match(dims, HEADER_DIMS):
             headers.append(c)
             body.append(c)
         else:

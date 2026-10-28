@@ -87,9 +87,11 @@ class TestStudioBoard(unittest.TestCase):
         # Off-board parts (the wheel, the NEMA 17) are never seated on the
         # board, so they need no board picture. Modules with no Atech CAD yet
         # (derived placeholder meshes, projects/import_simready.py) have no
-        # studio picture either; the board map draws them as labelled cells.
+        # studio picture either, nor do the Atech products studio has no
+        # sprite of yet; the board map draws them as labelled cells.
         off_board = ("n20_wheel", "nema17_stepper")
-        no_cad = ("pir", "scd40_air_quality", "robot_arm", "stepper_motor")
+        no_cad = ("pir", "scd40_air_quality", "robot_arm", "stepper_motor",
+                  "soil_sensor", "load_cell", "power_jack", "big_screen", "camera")
         missing = [k for k in modules
                    if k not in mp.SPRITE_FOR and k not in off_board + no_cad]
         self.assertEqual(missing, [])

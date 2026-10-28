@@ -8,7 +8,7 @@ Holds the measured facts the 3D look stands on, with plain Python + numpy
     derived modules) and is the same size as the library STL every fit
     check measures;
   * models/SIMREADY.json (projects/import_simready.py) agrees with the files
-    on disk, and only the four modules without Atech CAD are derived;
+    on disk, and only the modules without Atech CAD are derived;
   * OFFSETS_MM puts each GLB exactly on its STL (bounding-box minima agree);
   * the colour rules: linear -> sRGB, lit LEDs, clear glass, the unlit
     silkscreen, the textured screen and its UV transform.
@@ -114,7 +114,8 @@ class TestModels(unittest.TestCase):
             if m["derived"]:
                 derived.add(module)
         self.assertEqual(derived, {"pir", "scd40_air_quality", "robot_arm",
-                                   "stepper_motor"})
+                                   "stepper_motor", "soil_sensor", "load_cell",
+                                   "power_jack"})
 
     def test_board_hides_only_what_atech_ports_hides(self):
         import ast

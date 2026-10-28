@@ -1396,6 +1396,17 @@ class ModulesPage(QtWidgets.QWidget):
         self.import_btn.clicked.connect(lambda _=False: self._import_part())
         self.import_btn.hide()
         lay.addWidget(self.import_btn, 0, QtCore.Qt.AlignLeft)
+        # R760: real-object models from NVIDIA SimReady (simready.py).
+        self.simready_btn = QtWidgets.QPushButton("Install from NVIDIA SimReady…")
+        self.simready_btn.setObjectName("MLink")
+        self.simready_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.simready_btn.setAccessibleName("Install a part from NVIDIA SimReady")
+        self.simready_btn.setToolTip(
+            "Search NVIDIA's SimReady models (CC BY 4.0): batteries, fuses, "
+            "bulbs, sensors, bolts. An installed one joins your parts.")
+        self.simready_btn.clicked.connect(lambda _=False: self._simready())
+        self.simready_btn.hide()
+        lay.addWidget(self.simready_btn, 0, QtCore.Qt.AlignLeft)
         self._free_btns = []
         self._free_rows = []
         self._free_names = []
@@ -2133,6 +2144,7 @@ class ModulesPage(QtWidgets.QWidget):
         self.free_label.setVisible(vis)
         self.free_sub.setVisible(vis)
         self.import_btn.setVisible(self._unavailable is None)
+        self.simready_btn.setVisible(self._unavailable is None)
 
     def _import_part(self):
         """R750: Import part... - a part that is not an Atech module."""
@@ -2147,6 +2159,19 @@ class ModulesPage(QtWidgets.QWidget):
             return
         if dlg is not None:
             dlg.exec()
+
+    def _simready(self):
+        """R760: Install from NVIDIA SimReady..."""
+        from . import simready_dialog
+        try:
+            _lib()
+            dlg = simready_dialog.SimReadyDialog(
+                self, on_done=lambda n: self._imported(n))
+        except Exception as exc:                       # noqa: BLE001
+            _log("simready: %r" % (exc,))
+            self._show_failure(exc, action="opening SimReady")
+            return
+        dlg.exec()
 
     def _imported(self, name):
         self._load()

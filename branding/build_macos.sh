@@ -298,7 +298,9 @@ say "addon bundled" "Mod/AcadAgent ($(find "$AA" -name '*.py' | wc -l | tr -d ' 
 
 mkdir -p "$AA/projects" "$AA/data/models/stl" "$AA/data/models/glb" "$AA/docs"
 install -m 0644 "$REPO/projects/atech_ports.py" "$REPO/projects/atech_modules.py" \
-  "$REPO/projects/user_parts.py" "$AA/projects/"
+  "$REPO/projects/user_parts.py" "$REPO/projects/simready.py" \
+  "$REPO/projects/simready_usd2stl.py" "$REPO/projects/simready_index.json" \
+  "$AA/projects/"
 install -m 0644 "$PRESETS" "$AA/data/models/presets.yaml"
 if [[ -f "$REPO/LICENSE-models.md" ]]; then
   install -m 0644 "$REPO/LICENSE-models.md" "$AA/data/models/LICENSE-models.md"

@@ -227,7 +227,7 @@ def read_mesh(path, scale=1.0):
 def import_part(src, name=None, display_name=None, category="electronics",
                 description="", agent_notes="", electrical=None, licence="",
                 source_url="", scale=1.0, recentre=False, replace=False,
-                d=None):
+                extra=None, d=None):
     """Import a CAD or mesh file as user part `name`. Returns its entry.
 
     src          STEP/IGES/BREP or STL/OBJ/PLY/3MF/AMF/OFF, in millimetres
@@ -240,6 +240,8 @@ def import_part(src, name=None, display_name=None, category="electronics",
                  y from 0 up (the way Atech meshes lie); False keeps the
                  file's own frame.
     replace      overwrite an existing user part of the same name.
+    extra        more provenance to keep with the entry ({"simready": {...}}
+                 from simready.py); it never replaces a measured field.
     """
     if yaml is None:
         raise PartError("PyYAML is unavailable")
@@ -324,6 +326,8 @@ def import_part(src, name=None, display_name=None, category="electronics",
         entry["mesh_note"] = note
     if agent_notes:
         entry["agent_notes"] = agent_notes.strip() + "\n"
+    for k, v in (extra or {}).items():
+        entry.setdefault(k, v)
     have[name] = entry
     _write(have, d)
     return specs(d)[name]

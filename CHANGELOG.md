@@ -6,6 +6,23 @@ change behaviour.
 
 ## [Unreleased]
 
+### Real parts from NVIDIA SimReady
+
+- **Install from NVIDIA SimReady…** on the Modules page searches NVIDIA's
+  free library of real-object models (2,600 of them: batteries, fuses,
+  bulbs, sensors, cameras, bolts and nuts, and much more), with a picture,
+  size and weight for each. Electrical only and Fits on a desk are on by
+  default.
+- Install one and it joins your parts, ready to place beside the board or
+  to have the agent build around. Each file is checked against the
+  dataset's own record before it is used, and each part keeps NVIDIA's
+  credit (CC BY 4.0).
+- The first install also fetches the USD reader (about 40 MB, once).
+- These are simulation models, not datasheets: a size can be a few
+  millimetres off the real part (NVIDIA's 9 V battery is 53 mm tall; a
+  real one is 48.5 mm). Atelier uses the size it measures and tells the
+  agent to use the real datasheet where a fit matters.
+
 ### Your own parts, not only Atech modules
 
 - **Import part…** on the Modules page brings in a part from another

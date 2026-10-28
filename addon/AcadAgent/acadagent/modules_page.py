@@ -2135,7 +2135,7 @@ class ModulesPage(QtWidgets.QWidget):
         self.import_btn.setVisible(self._unavailable is None)
 
     def _import_part(self):
-        """R730: Import part... - a part that is not an Atech module."""
+        """R750: Import part... - a part that is not an Atech module."""
         from . import import_part
         try:
             _lib()

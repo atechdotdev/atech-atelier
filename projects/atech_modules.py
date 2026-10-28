@@ -59,8 +59,9 @@ class LibraryMissing(SpecError):
 _SPECS = None
 
 
-def specs():
-    """The parsed presets.yaml. Raises rather than inventing defaults."""
+def library_specs():
+    """The parsed presets.yaml: Atech's own library only. Raises rather than
+    inventing defaults."""
     global _SPECS
     if _SPECS is not None:
         return _SPECS
@@ -73,10 +74,39 @@ def specs():
     return _SPECS
 
 
+def user_specs():
+    """The user's own parts (user_parts.py; each entry has user: True).
+    {} when there are none or their catalog cannot be read: a broken user
+    file never takes Atech's library down with it."""
+    try:
+        import user_parts
+        return user_parts.specs()
+    except Exception:                                  # noqa: BLE001
+        return {}
+
+
+def specs():
+    """Atech's library, then the user's parts. An Atech name always wins."""
+    lib = library_specs()
+    extra = user_specs()
+    if not extra:
+        return lib
+    out = dict(lib)
+    for k, v in extra.items():
+        out.setdefault(k, v)
+    return out
+
+
+def is_user_part(name):
+    """True for a part the user imported, False for Atech's own."""
+    return name not in library_specs() and name in user_specs()
+
+
 def spec(name):
     d = specs()
     if name not in d:
-        raise SpecError("%r is not a module in presets.yaml (known: %s)"
+        raise SpecError("%r is neither an Atech module in presets.yaml nor "
+                        "one of the user's imported parts (known: %s)"
                         % (name, ", ".join(sorted(d))))
     return d[name]
 
@@ -88,7 +118,15 @@ def modules_of(category=None):
 
 
 def stl_path(name):
-    f = spec(name).get("file")
+    sp = spec(name)
+    if sp.get("user"):
+        import user_parts
+        p = user_parts.stl_path(name)
+        if p is None:
+            raise SpecError("user part %s has no mesh in %s"
+                            % (name, user_parts.parts_dir()))
+        return p
+    f = sp.get("file")
     if not f:
         raise SpecError("%r has no 'file' in presets.yaml" % name)
     p = os.path.join(STL_DIR, f)

@@ -2575,12 +2575,14 @@ def _api_card():
         return ""
     if not isinstance(_CARD, dict):     # tests reset the cache with None
         _CARD = {}
-    mode = "quality" if quality_mode() else "fast"
+    # The user's imported parts are on the card (user_parts.py): a part
+    # imported mid-session makes a new card, never a stale one.
+    mode = ("quality" if quality_mode() else "fast", _user_parts_sig())
     if mode not in _CARD:
         card = _generated_card()
         closed = kit_reads_fitted_after()
         slide = SLIDE_CLOSED if closed else SLIDE_OPEN
-        if mode == "quality":
+        if mode[0] == "quality":
             # R600: the short card (ATECH_QUALITY_HEAD / _TAIL)
             cables = ("" if "cables" in prompt_off() or not library_has_cable()
                       else QUALITY_CABLES)
@@ -2602,13 +2604,24 @@ def _api_card():
                         else "with Edit"),
                 draft_first=_draft_first(),
                 **dict(head, **_draft_caps()))
-        if mode == "quality":
+        if mode[0] == "quality":
             card = _quality_card(card)
         if firmware_on():
             text = text.rstrip("\n") + "\n" + FIRMWARE_RULE.lstrip("\n") + "\n"
         _CARD[mode] = text + (
             "\n" + card.rstrip("\n") + "\n" if card else "")
     return _CARD[mode]
+
+
+def _user_parts_sig():
+    """(mtime, size) of the user's parts.yaml, or None: what the cached card
+    is keyed on besides the mode."""
+    d = user_parts_dir()
+    try:
+        st = os.stat(os.path.join(d, "parts.yaml")) if d else None
+    except OSError:
+        return None
+    return (st.st_mtime, st.st_size) if st else None
 
 
 def _products_line():

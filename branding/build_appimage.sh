@@ -303,7 +303,8 @@ say "addon bundled" "usr/Mod/AcadAgent ($(find "$AA" -name '*.py' | wc -l) py fi
 # Licence of the meshes and presets.yaml: CC BY-NC 4.0 (ADR-006). The notice
 # sits NEXT to them, so a copy of the models folder carries its terms.
 mkdir -p "$AA/projects" "$AA/data/models/stl" "$AA/data/models/glb" "$AA/docs"
-install -m 0644 "$REPO/projects/atech_ports.py" "$REPO/projects/atech_modules.py" "$AA/projects/"
+install -m 0644 "$REPO/projects/atech_ports.py" "$REPO/projects/atech_modules.py" \
+  "$REPO/projects/user_parts.py" "$AA/projects/"
 install -m 0644 "$PRESETS" "$AA/data/models/presets.yaml"
 if [[ -f "$REPO/LICENSE-models.md" ]]; then
   install -m 0644 "$REPO/LICENSE-models.md" "$AA/data/models/LICENSE-models.md"

@@ -950,9 +950,32 @@ def stl_path(name):
     _need_library()
     p = os.path.join(STL_DIR, name + ".stl")
     if not os.path.isfile(p):
+        p = _user_stl(name) or p
+    if not os.path.isfile(p):
         raise UndefinedByLibrary("no STL for module %r at %s" % (name, p),
                                  kind="no_mesh", module=name)
     return p
+
+
+def _user_stl(name):
+    """The mesh of a part the user imported (user_parts.py), or None. A user
+    part with a real Atech header is measured and seated like any module."""
+    try:
+        import user_parts
+        return user_parts.stl_path(name)
+    except Exception:                                  # noqa: BLE001
+        return None
+
+
+def user_part_names():
+    """Names of the user's imported parts that do not shadow a library mesh."""
+    try:
+        import user_parts
+        names = user_parts.specs()
+    except Exception:                                  # noqa: BLE001
+        return []
+    return sorted(n for n in names if n != BOARD_NAME and not (
+        STL_DIR and os.path.isfile(os.path.join(STL_DIR, n + ".stl"))))
 
 
 def measure_module_mesh(mesh, name="?"):
@@ -3428,6 +3451,45 @@ def _derived_modules(names):
         return []
 
 
+def _user_parts_card(users):
+    """Card lines for the user's imported parts that cannot be seated: real
+    parts the product must hold (an Arduino, a battery, a servo). Sizes are
+    measured; the electrical line is the user's own declaration."""
+    rows = []
+    try:
+        import atech_modules
+        import user_parts
+        import Mesh
+        for n in users:
+            try:
+                measure_module(n)
+                continue                  # it seats: listed under MODULES
+            except UndefinedByLibrary:
+                pass
+            sp = atech_modules.spec(n)
+            bb = Mesh.Mesh(atech_modules.stl_path(n)).BoundBox
+            row = "  %-15s %s %s" % (n, sp.get("category") or "part", "x".join(
+                _fmt(v) for v in (bb.XLength, bb.YLength, bb.ZLength)))
+            row += " box %s..%s %s..%s %s..%s" % tuple(_fmt(v) for v in (
+                bb.XMin, bb.XMax, bb.YMin, bb.YMax, bb.ZMin, bb.ZMax))
+            elec = user_parts.electrical_line(sp)
+            if elec:
+                row += " | wiring (user says): " + elec
+            rows.append(row)
+    except Exception:                                  # noqa: BLE001
+        return []
+    if not rows:
+        return []
+    return (["YOUR PARTS (imported by the user, not Atech: never model them, "
+             "place their real mesh; no Atech firmware drives them; x y z and "
+             "box as the mesh lies at identity)"] + rows
+            + ['  obj, _ = am.load_module(doc, "<name>", placement=Placement(...))',
+               "  design the product to HOLD them: a cradle, standoffs or a "
+               "pocket, openings for their connectors, and a route for their "
+               "wires to the board; am.spec(name) has description, "
+               "electrical and agent_notes"])
+
+
 def api_card():
     """A short (2-3 KB) plain-text card of the Atech API and the board frame,
     GENERATED from port_table(), the measured module meshes and the call
@@ -3460,20 +3522,23 @@ def api_card():
                     _fmt(lo[2]), _fmt(hi[2]), _mouth_plane(p)))
     names = sorted(f[:-4] for f in os.listdir(STL_DIR)
                    if f.endswith(".stl") and f[:-4] != BOARD_NAME)
+    users = user_part_names()
+    names = sorted(set(names) | set(users))
     L.append("MODULES (measured: row x up x slide; conn = ports taken;")
     L.append("  face = working face (mesh): up = %s; out = toward the port's "
              "edge: %s)" % (_axis_word(up), "; ".join(
                  "%s %s" % (k, _axis_word(-_v(table[n0]["insert_dir"])))
                  for k, n0 in (("1-6", 1), ("9-14", 9), ("7", 7), ("8", 8)))))
     unseatable = []
-    off_board = _off_board_parts(names)
+    off_board = _off_board_parts([n for n in names if n not in users])
     for n in names:
         if n in off_board:
             continue
         try:
             f = measure_module(n)
         except UndefinedByLibrary:
-            unseatable.append(n)
+            if n not in users:
+                unseatable.append(n)
             continue
         P = np.concatenate([f["body_tris"], f["pin_tris"]]).reshape(-1, 3)
         dims = [float((P @ ax).max() - (P @ ax).min()) for ax in (f["r"], f["u"], f["d"])]
@@ -3481,8 +3546,9 @@ def api_card():
             q["word"] + ("" if q["section_mm"] is None else " (%sx%s part %s proud)" % (
                 _fmt(q["section_mm"][0]), _fmt(q["section_mm"][1]), _fmt(q["proud_mm"])))
             for q in f["faces"])
-        L.append("  %-15s %sx%sx%s conn %d face %s"
-                 % (n, _fmt(dims[0]), _fmt(dims[1]), _fmt(dims[2]), len(f["groups"]), face))
+        L.append("  %-15s %sx%sx%s conn %d face %s%s"
+                 % (n, _fmt(dims[0]), _fmt(dims[1]), _fmt(dims[2]), len(f["groups"]), face,
+                    " USER PART (no Atech firmware)" if n in users else ""))
     if unseatable:
         L.append("  %s: no pin header: cannot be seated (OPEN)"
                  % ", ".join(unseatable))
@@ -3500,6 +3566,7 @@ def api_card():
                  '"nema17_stepper", placement=Placement(...))')
         L.append("  a part's own frame and its mounting dimensions: "
                  "am.spec(name)[\"agent_notes\"]")
+    L += _user_parts_card(users)
     L.append("CALLS (import atech_ports as ap)")
     for c in _CARD_CALLS:
         L.append("  ap.%s%s" % (c, inspect.signature(globals()[c])))

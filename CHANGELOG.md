@@ -6,19 +6,24 @@ change behaviour.
 
 ## [Unreleased]
 
-### Open source, with credit to Atech and FreeCAD
+### Your own parts, not only Atech modules
 
-- Atech's code is now licensed under the GNU LGPL v3 or later, with one
-  added term: anyone who shares, sells or builds a product on it must keep
-  "Based on Atech Atelier by Atech, built on FreeCAD" in their app's credits
-  and documentation (`LICENSE-ATTRIBUTION.md`). It was LGPL v2.1 or later;
-  releases up to 0.1.2 keep that licence. The module models stay
-  CC BY-NC 4.0.
-- The FreeCAD logo now sits under the Atech Atelier name, on Home and in the
-  sidebar, as "Based on FreeCAD". Click it to open freecad.org.
-- The app is called Atech Atelier everywhere again, as its window, its icon
-  and its folders always were (0.1.2 showed "Atech AI CAD" inside the app).
-  Pictures and videos now go to the "Atech Atelier" folders.
+- **Import part…** on the Modules page brings in a part from another
+  maker: an Arduino, a Raspberry Pi, a battery holder, a servo. Read from
+  STEP, IGES, STL, OBJ, PLY or 3MF, in millimetres, inches, centimetres
+  or metres. Its size is measured from the file. Say how it connects
+  (I2C, UART, power...), its voltage, where its connectors are and
+  anything the design must respect; the design agent gets all of it.
+- Imported parts are kept in your own parts library, next to Atech's and
+  never inside it, so an update leaves them alone. Right-click one to
+  remove it.
+- A part made with a real Atech 6-pin header (a board of your own built
+  for the Atech connector) seats on the board like any Atech module.
+  Every other part is placed by hand, and the agent builds the product
+  around it: a cradle or standoffs, openings for its connectors, a route
+  for its wires.
+- A file that measures metres across (the wrong units) is refused with
+  the fix, instead of being imported a thousand times too big.
 
 ### A clear way back to all your projects
 

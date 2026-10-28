@@ -170,6 +170,12 @@ SIDEBAR_QSS = """
 #SideIconBtn:hover {{ background: {hover}; border-color: {line}; }}
 #SideIconBtn:focus {{ border-color: {accent}; }}
 #SideIconBtn::menu-indicator {{ image: none; width: 0; }}
+#HomeBtn {{
+    background: {panel}; border: 1px solid {line}; border-radius: 14px;
+    padding: 4px 10px; color: {text}; font-family: {UI}; font-size: 12px; font-weight: 600;
+}}
+#HomeBtn:hover {{ background: {hover}; border-color: {line_strong}; }}
+#HomeBtn:focus {{ border-color: {accent}; }}
 #PartsHead {{ background: {panel}; border-top: 1px solid {line}; border-bottom: 1px solid {line}; }}
 #PartsToggle {{
     background: transparent; border: none; border-radius: 6px; text-align: left;
@@ -2092,6 +2098,12 @@ class Overlay(QtCore.QObject):
         self._key = key
         self.bar.setVisible(not home)
         self.empty.setVisible(home)
+        body = _S.get("body")                      # R721: its Home button
+        if body is not None:
+            try:
+                body.set_home_state(home_open(), has_doc)
+            except (RuntimeError, AttributeError):
+                pass
         show_hint = not home and self.hint.wanted()
         self.hint.setVisible(show_hint)
         if self._on_docs is not None:
@@ -2200,6 +2212,18 @@ class Sidebar(QtWidgets.QWidget):
         self.brand_word.setAccessibleName(style.PRODUCT)
         bl.addWidget(self.brand_word)
         bl.addStretch(1)
+        # R721: Home (all projects) as a labelled button, not only the logo
+        # and Ctrl+0: people did not find their way back to it.
+        self.btn_home = QtWidgets.QToolButton()
+        self.btn_home.setObjectName("HomeBtn")
+        self.btn_home.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_home.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.btn_home.setIconSize(QtCore.QSize(14, 14))
+        self.btn_home.setFocusPolicy(QtCore.Qt.TabFocus)
+        self.btn_home.clicked.connect(lambda _=False: toggle_home())
+        bl.addWidget(self.btn_home)
+        self._home_state = None
+        self.set_home_state(False, True)
         hv.addWidget(self.brand)
         # R801: the logo is the way Home (all projects), as on a website.
         self.brand.setCursor(QtCore.Qt.PointingHandCursor)
@@ -2367,8 +2391,33 @@ class Sidebar(QtWidgets.QWidget):
         if on == self.header_chrome:
             return
         self.header_chrome = on
-        for w in (self.brand, self.btn_terminal, self.btn_settings):
+        # R721: the brand row stays for the All projects button; only the
+        # wordmark goes where the top bar already carries it (Linux)
+        for w in (self.brand_mark, self.brand_word, self.btn_terminal, self.btn_settings):
             w.setVisible(on)
+
+    def set_home_state(self, home, has_doc):
+        """R721: "All projects" over a project; "Back to project" on Home
+        while a project is open; hidden when Home is the only page."""
+        state = (bool(home), bool(has_doc))
+        if state == self._home_state:
+            return
+        self._home_state = state
+        back = state[0] and state[1]
+        self.btn_home.setText("Back to project" if back else "All projects")
+        self.btn_home.setToolTip(("Back to the open project (Esc)" if back
+                                  else "Home: all your projects (Ctrl+0)"))
+        self.btn_home.setAccessibleName(self.btn_home.text())
+        self.btn_home.setVisible(state[1])
+        self._paint_home_btn()
+
+    def _paint_home_btn(self):
+        try:
+            t = style.tokens()
+            back = bool(self._home_state and self._home_state[0])
+            self.btn_home.setIcon(style.icon("arrow-left" if back else "grid", t["text"], 14))
+        except Exception as exc:                       # noqa: BLE001
+            _log("home button icon: %r" % (exc,))
 
     def _on_tab(self, i):
         self.show_page(self.PAGE_MODULES if i == 1 else self.PAGE_CHAT)
@@ -2506,6 +2555,7 @@ class Sidebar(QtWidgets.QWidget):
             self.brand_mark.setPixmap(pm)
         self.btn_terminal.setIcon(style.icon("terminal", t["muted"], 16))
         self.btn_settings.setIcon(style.icon("settings", t["muted"], 16))
+        self._paint_home_btn()
         self._paint_parts_toggle()
         ico = QtGui.QIcon()
         ico.addPixmap(style.icon("layers", t["text"], 16).pixmap(16, 16),

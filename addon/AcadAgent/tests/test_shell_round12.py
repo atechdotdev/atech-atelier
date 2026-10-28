@@ -166,7 +166,10 @@ class TestR300Chrome(Case):
         s.install()
         F.pump(30)
         body = s._S["body"]
-        self.assertFalse(body.brand.isVisible())
+        # R721: the brand row stays for the All projects button; the
+        # wordmark is the top bar's
+        self.assertFalse(body.brand_word.isVisible())
+        self.assertFalse(body.brand_mark.isVisible())
         self.assertFalse(body.btn_terminal.isVisible())
         word = s._S["topbar"]["left"].findChild(QtWidgets.QLabel, "Wordmark")
         self.assertEqual(word.text(), "Atech AI CAD")
@@ -194,7 +197,7 @@ class TestR300Chrome(Case):
             self.shell.install()
             F.pump(30)
             body = self.shell._S["body"]
-            self.assertFalse(body.brand.isVisible(),
+            self.assertFalse(body.brand_word.isVisible(),
                              "the R300 check could not fail")
 
 

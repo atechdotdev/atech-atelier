@@ -6,6 +6,12 @@ change behaviour.
 
 ## [Unreleased]
 
+### A clear way back to all your projects
+
+- The sidebar has an **All projects** button at the top. On Home, while a
+  project is open, it reads **Back to project**. The logo, Ctrl+0 and the
+  project menu's "All projects" still work too.
+
 ### Exploded view and hand edits: nothing gets lost
 
 - The exploded view only changes the picture, whatever else you do. A

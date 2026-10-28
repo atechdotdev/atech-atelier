@@ -158,14 +158,26 @@ class TestHomeMode(unittest.TestCase):
             F.pump(30)
             ov.place()
             self.assertFalse(ov.empty.isVisible(), "home hidden while a project shows")
+            # R721: a labelled way to Home, and back, in the sidebar
+            btn = shell._S["body"].btn_home
+            self.assertEqual(btn.text(), "All projects")
+            self.assertFalse(btn.isHidden())
             shell.show_home(True)
             F.pump(30)
             self.assertTrue(ov.empty.isVisible(), "home shown in home mode")
             self.assertFalse(ov.bar.isVisible(), "no view bar over home")
-            shell.show_home(False)
+            self.assertEqual(btn.text(), "Back to project")
+            btn.click()
             F.pump(30)
+            self.assertFalse(shell.home_open(), "the button goes back")
             self.assertFalse(ov.empty.isVisible())
             self.assertTrue(ov.bar.isVisible())
+            self.assertEqual(btn.text(), "All projects")
+            body = shell._S["body"]
+            body.set_home_state(True, False)        # no project open at all
+            self.assertTrue(btn.isHidden(), "no button when Home is the only page")
+            body.set_home_state(False, True)
+            self.assertFalse(btn.isHidden())
         finally:
             shell._HOME["on"] = False
             shell.uninstall()

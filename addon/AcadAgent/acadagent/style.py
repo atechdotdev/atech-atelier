@@ -1,4 +1,4 @@
-"""style — the Atech AI CAD design system for everything this addon draws.
+"""style — the Atech Atelier design system for everything this addon draws.
 
 ONE token table per mode, copied from brand/tokens.py (which is itself ported
 from the atech.dev frontend). The addon ships alone inside the AppImage, so it
@@ -43,10 +43,10 @@ LIGHT.update({"bubble": "#f3f4f6", "card": "#fafafa", "composer": "#efefef",
 DARK.update({"bubble": "#222222", "card": "#161616", "composer": "#1f1f1f",
              "track": "#0d0d0d", "view_top": "#1c1c1e", "view_bot": "#0b0b0c"})
 
-#: The product name in UI strings (wordmark, About, notices). The data
-#: folder and the bundle keep "Atech Atelier" (the PRD's open question):
-#: renaming those moves every profile.
-PRODUCT = "Atech AI CAD"
+#: The product name in UI strings (wordmark, About, notices): the same
+#: "Atech Atelier" as the bundle and the data folder (R722; 0.1.2 showed
+#: "Atech AI CAD").
+PRODUCT = "Atech Atelier"
 
 FONT_UI = "Inter"
 FONT_MONO = "Geist Mono"
@@ -434,6 +434,37 @@ def _logo_file(m):
 
 
 _LOGO_CACHE = {}
+_FREECAD_CACHE = {}
+
+
+def freecad_wordmark(height=18, m=None):
+    """The official FreeCAD wordmark (acadagent/brand_freecad/, unaltered),
+    the light-text file on a dark theme. None when the file is missing."""
+    import os
+    m = m or mode()
+    scale = pixel_scale()
+    key = (height, m, scale)
+    if key in _FREECAD_CACHE:
+        return _FREECAD_CACHE[key]
+    name = "FreeCAD-wordmark-light.svg" if m == "dark" else "FreeCAD-wordmark.svg"
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "brand_freecad", name)
+    if not os.path.isfile(path):
+        return None
+    ren = QtSvg.QSvgRenderer(path)
+    vb = ren.viewBoxF()
+    w = int(round(height * vb.width() / max(vb.height(), 1.0)))
+    img = QtGui.QImage(w * scale, height * scale,
+                       QtGui.QImage.Format_ARGB32_Premultiplied)
+    img.fill(QtCore.Qt.transparent)
+    pa = QtGui.QPainter(img)
+    pa.setRenderHint(QtGui.QPainter.Antialiasing)
+    ren.render(pa)
+    pa.end()
+    pm = QtGui.QPixmap.fromImage(img)
+    pm.setDevicePixelRatio(scale)
+    _FREECAD_CACHE[key] = pm
+    return pm
 
 
 def logo_pixmap(height=20, m=None):

@@ -1,6 +1,6 @@
 """Round-12 WS W2 (home + navigation), headless: R300-R310.
 
-    R300  macOS-safe chrome: the wordmark ("Atech AI CAD"), Terminal and
+    R300  macOS-safe chrome: the wordmark ("Atech Atelier"), Terminal and
           Settings move into the sidebar head where the native menu bar
           draws no corner widgets; the R280 hardware switch is really built
           (shell.py used navbar without importing it at module level).
@@ -146,7 +146,7 @@ class TestR300Chrome(Case):
         F.pump(30)
         body = s._S["body"]
         self.assertTrue(body.brand.isVisible())
-        self.assertEqual(body.brand_word.text(), "Atech AI CAD")
+        self.assertEqual(body.brand_word.text(), "Atech Atelier")
         for b, name in ((body.btn_terminal, "Terminal"),
                         (body.btn_settings, "Settings")):
             self.assertTrue(b.isVisible(), name)
@@ -172,7 +172,7 @@ class TestR300Chrome(Case):
         self.assertFalse(body.brand_mark.isVisible())
         self.assertFalse(body.btn_terminal.isVisible())
         word = s._S["topbar"]["left"].findChild(QtWidgets.QLabel, "Wordmark")
-        self.assertEqual(word.text(), "Atech AI CAD")
+        self.assertEqual(word.text(), "Atech Atelier")
         gear = [b for b, n in s._S["topbar"]["btns"] if n == "settings"][0]
         self.assertIsNotNone(gear.menu(), "the top-bar gear opens the menu")
 
@@ -846,9 +846,9 @@ class TestR308Home(Case):
         home = self.shell.HomeView()
         keys = [c.example_key for c in home.example_cards]
         self.assertEqual(keys, ["toy_car", "desk_robot", "smart_speaker"])
-        self.assertEqual(home.title.text(), "Atech AI CAD")
+        self.assertEqual(home.title.text(), "Atech Atelier")
         home.restyle()
-        self.assertTrue(home.credit.text().startswith("Atech AI CAD"))
+        self.assertTrue(home.credit.text().startswith("Atech Atelier"))
 
     def test_home_is_the_empty_state(self):
         mdi = self.mw.centralWidget()

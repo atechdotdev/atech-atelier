@@ -1,4 +1,4 @@
-"""shell — the Atech AI CAD window, laid over FreeCAD's main window.
+"""shell — the Atech Atelier window, laid over FreeCAD's main window.
 
 What it builds while the agent workbench is active (and takes down again on
 deactivate, so other workbenches get FreeCAD's normal chrome). The sidebar
@@ -136,6 +136,7 @@ QMenu::item:selected {{ background: {hover}; color: {text}; }}
 QMenu::item:disabled {{ color: {dim}; }}
 QMenu::separator {{ height: 1px; background: {line}; margin: 5px 8px; }}
 #Wordmark {{ color: {text}; font-family: 'Sen', {UI}; font-size: 15px; font-weight: 700; }}
+#BasedOn {{ color: {muted}; font-family: {UI}; font-size: 11px; }}
 #PoweredBy {{ color: {muted}; font-family: {UI}; font-size: 11px; }}
 #Divider {{ background: {line}; }}
 #TopBtn {{
@@ -163,6 +164,7 @@ SIDEBAR_QSS = """
 #PartsBtn:checked {{ background: {btn_bg}; border-color: {btn_bg}; }}
 
 #SideBrand {{ background: transparent; }}
+#BasedOn {{ color: {muted}; font-family: {UI}; font-size: 11px; }}
 #SideWordmark {{ color: {text}; font-family: 'Sen', {UI}; font-size: 15px; font-weight: 700; }}
 #SideIconBtn {{
     background: transparent; border: 1px solid transparent; border-radius: 18px;
@@ -234,6 +236,7 @@ HOME_QSS = """
 #HomeView {{ background: transparent; }}
 #HomeView[dropping="true"] {{ border: 2px dashed {accent}; border-radius: 18px; }}
 #HomeScroll, #HomeInner {{ background: transparent; border: none; }}
+#BasedOn {{ color: {muted}; font-family: {UI}; font-size: 12px; }}
 #HomeTitle {{ color: {text}; font-family: 'Sen', {UI}; font-size: 22px; font-weight: 700; }}
 #HomeSection {{ color: {muted}; font-family: {UI}; font-size: 11px; font-weight: 600;
     letter-spacing: 0.5px; }}
@@ -1071,6 +1074,45 @@ class _ClickFilter(QtCore.QObject):
         return False
 
 
+class FreeCadBadge(QtWidgets.QWidget):
+    """R722: "Based on [FreeCAD]" with the official FreeCAD wordmark,
+    unaltered (style.freecad_wordmark), linked to freecad.org: the credit
+    the FreeCAD licence page and the FPA's logo rules ask for."""
+
+    URL = "https://www.freecad.org"
+
+    def __init__(self, height=16, parent=None):
+        super().__init__(parent)
+        self._h = height
+        self.setObjectName("FreeCadBadge")
+        lay = QtWidgets.QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(5)
+        self.text = QtWidgets.QLabel("Based on")
+        self.text.setObjectName("BasedOn")
+        lay.addWidget(self.text)
+        self.logo = QtWidgets.QLabel("FreeCAD")
+        self.logo.setObjectName("BasedOn")
+        lay.addWidget(self.logo)
+        self.setCursor(QtCore.Qt.PointingHandCursor)
+        self.setToolTip(style.PRODUCT + " is built on FreeCAD, free and "
+                        "open-source CAD (LGPL). Opens freecad.org")
+        self.setAccessibleName("Based on FreeCAD")
+        self.restyle()
+
+    def restyle(self):
+        pm = style.freecad_wordmark(self._h)
+        if pm is not None:
+            self.logo.setPixmap(pm)
+
+    def mouseReleaseEvent(self, ev):                   # noqa: N802
+        if ev.button() == QtCore.Qt.LeftButton:
+            QtGui.QDesktopServices.openUrl(QtCore.QUrl(self.URL))
+            ev.accept()
+            return
+        super().mouseReleaseEvent(ev)
+
+
 class HomeView(QtWidgets.QWidget):
     """Home: shown in the viewport when no project is open (R308).
 
@@ -1120,7 +1162,12 @@ class HomeView(QtWidgets.QWidget):
         head.addWidget(self.mark)
         self.title = QtWidgets.QLabel(style.PRODUCT)
         self.title.setObjectName("HomeTitle")
-        head.addWidget(self.title)
+        tcol = QtWidgets.QVBoxLayout()
+        tcol.setSpacing(2)
+        tcol.addWidget(self.title)
+        self.based_on = FreeCadBadge(18)
+        tcol.addWidget(self.based_on, 0, QtCore.Qt.AlignLeft)
+        head.addLayout(tcol)
         head.addStretch(1)
         self.search = QtWidgets.QLineEdit()
         self.search.setObjectName("HomeSearch")
@@ -1365,6 +1412,7 @@ class HomeView(QtWidgets.QWidget):
         pm = style.logo_pixmap(26)
         if pm is not None:
             self.mark.setPixmap(pm)
+        self.based_on.restyle()
         if self._search_act is not None:
             self.search.removeAction(self._search_act)
         self._search_act = self.search.addAction(
@@ -2225,6 +2273,13 @@ class Sidebar(QtWidgets.QWidget):
         self._home_state = None
         self.set_home_state(False, True)
         hv.addWidget(self.brand)
+        # R722: credit FreeCAD with its logo, under the Atech wordmark
+        self.based_on = FreeCadBadge(16)
+        brow = QtWidgets.QHBoxLayout()
+        brow.setContentsMargins(4, 0, 0, 0)
+        brow.addWidget(self.based_on)
+        brow.addStretch(1)
+        hv.addLayout(brow)
         # R801: the logo is the way Home (all projects), as on a website.
         self.brand.setCursor(QtCore.Qt.PointingHandCursor)
         self.brand.setToolTip("Home: all your projects (Ctrl+0)")
@@ -2393,7 +2448,8 @@ class Sidebar(QtWidgets.QWidget):
         self.header_chrome = on
         # R721: the brand row stays for the All projects button; only the
         # wordmark goes where the top bar already carries it (Linux)
-        for w in (self.brand_mark, self.brand_word, self.btn_terminal, self.btn_settings):
+        for w in (self.brand_mark, self.brand_word, self.based_on,
+                  self.btn_terminal, self.btn_settings):
             w.setVisible(on)
 
     def set_home_state(self, home, has_doc):
@@ -2553,6 +2609,7 @@ class Sidebar(QtWidgets.QWidget):
         pm = style.logo_pixmap(18)
         if pm is not None:
             self.brand_mark.setPixmap(pm)
+        self.based_on.restyle()
         self.btn_terminal.setIcon(style.icon("terminal", t["muted"], 16))
         self.btn_settings.setIcon(style.icon("settings", t["muted"], 16))
         self._paint_home_btn()
@@ -3926,9 +3983,7 @@ def _build_topbar(mw):
     word.setObjectName("Wordmark")
     ll.addWidget(mark)
     ll.addWidget(word)
-    powered = QtWidgets.QLabel("powered by FreeCAD")
-    powered.setObjectName("PoweredBy")
-    powered.setToolTip("Credits & open-source licences: Help menu")
+    powered = FreeCadBadge(16)
     ll.addWidget(powered)
     div = QtWidgets.QFrame()
     div.setObjectName("Divider")
@@ -3979,6 +4034,7 @@ def _build_topbar(mw):
         st = None
         _log("menubar style: %r" % (exc,))
     return {"left": left, "right": right, "mark": mark, "btns": btns,
+            "powered": powered,
             "style": st, "old_corners": old, "old_style": None}
 
 
@@ -4040,6 +4096,8 @@ def _restyle_topbar(tb):
     pm = style.logo_pixmap(20)
     if pm is not None:
         tb["mark"].setPixmap(pm)
+    if tb.get("powered") is not None:
+        tb["powered"].restyle()
     t = style.tokens()
     for b, n in tb["btns"]:
         b.setIcon(style.icon(n, t["muted"], 15))

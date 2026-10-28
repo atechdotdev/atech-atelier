@@ -6,6 +6,20 @@ change behaviour.
 
 ## [Unreleased]
 
+### Open source, with credit to Atech and FreeCAD
+
+- Atech's code is now licensed under the GNU LGPL v3 or later, with one
+  added term: anyone who shares, sells or builds a product on it must keep
+  "Based on Atech Atelier by Atech, built on FreeCAD" in their app's credits
+  and documentation (`LICENSE-ATTRIBUTION.md`). It was LGPL v2.1 or later;
+  releases up to 0.1.2 keep that licence. The module models stay
+  CC BY-NC 4.0.
+- The FreeCAD logo now sits under the Atech Atelier name, on Home and in the
+  sidebar, as "Based on FreeCAD". Click it to open freecad.org.
+- The app is called Atech Atelier everywhere again, as its window, its icon
+  and its folders always were (0.1.2 showed "Atech AI CAD" inside the app).
+  Pictures and videos now go to the "Atech Atelier" folders.
+
 ### A clear way back to all your projects
 
 - The sidebar has an **All projects** button at the top. On Home, while a

@@ -1,4 +1,4 @@
-"""default_projects - the projects Atech AI CAD comes with (R450-R456).
+"""default_projects - the projects Atech Atelier comes with (R450-R456).
 
 branding/make_default_projects.py builds them at packaging time from the
 showcase examples (agent_kit/examples/) and the build scripts ship them in

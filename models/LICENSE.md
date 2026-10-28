@@ -1,7 +1,8 @@
 # Licence for the Atech module models: CC BY-NC 4.0
 
 This notice covers the Atech **models**, not the code. The application code is
-under the GNU LGPL v2.1 or later; see `LICENSE`. These are two separate
+under the GNU LGPL v3 or later with a credit term; see `LICENSE` and
+`LICENSE-ATTRIBUTION.md`. These are two separate
 licences, and each applies only to the files listed under it.
 
 ## Scope
@@ -15,7 +16,7 @@ This licence covers:
 In the built application these files are installed under
 `usr/Mod/AcadAgent/data/models/`.
 
-It does **not** cover the application code (`LICENSE`, LGPL-2.1-or-later),
+It does **not** cover the application code (`LICENSE`, LGPL-3.0-or-later),
 FreeCAD or its bundled libraries (their own licences, under `usr/share/doc/`),
 or the third-party components listed in `branding/third_party/NOTICE.third_party`.
 

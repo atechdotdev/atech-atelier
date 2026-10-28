@@ -79,7 +79,8 @@ class ReleaseMeta(unittest.TestCase):
         # the branches themselves are exercised by tests/test_repack.sh
         # doc dir renamed; every release licence file is installed
         self.assertIn('DOC_NAME="atech-atelier"', src)
-        self.assertIn("LICENSE_FILES=(LICENSE LICENSE-models.md NOTICE)", src)
+        self.assertIn("LICENSE_FILES=(LICENSE LICENSE.GPL-3.0 LICENSE-ATTRIBUTION.md "
+                      "LICENSE-models.md NOTICE)", src)
         self.assertIn('"$AA/data/models/LICENSE-models.md"', src)
 
     def test_desktop_template(self):
@@ -115,7 +116,7 @@ class ReleaseMeta(unittest.TestCase):
         self.assertEqual(root.findtext("id"), APP_ID)
         self.assertEqual(root.findtext("name"), "Atech Atelier")
         self.assertEqual(root.findtext("project_license"),
-                         "LGPL-2.1-or-later AND CC-BY-NC-4.0")
+                         "LGPL-3.0-or-later AND CC-BY-NC-4.0")
         self.assertEqual(root.findtext("launchable"), APP_ID + ".desktop")
         self.assertEqual(root.find("url[@type='homepage']").text,
                          "https://github.com/atechdotdev/atech-atelier")

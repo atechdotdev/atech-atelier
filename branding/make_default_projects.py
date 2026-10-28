@@ -1,4 +1,4 @@
-"""make_default_projects - build the default projects Atech AI CAD ships
+"""make_default_projects - build the default projects Atech Atelier ships
 with (R450), from the showcase examples in agent_kit/examples/.
 
 Runs INSIDE freecadcmd (FreeCAD's own Python), never system python:

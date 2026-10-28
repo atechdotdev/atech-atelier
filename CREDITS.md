@@ -176,7 +176,7 @@ Decided 2026-10-03 (ADR-006):
 
 | What | Licence | Licence text in the app |
 |---|---|---|
-| Atech's code: the `AcadAgent` workbench, the branding and the build scripts | LGPL-2.1-or-later | `usr/share/doc/atech-atelier/LICENSE` |
+| Atech's code: the `AcadAgent` workbench, the branding and the build scripts | LGPL-3.0-or-later, with an added term (GPL v3 section 7(b)): credit Atech and FreeCAD. Changed 2026-10-28 from LGPL-2.1-or-later (R722; releases up to 0.1.2 keep that) | `usr/share/doc/atech-atelier/LICENSE`, `LICENSE.GPL-3.0`, `LICENSE-ATTRIBUTION.md` |
 | the Atech board and module 3D models, and `presets.yaml` | CC BY-NC 4.0 (non-commercial use; credit Atech, keep the notices, link the licence, say if you changed them) | `usr/Mod/AcadAgent/data/models/LICENSE-models.md`, `usr/share/doc/atech-atelier/LICENSE-models.md` |
 
 The two licences are separate and each covers only its own files. Neither

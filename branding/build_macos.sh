@@ -175,14 +175,16 @@ for f in "$PRESETS" "$BOARD_GLB" "$ASSEMBLY_MD" \
          "$REPO/projects/atech_ports.py" "$REPO/projects/atech_modules.py"; do
   [[ -f "$f" ]] || fail "required input missing: $f"
 done
-LICENSE_FILES=(LICENSE LICENSE-models.md NOTICE)
+LICENSE_FILES=(LICENSE LICENSE.GPL-3.0 LICENSE-ATTRIBUTION.md LICENSE-models.md NOTICE)
 if [[ "$DEV_UNLICENSED" != 1 ]]; then
   for f in "${LICENSE_FILES[@]}"; do
     [[ -f "$REPO/$f" ]] || fail "root $f is missing. For a local development build pass --dev-unlicensed."
   done
   grep -q 'GNU LESSER GENERAL PUBLIC LICENSE' "$REPO/LICENSE" \
-    && grep -q 'Version 2.1, February 1999' "$REPO/LICENSE" \
-    || fail "root LICENSE is not the LGPL v2.1 text (ADR-006)"
+    && grep -q 'Version 3, 29 June 2007' "$REPO/LICENSE" \
+    || fail "root LICENSE is not the LGPL v3 text (R722)"
+  grep -q 'section 7(b)' "$REPO/LICENSE-ATTRIBUTION.md" \
+    || fail "root LICENSE-ATTRIBUTION.md lacks the credit term (R722)"
   grep -q 'CC BY-NC 4.0' "$REPO/LICENSE-models.md" \
     || fail "root LICENSE-models.md does not name CC BY-NC 4.0 (ADR-006)"
 fi
@@ -478,7 +480,8 @@ Bundled libraries
 Atech's additions
   Listed, measured against the upstream bundle, in
   Contents/Resources/share/doc/$DOC_NAME/ATECH_CHANGES.txt. Atech's code is
-  LGPL-2.1-or-later (LICENSE); the Atech module models and presets.yaml are
+  LGPL-3.0-or-later with a credit term (LICENSE, LICENSE-ATTRIBUTION.md);
+  the Atech module models and presets.yaml are
   CC BY-NC 4.0 (LICENSE-models.md).
 
 Written offer

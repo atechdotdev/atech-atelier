@@ -106,14 +106,16 @@ or remove it when there is no `ATECH_PRE_APPRUN_` twin. The addon's
 
 ### Licence (ADR-006)
 
-Atech's code is **LGPL-2.1-or-later** (root `LICENSE`, the verbatim LGPL v2.1
-text); the Atech module models and `presets.yaml` are **CC BY-NC 4.0** (root
-`LICENSE-models.md`). The build installs `LICENSE`, `LICENSE-models.md`,
+Atech's code is **LGPL-3.0-or-later** (root `LICENSE`, the verbatim LGPL v3
+text; `LICENSE.GPL-3.0`, the GPL v3 it builds on) with an added credit term
+(`LICENSE-ATTRIBUTION.md`, GPL v3 section 7(b): credit Atech and FreeCAD;
+R722, 2026-10-28, was LGPL-2.1-or-later up to 0.1.2); the Atech module models and `presets.yaml` are **CC BY-NC 4.0** (root
+`LICENSE-models.md`). The build installs `LICENSE`, `LICENSE.GPL-3.0`, `LICENSE-ATTRIBUTION.md`, `LICENSE-models.md`,
 `NOTICE` and `CREDITS.md` into `usr/share/doc/atech-atelier/`, puts
 `LICENSE-models.md` next to the models in `usr/Mod/AcadAgent/data/models/`,
-checks the contents (LGPL v2.1 heading, "CC BY-NC 4.0"), and **fails when any
+checks the contents (LGPL v3 heading, the 7(b) term, "CC BY-NC 4.0"), and **fails when any
 is absent**. The metainfo's `project_license` is
-`LGPL-2.1-or-later AND CC-BY-NC-4.0`: both kinds ship, so a conjunction.
+`LGPL-3.0-or-later AND CC-BY-NC-4.0`: both kinds ship, so a conjunction.
 For local work,
 `--dev-unlicensed --tree-only` builds and verifies a tree marked
 **NOT RELEASABLE** and never repacks it.

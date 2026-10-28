@@ -9,7 +9,7 @@
                     screenshot is hosted. Never an invented URL.
 
      project_license (ADR-006, owner 2026-10-03) covers ATECH'S OWN FILES
-     ONLY: Atech's code is LGPL-2.1-or-later and the Atech module models and
+     ONLY: Atech's code is LGPL-3.0-or-later (R722) and the Atech module models and
      presets.yaml are CC BY-NC 4.0. Both kinds ship in the image, so the SPDX
      expression is a conjunction (AND), not a choice (OR). FreeCAD ("LGPL2+"
      per its LICENSE.html; its source files mostly LGPL-2.1-or-later), the
@@ -21,7 +21,7 @@
 <component type="desktop-application">
   <id>dev.atech.Atelier</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>LGPL-2.1-or-later AND CC-BY-NC-4.0</project_license>
+  <project_license>LGPL-3.0-or-later AND CC-BY-NC-4.0</project_license>
   <name>Atech Atelier</name>
   <summary>Parametric CAD with a built-in design agent</summary>
   <developer id="dev.atech">
@@ -38,7 +38,7 @@
       This is a preview release.
     </p>
     <p>
-      Atech's code is licensed LGPL-2.1-or-later. The Atech board and module
+      Atech's code is licensed LGPL-3.0-or-later, with a term that you credit Atech and FreeCAD. The Atech board and module
       3D models are licensed CC BY-NC 4.0: free for non-commercial use with
       attribution to Atech.
     </p>

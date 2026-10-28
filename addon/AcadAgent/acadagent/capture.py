@@ -532,7 +532,7 @@ def capture_to_panel(panel, width=1200, height=900, view_name=AUTO,
 # R347 share image: a clean hero picture to Pictures + the clipboard
 # ===================================================================
 #: Where share images go (PRD W4 8). ATECH_SHARE_DIR overrides it (tests).
-SHARE_FOLDER = os.path.join("~", "Pictures", "Atech AI CAD")
+SHARE_FOLDER = os.path.join("~", "Pictures", "Atech Atelier")
 SHARE_SIZE = (1920, 1080)
 #: saveImage's background for a share image: plain white, not the themed
 #: gradient of the live view.
@@ -547,7 +547,7 @@ def share_dir(out_dir=None):
 
 
 def _share_path(doc, out_dir, what="image"):
-    label = getattr(doc, "Label", "") or "Atech AI CAD"
+    label = getattr(doc, "Label", "") or "Atech Atelier"
     safe = "".join(c if (c.isalnum() or c in " ._-") else "_" for c in label).strip(" .")
     stamp = time.strftime("%Y-%m-%d at %H.%M.%S")
     base = os.path.join(share_dir(out_dir), "%s %s %s" % (safe or "Design", what, stamp))
@@ -640,7 +640,7 @@ def render_hero(doc, path, width=SHARE_SIZE[0], height=SHARE_SIZE[1]):
 def share_image(doc=None, out_dir=None, width=SHARE_SIZE[0], height=SHARE_SIZE[1],
                 clipboard=True, view_name=AUTO):
     """R347: save a 1920 x 1080 hero picture of the design to
-    ~/Pictures/Atech AI CAD/ and copy it to the clipboard. With a 3D view
+    ~/Pictures/Atech Atelier/ and copy it to the clipboard. With a 3D view
     it is the view's own render (saveImage, the default side - the module
     face of an Atech board - fitted, on white, the user's camera put back);
     without one, review.py's hero. Returns the path."""

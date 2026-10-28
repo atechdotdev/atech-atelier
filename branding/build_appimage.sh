@@ -168,17 +168,19 @@ for f in "$PRESETS" "$BOARD_GLB" "$ASSEMBLY_MD" \
   [[ -f "$f" ]] || fail "required input missing: $f
   (module library: pass --artifacts DIR or set ATECH_ARTIFACTS)"
 done
-# Licences (ADR-006): code LGPL-2.1-or-later (root LICENSE, the verbatim LGPL
-# v2.1 text), models CC BY-NC 4.0 (root LICENSE-models.md), plus the NOTICE.
-LICENSE_FILES=(LICENSE LICENSE-models.md NOTICE)
+# Licences (ADR-006, R722): code LGPL-3.0-or-later with a credit term (root
+# LICENSE, the verbatim LGPL v3 text, LICENSE.GPL-3.0, LICENSE-ATTRIBUTION.md), models CC BY-NC 4.0 (root LICENSE-models.md), plus the NOTICE.
+LICENSE_FILES=(LICENSE LICENSE.GPL-3.0 LICENSE-ATTRIBUTION.md LICENSE-models.md NOTICE)
 if [[ "$DEV_UNLICENSED" != 1 ]]; then
   for f in "${LICENSE_FILES[@]}"; do
     [[ -f "$REPO/$f" ]] || fail "root $f is missing (ADR-006 names it as a release
   file). For a local development build pass --dev-unlicensed."
   done
   grep -q 'GNU LESSER GENERAL PUBLIC LICENSE' "$REPO/LICENSE" \
-    && grep -q 'Version 2.1, February 1999' "$REPO/LICENSE" \
-    || fail "root LICENSE is not the LGPL v2.1 text (ADR-006)"
+    && grep -q 'Version 3, 29 June 2007' "$REPO/LICENSE" \
+    || fail "root LICENSE is not the LGPL v3 text (R722)"
+  grep -q 'section 7(b)' "$REPO/LICENSE-ATTRIBUTION.md" \
+    || fail "root LICENSE-ATTRIBUTION.md lacks the credit term (R722)"
   grep -q 'CC BY-NC 4.0' "$REPO/LICENSE-models.md" \
     || fail "root LICENSE-models.md does not name CC BY-NC 4.0 (ADR-006)"
   # branding/NOTICE.proposed opens with a draft header; copied without removing
@@ -621,7 +623,8 @@ Atech's additions
   The files Atech added or changed are listed, measured against the
   upstream image, in usr/share/doc/$DOC_NAME/ATECH_CHANGES.txt. Their
   source is the Python and data files installed in this image. Atech's code
-  is licensed LGPL-2.1-or-later (usr/share/doc/$DOC_NAME/LICENSE); the Atech
+  is licensed LGPL-3.0-or-later with a credit term (usr/share/doc/$DOC_NAME/LICENSE,
+  LICENSE-ATTRIBUTION.md); the Atech
   module models and presets.yaml are CC BY-NC 4.0
   (usr/share/doc/$DOC_NAME/LICENSE-models.md).
 

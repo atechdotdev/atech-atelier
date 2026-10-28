@@ -48,7 +48,7 @@ FILES=("$DIST/$IMG" "$DIST/SHA256SUMS")
 
 NOTES="Atech Atelier $VERSION (preview), Linux x86_64 AppImage.
 
-Built on unmodified FreeCAD 1.1.3. Atech's code: LGPL-2.1-or-later. Atech
+Built on unmodified FreeCAD 1.1.3. Atech's code: LGPL-3.0-or-later (credit Atech and FreeCAD). Atech
 module models: CC BY-NC 4.0. Not endorsed by or affiliated with the FreeCAD
 project. Verify the download with: sha256sum -c SHA256SUMS"
 

@@ -30,7 +30,7 @@ import sys
 PRODUCT = "Atech Atelier"
 APP_ID = "dev.atech.Atelier"
 DOC_NAME = "atech-atelier"
-PROJECT_LICENSE = "LGPL-2.1-or-later AND CC-BY-NC-4.0"
+PROJECT_LICENSE = "LGPL-3.0-or-later AND CC-BY-NC-4.0"
 OLD_NAMES = ("Atech Studio", "atech-studio", "dev.atech.Studio", "AtechStudio")
 # The macOS build (branding/build_macos.sh) runs this gate too: the same
 # image checks, with Info.plist in place of the AppImage's desktop entry,
@@ -286,6 +286,8 @@ for rel in ("README.md", "CREDITS.md", "ATECH_CHANGES.txt", "SOURCE_OFFER.txt",
         "FAIL (missing)", key="doc:" + rel)
 models_dir = os.path.join(home, "Mod", "AcadAgent", "data", "models")
 for kind, d, rel in (("doc", doc_dir, "LICENSE"),
+                     ("doc", doc_dir, "LICENSE.GPL-3.0"),
+                     ("doc", doc_dir, "LICENSE-ATTRIBUTION.md"),
                      ("doc", doc_dir, "LICENSE-models.md"),
                      ("doc", doc_dir, "NOTICE"),
                      ("models", models_dir, "LICENSE-models.md")):
@@ -295,7 +297,7 @@ for kind, d, rel in (("doc", doc_dir, "LICENSE"),
     else:
         row(kind, rel, present, "FAIL (missing; ADR-006 release file)",
             key="%s:%s" % (kind, rel))
-# The contents, not only the names: LICENSE is the LGPL v2.1 text, and the
+# The contents, not only the names: LICENSE is the LGPL v3 text (R722), and the
 # models notice names its licence (ADR-006).
 def _read(p):
     try:
@@ -307,10 +309,10 @@ def _read(p):
 
 if os.path.isfile(os.path.join(doc_dir, "LICENSE")):
     _t = _read(os.path.join(doc_dir, "LICENSE"))
-    row("licence", "LICENSE is LGPL-2.1",
+    row("licence", "LICENSE is LGPL-3.0",
         "GNU LESSER GENERAL PUBLIC LICENSE" in _t
-        and "Version 2.1, February 1999" in _t,
-        "FAIL (not the LGPL v2.1 text)", key="licence:lgpl")
+        and "Version 3, 29 June 2007" in _t,
+        "FAIL (not the LGPL v3 text)", key="licence:lgpl")
 for _d in (doc_dir, models_dir):
     _p = os.path.join(_d, "LICENSE-models.md")
     if os.path.isfile(_p):

@@ -9,7 +9,11 @@ library.
 
 Licences
   Atech's code (the AcadAgent workbench, the branding and the build scripts)
-    GNU Lesser General Public License v2.1 or later. Full text: LICENSE.
+    GNU Lesser General Public License v3 or later, with additional terms
+    (GPL v3 section 7) that you credit Atech and FreeCAD. Full texts:
+    LICENSE, LICENSE.GPL-3.0; the terms: LICENSE-ATTRIBUTION.md.
+    The credit to keep: "Based on Atech Atelier by Atech
+    (https://studio.atech.dev), built on FreeCAD (https://www.freecad.org)."
   Atech board and module 3D models, and presets.yaml
     Creative Commons Attribution-NonCommercial 4.0 International
     (CC BY-NC 4.0). Notice: LICENSE-models.md.

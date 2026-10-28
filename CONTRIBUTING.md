@@ -164,7 +164,8 @@ By contributing you agree that your contribution is licensed under the same
 terms as the file you change:
 
 - Atech's code (everything outside `models/`, except the third-party files
-  below): GNU LGPL v2.1 or later, see `LICENSE`.
+  below): GNU LGPL v3 or later with a credit term, see `LICENSE` and
+  `LICENSE-ATTRIBUTION.md`.
 - Module models and `presets.yaml` in `models/`: CC BY-NC 4.0, see
   `LICENSE-models.md`.
 - Third-party files keep their own licences: the FreeCAD MCP bridge in

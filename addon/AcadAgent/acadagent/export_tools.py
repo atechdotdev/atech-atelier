@@ -746,7 +746,7 @@ def write_3mf(items, path):
     w('<?xml version="1.0" encoding="UTF-8"?>\n')
     w('<model unit="millimeter" xml:lang="en-US" '
       'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n')
-    w('<metadata name="Application">Atech AI CAD</metadata>\n<resources>\n')
+    w('<metadata name="Application">Atech Atelier</metadata>\n<resources>\n')
     if mats:
         w('<basematerials id="1">\n%s\n</basematerials>\n' % "\n".join(mats))
     for k, (name, pts, tris, pindex) in enumerate(objs):
@@ -2025,7 +2025,7 @@ def share_now(parent=None, doc_fn=_active_doc, out_dir=None):
     from . import capture
     try:
         p = capture.share_image(doc_fn(), out_dir=out_dir)
-        return p, "Saved to Pictures > Atech AI CAD and copied, ready to paste."
+        return p, "Saved to Pictures > Atech Atelier and copied, ready to paste."
     except Exception as exc:                              # noqa: BLE001
         _log("share image: %r" % (exc,))
         return None, capture.user_message(exc)

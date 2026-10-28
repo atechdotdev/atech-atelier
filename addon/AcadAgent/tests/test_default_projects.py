@@ -1,4 +1,4 @@
-"""The default projects Atech AI CAD comes with (R450-R456), headless.
+"""The default projects Atech Atelier comes with (R450-R456), headless.
 
     R450  branding/make_default_projects.py: each curated example built by
           the production build into <Title>.FCStd with tagged Atech

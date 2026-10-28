@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Atech AI CAD (formerly Atech Atelier) installer for macOS and Linux.
+# Atech Atelier installer for macOS and Linux.
 #
 #   curl -fsSL https://raw.githubusercontent.com/atechdotdev/atech-atelier/main/install.sh | bash
 #
@@ -47,10 +47,10 @@ set -euo pipefail
 main() {
   REPO="${ATECH_REPO:-atechdotdev/atech-atelier}"
   # The product's display name, taken from what is installed: the app in
-  # the disk image, or the AppImage's file name (AtechAICAD-* is "Atech AI
-  # CAD", the name from 0.1.2 on; AtechAtelier-* the earlier "Atech Atelier").
+  # the disk image, or the AppImage's file name (AtechAtelier-* is "Atech
+  # Atelier"; AtechAICAD-* the name 0.1.2 showed, "Atech AI CAD").
   # Every build carries the same id, APP_ID.
-  PRODUCT="Atech AI CAD"
+  PRODUCT="Atech Atelier"
   APP_ID="dev.atech.Atelier"
   VERSION=""
   FILE=""

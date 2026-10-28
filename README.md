@@ -1,6 +1,6 @@
-# Atech AI CAD
+# Atech Atelier
 
-*Atech AI CAD, powered by FreeCAD.* (Formerly **Atech Atelier**.)
+*Atech Atelier, powered by FreeCAD.*
 
 <p align="center">
   <sub>BASED ON</sub><br><br>
@@ -29,7 +29,7 @@
   <a href="https://atech.dev">atech.dev</a>
 </p>
 
-Atech AI CAD is a CAD app you talk to. Describe a part in plain language,
+Atech Atelier is a CAD app you talk to. Describe a part in plain language,
 such as *"a 40 mm cube with a 10 mm hole through the middle"*, and the agent
 writes a FreeCAD script, runs it, **measures** the result and shows it in the
 3D view. The volumes and sizes it reports are measured off the solid. The
@@ -59,7 +59,7 @@ modules that sit where they really go.
   **Ctrl+0** for Home.
 - **Export** as STEP or STL for printing, or keep the `.FCStd`.
 
-Atech AI CAD is the official FreeCAD 1.1.3 release, with FreeCAD's program
+Atech Atelier is the official FreeCAD 1.1.3 release, with FreeCAD's program
 files unmodified (no FreeCAD source patched or recompiled), plus the Atech
 workbench, theme and module library. Atech changes only the launcher
 (`AppRun`), the icon and the desktop/AppStream entries, and adds a FreeCAD
@@ -67,14 +67,14 @@ branding file; `ATECH_CHANGES.txt` lists every change. It comes as a macOS
 app (Apple silicon and Intel) and a Linux AppImage (x86_64), installed with
 one command, and nothing is installed system-wide.
 
-> Atech AI CAD is built on FreeCAD ((C) 2001-2026 FreeCAD contributors,
+> Atech Atelier is built on FreeCAD ((C) 2001-2026 FreeCAD contributors,
 > licensed "LGPL2+": the GNU LGPL version 2 or any later version). It is not
 > endorsed by, affiliated with, or a product of the FreeCAD project or the
 > FreeCAD Project Association.
 >
 > FreeCAD itself is free: you can download it from
 > [freecad.org](https://www.freecad.org) and use it on its own. The FreeCAD
-> inside Atech AI CAD is FreeCAD's official release with its program files
+> inside Atech Atelier is FreeCAD's official release with its program files
 > unmodified, and the complete source of FreeCAD and of every copyleft library
 > it bundles is published on each
 > [release page](https://github.com/atechdotdev/atech-atelier/releases).
@@ -184,7 +184,7 @@ must have `SHA256SUMS` next to it), `--uninstall`, `--help`.
 - **macOS** 11 (Big Sur) or later, on Apple silicon or Intel, **or Linux** x86_64
   with a desktop session.
 - **Claude Code**, Anthropic's command-line agent, installed and signed in.
-  The chat runs on it, and Atech AI CAD does not include it. Claude Code
+  The chat runs on it, and Atech Atelier does not include it. Claude Code
   needs a Claude account that includes it; see Anthropic's setup page
   (<https://code.claude.com/docs/en/setup>) for which plans do.
 - Linux only: **FUSE** to run AppImages directly (most desktops have it;
@@ -233,7 +233,7 @@ chmod +x Atech*-x86_64.AppImage
 ./Atech*-x86_64.AppImage
 ```
 
-Atech AI CAD opens on its own workbench. The sidebar has a project picker at the
+Atech Atelier opens on its own workbench. The sidebar has a project picker at the
 top (open, recent and new projects), then **3D CAD** (the chat with the agent)
 and **Atech modules** (the board). The app comes with ready-made example
 projects (24 of them: a toy car, a desk robot, a 4WD rover, a video doorbell,
@@ -273,7 +273,7 @@ Check it with:
 claude auth status
 ```
 
-Atech AI CAD uses this same sign-in. It never asks for your password or an
+Atech Atelier uses this same sign-in. It never asks for your password or an
 API key.
 
 If you skip either step, the chat tells you what is missing and shows the
@@ -339,30 +339,30 @@ folder's path and the name of your operating system. What Anthropic does with
 all of this is set by the terms of your Claude account.
 
 **Stored on your computer** (Linux paths; on macOS, `~/.local/share/Atech AI
-CAD/` is `~/Library/Application Support/Atech AI CAD/`, `~/.config/Atech AI
-CAD/` is `~/Library/Preferences/Atech AI CAD/`, and the cache is under
+CAD/` is `~/Library/Application Support/Atech Atelier/`, `~/.config/Atech AI
+CAD/` is `~/Library/Preferences/Atech Atelier/`, and the cache is under
 `~/Library/Caches/`):
 
 | what | where |
 |---|---|
-| one folder per chat (design script, pictures) | `~/.local/share/Atech AI CAD/v1-1/agent/` |
-| the list of agent builds you accepted, and which chat belongs to which document | `~/.local/share/Atech AI CAD/v1-1/AcadAgent/`, `.../agent/sessions.json` |
+| one folder per chat (design script, pictures) | `~/.local/share/Atech Atelier/v1-1/agent/` |
+| the list of agent builds you accepted, and which chat belongs to which document | `~/.local/share/Atech Atelier/v1-1/AcadAgent/`, `.../agent/sessions.json` |
 | the design script of every document the agent built into | inside that `.FCStd` file, wherever you save it |
 | Agent Settings (engine, model, budget, `claude` path) | `~/.config/acadagent/settings.json` |
-| app preferences (theme, layout) | `~/.config/Atech AI CAD/` and `~/.config/Atech/` |
-| cache | `~/.cache/Atech AI CAD/` |
+| app preferences (theme, layout) | `~/.config/Atech Atelier/` and `~/.config/Atech/` |
+| cache | `~/.cache/Atech Atelier/` |
 | Claude Code's own conversation history | `~/.claude/` (managed by Claude Code) |
 
 Chat folders are kept until you delete them: **Agent Settings → Clear old chat
-workspaces**. To reset Atech AI CAD completely, close it and delete the
+workspaces**. To reset Atech Atelier completely, close it and delete the
 folders above.
 
 Your normal FreeCAD installation, its settings and its addons are not
-touched: Atech AI CAD keeps its own profile.
+touched: Atech Atelier keeps its own profile.
 
 ## Common questions
 
-**Do I need Atech hardware to use Atech AI CAD?**
+**Do I need Atech hardware to use Atech Atelier?**
 No. It is a full CAD app on its own. The Atech board and modules are built in
 for when you want to design around them.
 
@@ -392,14 +392,17 @@ macOS (Apple silicon and Intel, macOS 11 or later) and Linux x86_64. The
 same one-line installer works on both, and nothing is installed system-wide.
 
 **Is it free and open source?**
-Atech's code is LGPL-2.1-or-later and FreeCAD is LGPL2+. The Atech board and
-module 3D models are CC BY-NC 4.0. See [Licences](#licences). The chat needs a
+Yes. Atech's code is open source under the LGPL v3 (or later): anyone may use,
+change and share it, also commercially, as long as they credit Atech and
+FreeCAD. FreeCAD is LGPL2+. The Atech board and module 3D models are
+CC BY-NC 4.0. See [Licences](#licences). The chat needs a
 Claude account that includes Claude Code.
 
-**Is this the app that used to be called Atech Atelier?**
-Yes. It was renamed Atech AI CAD in version 0.1.2. On first start, it copies
-your Atech Atelier (or Atech Studio) profile, chats and settings across, and
-leaves the old folders untouched.
+**Is this the app that was called Atech Atelier?**
+Yes. Version 0.1.2 showed the name Atech Atelier inside the app; from 0.1.3
+it is Atech Atelier everywhere again. The app, its profile folders and your
+projects never changed name, so nothing needs moving. (On first start it
+also copies an old Atech Studio profile across.)
 
 **How do I reach the team?**
 Join the [Atech Discord](https://discord.gg/B6kuhUW27S) to meet other Atech
@@ -451,15 +454,24 @@ app.
 
 ## Licences
 
-Atech AI CAD contains parts under different licences. Each applies only to
+Atech Atelier contains parts under different licences. Each applies only to
 its own files.
 
 | what | licence | text |
 |---|---|---|
-| Atech's code: the Atech workbench (`addon/AcadAgent`), the branding and build scripts | **LGPL-2.1-or-later** | [`LICENSE`](LICENSE) |
+| Atech's code: the Atech workbench (`addon/AcadAgent`), the branding and build scripts | **LGPL-3.0-or-later**, with one added term: anyone who shares or sells it, or a product built on it, must credit Atech and FreeCAD | [`LICENSE`](LICENSE), [`LICENSE-ATTRIBUTION.md`](LICENSE-ATTRIBUTION.md) |
 | Atech board and module 3D models, and `presets.yaml` | **CC BY-NC 4.0**: share and adapt for non-commercial purposes, crediting Atech, keeping the notices, linking the licence and saying if you changed them | [`LICENSE-models.md`](LICENSE-models.md) |
 | FreeCAD and the libraries it bundles | their own licences (FreeCAD: "LGPL2+", the GNU LGPL version 2 or any later version, per its `LICENSE.html`; its source files mostly carry LGPL-2.1-or-later) | FreeCAD's list: `share/doc/FreeCAD/ThirdPartyLibraries.html`; every package: `packages.txt` (Linux: at the image root; macOS: `Contents/packages.txt`); texts: `share/doc/<package>/`, `share/licenses/`, `site-packages/*.dist-info/` in the app |
 | third-party components Atech added (FreeCADMCP, Lucide, Feather, the AppImage type-2 runtime and the libraries it statically links), theme files derived from FreeCAD's own, and licence texts Atech adds for bundled libraries that lacked them | their own licences | `share/doc/atech-atelier/third_party/` in the app |
+
+**Building on Atech Atelier?** You are welcome to, commercially too. Keep this
+line in your app's About or Credits screen and in your documentation
+([`LICENSE-ATTRIBUTION.md`](LICENSE-ATTRIBUTION.md) has the exact terms):
+
+> Based on Atech Atelier by Atech (https://studio.atech.dev),
+> built on FreeCAD (https://www.freecad.org).
+
+Releases up to 0.1.2 were LGPL-2.1-or-later without this term.
 
 Inside the app, `share/doc/atech-atelier/` also holds `CREDITS.md`,
 `SOURCE_OFFER.txt` (where to get the source) and `ATECH_CHANGES.txt` (every
@@ -486,7 +498,7 @@ The FreeCAD logo is a registered trademark (Benelux) of the FreeCAD Project
 Association AISBL (FPA), which holds the rights over commercial use of the
 FreeCAD name and logo. We use the FreeCAD name and the official, unaltered
 FreeCAD wordmark (top of this page, from the FPA's logo kit) only to say that
-Atech AI CAD is built on FreeCAD and to link to freecad.org, as the FPA's
+Atech Atelier is built on FreeCAD and to link to freecad.org, as the FPA's
 [brand guidelines](https://fpa.freecad.org/handbook/process/logo.html) and
 FreeCAD's [licence page](https://wiki.freecad.org/License) allow. It is not
 Atech's logo. These licences do not grant any right to use the names "Atech" or "Atech
@@ -494,7 +506,7 @@ AI CAD" or the Atech logos except to describe where the software comes from.
 
 ## Credits
 
-Atech AI CAD stands on FreeCAD. Thank you to the FreeCAD project and its
+Atech Atelier stands on FreeCAD. Thank you to the FreeCAD project and its
 community for the modeller, the geometry kernel integration and the whole
 application this is built on, and to the people behind Open CASCADE, Qt,
 Coin3D, Python and the many other open-source projects FreeCAD brings with it.

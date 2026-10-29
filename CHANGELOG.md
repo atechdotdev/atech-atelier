@@ -6,6 +6,22 @@ change behaviour.
 
 ## [Unreleased]
 
+### Parts you can buy, ready to use
+
+- New on the Modules page: "Add off-the-shelf part…". Pick from about 75
+  common parts as real 3D models: Arduino Nano, Uno and Mega, ESP32,
+  Raspberry Pi 4 and Pico, servos, TT and metal gear motors, steppers,
+  fans, AA/AAA cells and holders, a LiPo cell, a buck converter, motor
+  drivers, panel buttons, switches, knobs, LEDs, displays, distance
+  sensors, a Pi camera and USB, HDMI, Ethernet and audio sockets.
+- Search them or pick a kind; see a picture, the measured size and the
+  wiring. Install one and it joins your parts: the agent designs around
+  it, with notes on what each needs (an opening for a sensor, air for a
+  fan, a door for batteries).
+- The models come from the FreeCAD Parts Library (CC BY 3.0). Each part
+  keeps its authors' names, and every download is checked before it is
+  used.
+
 ### Five more Atech modules
 
 - New on the Modules page: Camera, Big Screen, Soil Sensor, Load Cell

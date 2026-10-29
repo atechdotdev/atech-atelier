@@ -1384,6 +1384,19 @@ class ModulesPage(QtWidgets.QWidget):
         self.free_list = QtWidgets.QVBoxLayout()
         self.free_list.setSpacing(2)
         lay.addLayout(self.free_list)
+        # R780: parts you can buy (an Arduino, a servo, a battery), from the
+        # FreeCAD Parts Library (shelf.py).
+        self.shelf_btn = QtWidgets.QPushButton("Add off-the-shelf part…")
+        self.shelf_btn.setObjectName("MLink")
+        self.shelf_btn.setCursor(QtCore.Qt.PointingHandCursor)
+        self.shelf_btn.setAccessibleName("Add an off-the-shelf part")
+        self.shelf_btn.setToolTip(
+            "Arduino, Raspberry Pi, ESP32, servos, motors, batteries, buttons, "
+            "displays, sensors and connectors as real 3D models. An installed "
+            "one joins your parts.")
+        self.shelf_btn.clicked.connect(lambda _=False: self._shelf())
+        self.shelf_btn.hide()
+        lay.addWidget(self.shelf_btn, 0, QtCore.Qt.AlignLeft)
         # Parts that are not Atech modules (user_parts.py): a board, a
         # battery, a motor from another maker, imported from STEP or STL.
         self.import_btn = QtWidgets.QPushButton("Import part…")
@@ -2145,6 +2158,7 @@ class ModulesPage(QtWidgets.QWidget):
         self.free_sub.setVisible(vis)
         self.import_btn.setVisible(self._unavailable is None)
         self.simready_btn.setVisible(self._unavailable is None)
+        self.shelf_btn.setVisible(self._unavailable is None)
 
     def _import_part(self):
         """R750: Import part... - a part that is not an Atech module."""
@@ -2170,6 +2184,19 @@ class ModulesPage(QtWidgets.QWidget):
         except Exception as exc:                       # noqa: BLE001
             _log("simready: %r" % (exc,))
             self._show_failure(exc, action="opening SimReady")
+            return
+        dlg.exec()
+
+    def _shelf(self):
+        """R780: Add off-the-shelf part..."""
+        from . import shelf_dialog
+        try:
+            _lib()
+            dlg = shelf_dialog.ShelfDialog(
+                self, on_done=lambda n: self._imported(n))
+        except Exception as exc:                       # noqa: BLE001
+            _log("shelf: %r" % (exc,))
+            self._show_failure(exc, action="opening off-the-shelf parts")
             return
         dlg.exec()
 

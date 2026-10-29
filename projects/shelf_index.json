@@ -1,0 +1,1910 @@
+{
+ "count": 76,
+ "licence": "CC BY 3.0",
+ "parts": {
+  "arduino_mega": {
+   "agent_notes": "Open the USB and DC-jack end to the outside; mount it on standoffs through its holes; leave room above the headers for wires.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 7106676,
+   "category": "electronics",
+   "description": "Large Arduino board (ATmega2560) with many pins.",
+   "display_name": "Arduino Mega 2560",
+   "electrical": {
+    "interface": "usb",
+    "voltage_v": 5,
+    "wiring": "ATmega2560; 5 V logic"
+   },
+   "git_oid": "01eaaea1aac223d1039eaedc764a03562fb643af",
+   "group": "boards",
+   "path": "Computing/SingleBoardComputers/Arduino/arduino-mega.step",
+   "picture": "shelf_pictures/arduino_mega.png",
+   "size_mm": [
+    108.8,
+    53.17,
+    14.81
+   ],
+   "thumb": null,
+   "triangles": 26102
+  },
+  "arduino_nano": {
+   "agent_notes": "Leave the USB Mini-B socket reachable through a wall opening, and room above the pin rows for wires or a socket.",
+   "authors": [
+    "Almisuifre",
+    "WladIMirG"
+   ],
+   "bytes": 2279303,
+   "category": "electronics",
+   "description": "Small microcontroller board (ATmega328P) with a USB Mini-B socket.",
+   "display_name": "Arduino Nano (Rev3)",
+   "electrical": {
+    "connectors": "USB Mini-B; 2 rows of 2.54 mm pins",
+    "interface": "usb",
+    "voltage_v": 5,
+    "wiring": "ATmega328P; 5 V logic"
+   },
+   "git_oid": "841d7374cf916d6183f88e029f9a711997f8069f",
+   "group": "boards",
+   "path": "Computing/SingleBoardComputers/Arduino/Nano-Rev3_0.step",
+   "picture": "shelf_pictures/arduino_nano.png",
+   "size_mm": [
+    46.3,
+    18.0,
+    18.5
+   ],
+   "thumb": null,
+   "triangles": 2404
+  },
+  "arduino_uno_compatible": {
+   "agent_notes": "Open the USB and DC-jack end of the board to the outside. Mount it on standoffs through its holes; leave room above the headers for shields or wires.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 16482880,
+   "category": "electronics",
+   "description": "Arduino Uno-compatible board (Freaduino), the Uno's size and mounting holes.",
+   "display_name": "Freaduino Uno (Arduino Uno compatible)",
+   "electrical": {
+    "interface": "usb",
+    "voltage_v": 5,
+    "wiring": "ATmega328P; 5 V logic"
+   },
+   "git_oid": "eb44e2459e64bf3c7564b10e39ccaec3aa3e179c",
+   "group": "boards",
+   "path": "Computing/SingleBoardComputers/Arduino/freaduino-uno.step",
+   "picture": "shelf_pictures/arduino_uno_compatible.png",
+   "size_mm": [
+    70.58,
+    54.65,
+    15.28
+   ],
+   "thumb": null,
+   "triangles": 54066
+  },
+  "audio_jack_3_5mm": {
+   "agent_notes": "Its mouth at a wall with a round opening.",
+   "authors": [
+    "MrFreez",
+    "WladIMirG"
+   ],
+   "bytes": 104896,
+   "category": "electronics",
+   "description": "3.5 mm audio socket.",
+   "display_name": "Audio jack, 3.5 mm",
+   "electrical": {
+    "interface": "other"
+   },
+   "git_oid": "22b9616725f47adbf8f54bd4d4f233436c66654d",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/Audio-connectors/3-5mm-audio-jack.step",
+   "picture": "shelf_pictures/audio_jack_3_5mm.png",
+   "size_mm": [
+    14.0,
+    9.0,
+    5.0
+   ],
+   "thumb": null,
+   "triangles": 810
+  },
+  "battery_aa": {
+   "agent_notes": "Hold it in a holder or a clip; leave a door to change it.",
+   "authors": [
+    "Simon Rozman"
+   ],
+   "bytes": 14253,
+   "category": "power",
+   "description": "AA cell.",
+   "display_name": "AA battery",
+   "electrical": {
+    "interface": "power",
+    "voltage_v": 1.5
+   },
+   "git_oid": "3ac6c8d0800bc53619d0c695fe019b8d5fe17ac6",
+   "group": "power",
+   "path": "Electrical Parts/Batteries/battery-AA.step",
+   "picture": "shelf_pictures/battery_aa.png",
+   "size_mm": [
+    14.3,
+    14.26,
+    50.4
+   ],
+   "thumb": "thumbnails/45628070d485162b3292b459c5a7fb71.png",
+   "triangles": 1760
+  },
+  "battery_aaa": {
+   "agent_notes": "Hold it in a holder or a clip; leave a door to change it.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 44799,
+   "category": "power",
+   "description": "AAA cell.",
+   "display_name": "AAA battery",
+   "electrical": {
+    "interface": "power",
+    "voltage_v": 1.5
+   },
+   "git_oid": "6800f1e5de618cac3cb7b3372fc8e30dab28f41c",
+   "group": "power",
+   "path": "Electrical Parts/Batteries/battery-AAA.step",
+   "picture": "shelf_pictures/battery_aaa.png",
+   "size_mm": [
+    10.4,
+    10.37,
+    44.5
+   ],
+   "thumb": null,
+   "triangles": 4700
+  },
+  "battery_holder_4aaa": {
+   "agent_notes": "Put it behind a battery door the user can open; leave a path for its two wires.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 2666612,
+   "category": "power",
+   "description": "Holder for four AAA cells.",
+   "display_name": "Battery holder, 4 × AAA",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "e4bde55a9383dfd991482a32c81fb7e5a437c04a",
+   "group": "power",
+   "path": "Electrical Parts/Batteries/battery-holder-4-AAA.step",
+   "picture": "shelf_pictures/battery_holder_4aaa.png",
+   "size_mm": [
+    49.0,
+    55.67,
+    13.13
+   ],
+   "thumb": null,
+   "triangles": 138110
+  },
+  "battery_holder_8aaa": {
+   "agent_notes": "Put it behind a battery door the user can open.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 5790347,
+   "category": "power",
+   "description": "Holder for eight AAA cells.",
+   "display_name": "Battery holder, 8 × AAA",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "a49c4f3d4c7e91508759d22ca7f2aa49af7fc9aa",
+   "group": "power",
+   "path": "Electrical Parts/Batteries/battery-holder-8-AAA.step",
+   "picture": "shelf_pictures/battery_holder_8aaa.png",
+   "size_mm": [
+    50.3,
+    60.05,
+    23.9
+   ],
+   "thumb": null,
+   "triangles": 242257
+  },
+  "blower_50mm": {
+   "agent_notes": "Leave its face inlet open and duct its side outlet to a vent.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 713981,
+   "category": "motor",
+   "description": "50 mm radial (blower) fan: air in at the face, out at the side.",
+   "display_name": "Blower fan, 50 mm",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "25b9a4b4064d81e9e6834bc5f7910170480c916f",
+   "group": "motors",
+   "path": "Electrical Parts/fans/blower-50x50mm.step",
+   "picture": "shelf_pictures/blower_50mm.png",
+   "size_mm": [
+    51.8,
+    51.0,
+    15.0
+   ],
+   "thumb": null,
+   "triangles": 4858
+  },
+  "buzzer": {
+   "agent_notes": "Sound must get out: a hole or a few small holes over its opening.",
+   "authors": [
+    "movilujo",
+    "WladIMirG"
+   ],
+   "bytes": 172715,
+   "category": "electronics",
+   "description": "Small round buzzer.",
+   "display_name": "Buzzer",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "3e79f84cd7645d25db7c33900811cb4e0288f33f",
+   "group": "displays",
+   "path": "Electronics Parts/Buzzers/Buzzer.step",
+   "picture": "shelf_pictures/buzzer.png",
+   "size_mm": [
+    12.0,
+    12.0,
+    11.07
+   ],
+   "thumb": null,
+   "triangles": 2476
+  },
+  "cherry_mx_switch": {
+   "agent_notes": "It clips into a 14 mm square plate hole in a 1.5 mm plate; a key cap goes on its stem.",
+   "authors": [
+    "Obijuan"
+   ],
+   "bytes": 318511,
+   "category": "electronics",
+   "description": "Mechanical keyboard switch.",
+   "display_name": "Cherry MX key switch",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "4740072d99c6d4616d7288270d897f80bae4ff2a",
+   "group": "controls",
+   "path": "Electronics Parts/Buttons/THT/cherry-mx-basic.step",
+   "picture": "shelf_pictures/cherry_mx_switch.png",
+   "size_mm": [
+    15.64,
+    16.33,
+    17.85
+   ],
+   "thumb": null,
+   "triangles": 1192
+  },
+  "cqrobot_37d": {
+   "agent_notes": "Mount it by the screws in its gearbox face; leave room behind the encoder for its cable.",
+   "authors": [
+    "Charles Fox"
+   ],
+   "bytes": 70675,
+   "category": "motor",
+   "description": "37 mm metal gearmotor with an encoder.",
+   "display_name": "CQRobot 37D gearmotor, 90:1, with encoder",
+   "electrical": {
+    "interface": "power",
+    "wiring": "64 CPR encoder on the motor"
+   },
+   "git_oid": "ce73f3e0323221d44ed31b34b3f42c3324d36ee8",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/cqrobot_37d/CQRobot_37D_90to1_64CPR.step",
+   "picture": "shelf_pictures/cqrobot_37d.png",
+   "size_mm": [
+    38.0,
+    40.49,
+    112.1
+   ],
+   "thumb": null,
+   "triangles": 7186
+  },
+  "dc_jack_2_1mm": {
+   "agent_notes": "Its mouth must sit at a wall with a round opening and room outside for the plug.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 120255,
+   "category": "power",
+   "description": "Power socket for a 2.1 mm barrel plug.",
+   "display_name": "DC barrel jack, 2.1 mm (PCB)",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "962cdd43ac96efb3175e0c1e20ab9184a8d37027",
+   "group": "power",
+   "path": "Electronics Parts/Connectors/power-connectors/jack_DC_2.1mm_PCB.step",
+   "picture": "shelf_pictures/dc_jack_2_1mm.png",
+   "size_mm": [
+    9.46,
+    14.5,
+    14.8
+   ],
+   "thumb": null,
+   "triangles": 1536
+  },
+  "dc_motor_encoder": {
+   "agent_notes": "Mount it by its face; leave room behind it for the encoder.",
+   "authors": [
+    "Agustin Nunez",
+    "WladIMirG"
+   ],
+   "bytes": 1597730,
+   "category": "motor",
+   "description": "Small DC motor with an encoder disc on the back.",
+   "display_name": "DC motor with encoder (Mabuchi)",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "4c46279e308189914e65d4b490f0208c1bf22831",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/DC motor/Mabuchi-Encoder/DCMotorEncoder.step",
+   "picture": "shelf_pictures/dc_motor_encoder.png",
+   "size_mm": [
+    23.18,
+    18.98,
+    65.0
+   ],
+   "thumb": null,
+   "triangles": 58334
+  },
+  "dhb12_driver": {
+   "agent_notes": "Leave its terminals reachable and air over it.",
+   "authors": [
+    "Charles Fox"
+   ],
+   "bytes": 368864,
+   "category": "electronics",
+   "description": "DC motor driver board.",
+   "display_name": "DHB12 motor driver",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "eae734a52f75ce9613a0ce76dcd3cb7f2c719ea1",
+   "group": "power",
+   "path": "Electrical Parts/Motor Drivers/DHB12/DHB12.stp",
+   "picture": "shelf_pictures/dhb12_driver.png",
+   "size_mm": [
+    72.0,
+    56.0,
+    22.6
+   ],
+   "thumb": null,
+   "triangles": 3240
+  },
+  "emax_es08a": {
+   "agent_notes": "Hold it by its mounting ears in a pocket the body's size; the horn needs room to swing.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 875310,
+   "category": "motor",
+   "description": "Micro hobby servo.",
+   "display_name": "Emax ES08A micro servo",
+   "electrical": {
+    "connectors": "3-wire lead",
+    "interface": "pwm",
+    "wiring": "PWM signal"
+   },
+   "git_oid": "d181aa3c5aa82528b84f843952ef1d15974084bc",
+   "group": "motors",
+   "path": "Electrical Parts/Servos/Emax-ES08A/Emax-es08A.step",
+   "picture": "shelf_pictures/emax_es08a.png",
+   "size_mm": [
+    32.2,
+    11.8,
+    27.8
+   ],
+   "thumb": null,
+   "triangles": 8578
+  },
+  "emergency_stop_22mm": {
+   "agent_notes": "Put it where a hand finds it at once, on top or the front, nothing round it to catch; 22 mm panel hole.",
+   "authors": [
+    "Henrique Enzweiler"
+   ],
+   "bytes": 320998,
+   "category": "electronics",
+   "description": "Red mushroom-head emergency-stop button for a 22 mm hole.",
+   "display_name": "Emergency-stop button, 22 mm",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "12db8941bf8e46c2358506a2399dc041984c1f03",
+   "group": "controls",
+   "path": "Electrical Parts/Push buttons/Emergency stop mushroom head push-button - 22 mm.step",
+   "picture": "shelf_pictures/emergency_stop_22mm.png",
+   "size_mm": [
+    70.0,
+    80.52,
+    70.0
+   ],
+   "thumb": null,
+   "triangles": 14960
+  },
+  "endstop_makerbot": {
+   "agent_notes": "Mount it by its holes where the moving part presses the lever.",
+   "authors": [
+    "fran6t",
+    "WladIMirG"
+   ],
+   "bytes": 369281,
+   "category": "electronics",
+   "description": "Microswitch endstop on a small board, as on 3D printers.",
+   "display_name": "Mechanical endstop board (MakerBot v1.2)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "bb8187b1d705fef4da84c974de928b28f7cb8c6e",
+   "group": "controls",
+   "path": "Electrical Parts/Endstop/endstop-v1-2-makerbot.step",
+   "picture": "shelf_pictures/endstop_makerbot.png",
+   "size_mm": [
+    40.0,
+    21.0,
+    7.7
+   ],
+   "thumb": null,
+   "triangles": 1364
+  },
+  "esp32_devkit": {
+   "agent_notes": "Keep the antenna end of the module clear of metal and of thick walls near it (no metal in front of it); leave the Micro-USB socket reachable.",
+   "authors": [
+    "Charles Fox"
+   ],
+   "bytes": 426137,
+   "category": "electronics",
+   "description": "ESP32 Wi-Fi/Bluetooth development board with a Micro-USB socket.",
+   "display_name": "ESP32 DevKit V1 (DOIT)",
+   "electrical": {
+    "connectors": "Micro-USB",
+    "interface": "usb",
+    "wiring": "ESP32 with Wi-Fi and Bluetooth; 3.3 V logic"
+   },
+   "git_oid": "ef8803583cc2a43bc332ae66cd84e0f70e744664",
+   "group": "boards",
+   "path": "Computing/SingleBoardComputers/ESP32/ESP32_DOIT_DevKit_v1/ESP32_DOIT_DevKit_V1.step",
+   "picture": "shelf_pictures/esp32_devkit.png",
+   "size_mm": [
+    52.5,
+    28.3,
+    13.2
+   ],
+   "thumb": null,
+   "triangles": 10988
+  },
+  "fan_40mm": {
+   "agent_notes": "Air must reach both faces: a grille in the wall over it (not a solid wall) and an inlet elsewhere so air flows through. Mount by its corner holes.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 1383904,
+   "category": "motor",
+   "description": "40 mm axial cooling fan.",
+   "display_name": "Fan, 40 mm",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "822a621b148a1c88b16345df30935405b292bc5c",
+   "group": "motors",
+   "path": "Electrical Parts/fans/fan-40x40mm.step",
+   "picture": "shelf_pictures/fan_40mm.png",
+   "size_mm": [
+    40.0,
+    40.0,
+    10.0
+   ],
+   "thumb": null,
+   "triangles": 3100
+  },
+  "fan_50mm": {
+   "agent_notes": "A grille over it and an inlet elsewhere; mount by its corner holes.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 902022,
+   "category": "motor",
+   "description": "50 mm axial cooling fan.",
+   "display_name": "Fan, 50 mm",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "cbe18928b8d15f73e18bb899c926fac57858f465",
+   "group": "motors",
+   "path": "Electrical Parts/fans/fan-50x50mm.step",
+   "picture": "shelf_pictures/fan_50mm.png",
+   "size_mm": [
+    50.0,
+    50.0,
+    11.0
+   ],
+   "thumb": null,
+   "triangles": 4948
+  },
+  "faulhaber_2342": {
+   "agent_notes": "Mount it by the screws in its face; keep its shaft aligned with what it drives.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 18231708,
+   "category": "motor",
+   "description": "Precision 23 mm DC motor, 12 V.",
+   "display_name": "Faulhaber 2342L012CR DC motor",
+   "electrical": {
+    "interface": "power",
+    "voltage_v": 12
+   },
+   "git_oid": "88166061efaa35c7229034cf09e6c229e318fe1c",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/DC motor/FAULHABER 2342L-012CPR/FAULHABER_2342L-012CPR.step",
+   "picture": "shelf_pictures/faulhaber_2342.png",
+   "size_mm": [
+    40.42,
+    36.64,
+    119.67
+   ],
+   "thumb": null,
+   "triangles": 120314
+  },
+  "fuse_mf_r500": {
+   "agent_notes": "",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 188604,
+   "category": "power",
+   "description": "Polymer PTC resettable fuse.",
+   "display_name": "Resettable fuse, Bourns MF-R500",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "8da422985965a140a3b2e36026bbf94fcb5e811b",
+   "group": "power",
+   "path": "Electronics Parts/Fuses/THT/fuse-MF-R500.step",
+   "picture": "shelf_pictures/fuse_mf_r500.png",
+   "size_mm": [
+    17.4,
+    3.9,
+    29.18
+   ],
+   "thumb": null,
+   "triangles": 5870
+  },
+  "futaba_s3003": {
+   "agent_notes": "Hold it by its four mounting ears; the horn needs room to swing.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 1523039,
+   "category": "motor",
+   "description": "Standard-size hobby servo.",
+   "display_name": "Futaba S3003 standard servo",
+   "electrical": {
+    "connectors": "3-wire lead",
+    "interface": "pwm",
+    "wiring": "4.8-6 V; PWM signal"
+   },
+   "git_oid": "4bfaa8214a8449467c46976fd838a24ae65a5b87",
+   "group": "motors",
+   "path": "Electrical Parts/Servos/Futaba3003/Futaba3003.stp",
+   "picture": "shelf_pictures/futaba_s3003.png",
+   "size_mm": [
+    57.75,
+    20.0,
+    41.74
+   ],
+   "thumb": null,
+   "triangles": 12932
+  },
+  "gnss_antenna": {
+   "agent_notes": "It needs a view of the sky: top of the product, under plastic only, never under metal.",
+   "authors": [
+    "Ondřej Sluka"
+   ],
+   "bytes": 1450113,
+   "category": "electronics",
+   "description": "Satellite-navigation (GPS) antenna.",
+   "display_name": "GNSS antenna (STA-901A)",
+   "electrical": {
+    "interface": "other"
+   },
+   "git_oid": "d3e2ca90a5144bd31738c7666865fe8b31b8e704",
+   "group": "sensors",
+   "path": "Electronics Parts/Antennas/Antenna-GNSS-STA-901A.step",
+   "picture": "shelf_pictures/gnss_antenna.png",
+   "size_mm": [
+    44.0,
+    43.95,
+    40.8
+   ],
+   "thumb": null,
+   "triangles": 17160
+  },
+  "hc_sr04": {
+   "agent_notes": "Both transducers must look out through the wall: one round hole each, a little wider than the transducer, with nothing in front of them. Point them at what is measured.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 3130919,
+   "category": "electronics",
+   "description": "Ultrasonic distance sensor with two round transducers.",
+   "display_name": "HC-SR04 ultrasonic distance sensor",
+   "electrical": {
+    "interface": "gpio",
+    "voltage_v": 5,
+    "wiring": "trigger and echo pins"
+   },
+   "git_oid": "1742522fd5b82d40b8dfd7b971a72c4e15ec1ebd",
+   "group": "sensors",
+   "path": "Sensors/Ultrasonic Sensors/HC-SR04.step",
+   "picture": "shelf_pictures/hc_sr04.png",
+   "size_mm": [
+    45.0,
+    26.0,
+    16.5
+   ],
+   "thumb": null,
+   "triangles": 10088
+  },
+  "hdmi_jack": {
+   "agent_notes": "Its mouth at a wall with an opening that clears the plug's overmould.",
+   "authors": [
+    "MrFreez",
+    "WladIMirG"
+   ],
+   "bytes": 574028,
+   "category": "electronics",
+   "description": "Full-size HDMI socket.",
+   "display_name": "HDMI socket",
+   "electrical": {
+    "interface": "other"
+   },
+   "git_oid": "c81f35e5a7d02fb915371218b01be832147e1d12",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/HDMI-connectors/hdmi-connector.step",
+   "picture": "shelf_pictures/hdmi_jack.png",
+   "size_mm": [
+    12.15,
+    15.0,
+    9.38
+   ],
+   "thumb": null,
+   "triangles": 1108
+  },
+  "heatsink_19mm": {
+   "agent_notes": "Air must pass through its fins: vents in line with them.",
+   "authors": [
+    "berserkdesign",
+    "hasecilu"
+   ],
+   "bytes": 828668,
+   "category": "mechanical",
+   "description": "Small finned heatsink.",
+   "display_name": "Heatsink, 19 × 19 × 5 mm",
+   "git_oid": "c77fcdb8b39d5a2c50dba9a4fe60ca73cda5e82f",
+   "group": "mechanical",
+   "path": "Electronics Parts/Heatsinks/heat-sink-19x19x5mm.step",
+   "picture": "shelf_pictures/heatsink_19mm.png",
+   "size_mm": [
+    19.0,
+    19.0,
+    5.0
+   ],
+   "thumb": null,
+   "triangles": 3636
+  },
+  "inductive_proximity": {
+   "agent_notes": "Mount it by its thread through a wall or bracket hole with its two nuts; its face must be free, no metal round the face.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 34921,
+   "category": "electronics",
+   "description": "Threaded cylindrical sensor that detects metal at its face.",
+   "display_name": "Inductive proximity sensor (cylindrical)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "dc5d34ca807c9f38c93b4a79bea70ce6d86a2781",
+   "group": "sensors",
+   "path": "Electronics Parts/Inductors/Inductive_sensor/Inductive-Proximity-Sensor.step",
+   "picture": "shelf_pictures/inductive_proximity.png",
+   "size_mm": [
+    12.2,
+    12.17,
+    65.0
+   ],
+   "thumb": null,
+   "triangles": 1356
+  },
+  "irm60_psu": {
+   "agent_notes": "MAINS VOLTAGE: only for a design whose maker knows mains safety. Fully enclosed, no openings a finger or tool can reach live parts through, a proper strain-relieved mains inlet, and the low-voltage side kept apart.",
+   "authors": [
+    "diegotrap",
+    "WladIMirG"
+   ],
+   "bytes": 1250047,
+   "category": "power",
+   "description": "Encapsulated 60 W mains-to-DC power module.",
+   "display_name": "Mean Well IRM-60 AC-DC module",
+   "electrical": {
+    "interface": "power",
+    "wiring": "MAINS input (AC); low-voltage DC output"
+   },
+   "git_oid": "d141a5a984560ed1da305b1a35f79658768504c1",
+   "group": "power",
+   "path": "Electrical Parts/Power Supplies/IRM-60 ST series power supply/IRM-60 ST power supply.step",
+   "picture": "shelf_pictures/irm60_psu.png",
+   "size_mm": [
+    52.0,
+    109.0,
+    33.5
+   ],
+   "thumb": null,
+   "triangles": 2860
+  },
+  "l298n_driver": {
+   "agent_notes": "Its heatsink gets hot: vents over it and no wall touching it. Leave its screw terminals reachable.",
+   "authors": [
+    "Charles Fox"
+   ],
+   "bytes": 626259,
+   "category": "electronics",
+   "description": "Dual H-bridge motor driver board with a heatsink.",
+   "display_name": "L298N dual motor driver",
+   "electrical": {
+    "interface": "gpio",
+    "wiring": "dual H-bridge: two DC motors or one stepper"
+   },
+   "git_oid": "b566585080a963afaef46baa74e3832dfaf5c6d8",
+   "group": "power",
+   "path": "Electrical Parts/Motor Drivers/L298N/L298N.step",
+   "picture": "shelf_pictures/l298n_driver.png",
+   "size_mm": [
+    43.0,
+    43.0,
+    28.0
+   ],
+   "thumb": null,
+   "triangles": 5512
+  },
+  "lcd_20x4": {
+   "agent_notes": "A window the size of its viewing area in the front; mount the board by its four corner holes behind the wall.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 630665,
+   "category": "electronics",
+   "description": "Character LCD module, four lines of 20.",
+   "display_name": "LCD, 20 × 4 characters (backlit)",
+   "electrical": {
+    "interface": "other"
+   },
+   "git_oid": "6d4afe61aa3efe96be8cfc4f272e93de6eb2a2f2",
+   "group": "displays",
+   "path": "Electronics Parts/Displays/LCD/lcd-4x20-backlight.step",
+   "picture": "shelf_pictures/lcd_20x4.png",
+   "size_mm": [
+    98.2,
+    60.1,
+    13.4
+   ],
+   "thumb": null,
+   "triangles": 4372
+  },
+  "led_3mm": {
+   "agent_notes": "Through a 3 mm hole, or behind a light pipe.",
+   "authors": [
+    "berserkdesign",
+    "hasecilu"
+   ],
+   "bytes": 87737,
+   "category": "electronics",
+   "description": "Through-hole 3 mm LED.",
+   "display_name": "LED, 3 mm",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "6bffe1e6cc3855719f1dad5e924c6dee2ee0c0b1",
+   "group": "displays",
+   "path": "Electronics Parts/LEDs/led-3mm-short.step",
+   "picture": "shelf_pictures/led_3mm.png",
+   "size_mm": [
+    3.69,
+    3.68,
+    11.4
+   ],
+   "thumb": null,
+   "triangles": 828
+  },
+  "led_5mm": {
+   "agent_notes": "Its dome can poke through a 5 mm hole, or sit behind a light pipe or a thin diffuser.",
+   "authors": [
+    "berserkdesign",
+    "hasecilu"
+   ],
+   "bytes": 77929,
+   "category": "electronics",
+   "description": "Through-hole 5 mm LED.",
+   "display_name": "LED, 5 mm",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "fdf44da60006e9f94e03b9233f08d7a223a8b3e1",
+   "group": "displays",
+   "path": "Electronics Parts/LEDs/led-5mm.step",
+   "picture": "shelf_pictures/led_5mm.png",
+   "size_mm": [
+    5.8,
+    5.78,
+    10.26
+   ],
+   "thumb": null,
+   "triangles": 796
+  },
+  "led_bargraph": {
+   "agent_notes": "A window over its face; nothing in front of the segments.",
+   "authors": [
+    "berserkdesign",
+    "hasecilu"
+   ],
+   "bytes": 379350,
+   "category": "electronics",
+   "description": "Ten-segment LED bar graph.",
+   "display_name": "LED bar graph",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "b160ebaaae998a1b0d4dc7b902034345dd0400ef",
+   "group": "displays",
+   "path": "Electronics Parts/LEDs/bargraph.step",
+   "picture": "shelf_pictures/led_bargraph.png",
+   "size_mm": [
+    25.3,
+    10.1,
+    12.91
+   ],
+   "thumb": null,
+   "triangles": 4436
+  },
+  "lipo_240mah": {
+   "agent_notes": "Give it a pocket with a little room to swell, nothing sharp against it, away from hot parts; never clamp it.",
+   "authors": [
+    "jcarolinares",
+    "WladIMirG"
+   ],
+   "bytes": 426545,
+   "category": "power",
+   "description": "Small lithium-polymer pouch cell.",
+   "display_name": "LiPo battery, 3.7 V 240 mAh",
+   "electrical": {
+    "interface": "power",
+    "voltage_v": 3.7
+   },
+   "git_oid": "369faa903f2b85421cf5757213e919d67d789ada",
+   "group": "power",
+   "path": "Electrical Parts/Batteries/battery_lipo_3_7v_240mAh.step",
+   "picture": "shelf_pictures/lipo_240mah.png",
+   "size_mm": [
+    58.0,
+    30.0,
+    6.2
+   ],
+   "thumb": null,
+   "triangles": 3317
+  },
+  "lm2596_buck": {
+   "agent_notes": "Leave its trim potentiometer reachable (or set it before closing) and air over its inductor and chip.",
+   "authors": [
+    "Charles Fox"
+   ],
+   "bytes": 151125,
+   "category": "power",
+   "description": "Adjustable step-down voltage regulator board.",
+   "display_name": "LM2596 buck converter module",
+   "electrical": {
+    "interface": "power",
+    "wiring": "adjustable step-down regulator (LM2596S)"
+   },
+   "git_oid": "f01a098be786dabd17158646566db704450c2ab2",
+   "group": "power",
+   "path": "Electrical Parts/DCDC/LM2596S_Buck_Module_43x21/LM2596S_Buck_Module_43x21.step",
+   "picture": "shelf_pictures/lm2596_buck.png",
+   "size_mm": [
+    43.2,
+    21.0,
+    13.6
+   ],
+   "thumb": null,
+   "triangles": 8008
+  },
+  "maxsonar_mb1010": {
+   "agent_notes": "The transducer must look out through a round hole with nothing in front of it.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 40778,
+   "category": "electronics",
+   "description": "Ultrasonic range finder with one transducer.",
+   "display_name": "MaxBotix LV-MaxSonar-EZ1 (MB1010)",
+   "electrical": {
+    "interface": "analog",
+    "wiring": "2.5-5.5 V; analog, serial or pulse-width output"
+   },
+   "git_oid": "4e320582c23d46a00c0f6f1f2af4e1477283be42",
+   "group": "sensors",
+   "path": "Sensors/Ultrasonic Sensors/MaxSonar/MB1010/MaxSonar-MB1010.step",
+   "picture": "shelf_pictures/maxsonar_mb1010.png",
+   "size_mm": [
+    19.9,
+    22.1,
+    15.5
+   ],
+   "thumb": null,
+   "triangles": 1962
+  },
+  "micro_sd_card": {
+   "agent_notes": "A slot in the wall in line with the card socket, with room for a fingertip to push it in and out.",
+   "authors": [
+    "jcarolinares",
+    "WladIMirG"
+   ],
+   "bytes": 207811,
+   "category": "electronics",
+   "description": "A micro-SD card (the card, for a slot).",
+   "display_name": "Micro-SD card",
+   "git_oid": "11ca48a2af733174ef3bf66c03c1959fe2952a85",
+   "group": "connectors",
+   "path": "Computing/Storage/SD/Generic_MICRO_SD_card.step",
+   "picture": "shelf_pictures/micro_sd_card.png",
+   "size_mm": [
+    11.0,
+    15.0,
+    1.1
+   ],
+   "thumb": null,
+   "triangles": 372
+  },
+  "microswitch_lever": {
+   "agent_notes": "Mount it by its two holes where the moving part presses the lever; leave over-travel.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 682575,
+   "category": "electronics",
+   "description": "Snap-action limit switch with a lever.",
+   "display_name": "Microswitch with lever (SPDT)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "aa7e3c57bbeb79ce0c006cf9ff6c6220361cbde5",
+   "group": "controls",
+   "path": "Electronics Parts/Switch/Limit switch/Microswitch_SPDT_Vertical.step",
+   "picture": "shelf_pictures/microswitch_lever.png",
+   "size_mm": [
+    16.78,
+    5.8,
+    14.58
+   ],
+   "thumb": "thumbnails/7663680576cae2541f4f8141060cfdb1.png",
+   "triangles": 1872
+  },
+  "mini_vacuum_pump": {
+   "agent_notes": "Leave its two nozzles reachable for tubing; it vibrates: mount it on soft pads, not hard against the case.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 741568,
+   "category": "motor",
+   "description": "Small diaphragm air pump.",
+   "display_name": "Mini vacuum / air pump",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "89e8c993309c6722491976542bd58bca79299dd4",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/Vacuum Pump/Mini vacuum pump.step",
+   "picture": "shelf_pictures/mini_vacuum_pump.png",
+   "size_mm": [
+    69.7,
+    98.5,
+    40.0
+   ],
+   "thumb": null,
+   "triangles": 11344
+  },
+  "nema17_bracket": {
+   "agent_notes": "",
+   "authors": [
+    "yomboprime",
+    "WladIMirG"
+   ],
+   "bytes": 164716,
+   "category": "mechanical",
+   "description": "L bracket for a NEMA 17 motor.",
+   "display_name": "NEMA 17 mounting bracket",
+   "git_oid": "0664e1b2b9f2ee6fc363135279639f86ab01b044",
+   "group": "mechanical",
+   "path": "Electrical Parts/Motors/Stepper/NEMA/Nema-17_Mount_Bracket/Nema-17_MountBracket.step",
+   "picture": "shelf_pictures/nema17_bracket.png",
+   "size_mm": [
+    50.0,
+    50.0,
+    50.0
+   ],
+   "thumb": null,
+   "triangles": 1832
+  },
+  "nema17_stepper_fc": {
+   "agent_notes": "Mount it by the four screws in its face; leave the connector reachable and air round the body (it runs warm).",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 8075316,
+   "category": "motor",
+   "description": "Standard 42 mm stepper motor with its cable connector.",
+   "display_name": "NEMA 17 stepper motor (with connector)",
+   "electrical": {
+    "interface": "other",
+    "wiring": "bipolar; needs a stepper driver"
+   },
+   "git_oid": "5209de9da8a8deacbee270c05a62ba357343dc0c",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/Stepper/NEMA/NEMA_17_with_connector.step",
+   "picture": "shelf_pictures/nema17_stepper_fc.png",
+   "size_mm": [
+    48.15,
+    42.3,
+    62.0
+   ],
+   "thumb": null,
+   "triangles": 311050
+  },
+  "photoresistor": {
+   "agent_notes": "It reads the light that reaches it: an opening or a clear window over its face.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 218928,
+   "category": "electronics",
+   "description": "Light-dependent resistor.",
+   "display_name": "Photoresistor (LDR)",
+   "electrical": {
+    "interface": "analog"
+   },
+   "git_oid": "2137e8e1d472005842fff567628e3aa0137e3a80",
+   "group": "sensors",
+   "path": "Electronics Parts/Photoresistor/Photoresistor.step",
+   "picture": "shelf_pictures/photoresistor.png",
+   "size_mm": [
+    5.1,
+    4.3,
+    7.0
+   ],
+   "thumb": null,
+   "triangles": 2232
+  },
+  "pololu_micro_298": {
+   "agent_notes": "Clamp the gearbox in a bracket or a pocket with a strap; the motor end needs its two terminals reachable.",
+   "authors": [
+    "Almisuifre",
+    "WladIMirG"
+   ],
+   "bytes": 82529,
+   "category": "motor",
+   "description": "Tiny metal gearmotor (N20 size), 298:1.",
+   "display_name": "Pololu micro metal gearmotor, 298:1, 6 V",
+   "electrical": {
+    "interface": "power",
+    "voltage_v": 6
+   },
+   "git_oid": "ea1323de5891694f2551d41b52087e65a400786c",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/DC motor/Pololu-Micro/Pololu-298_1-6V.step",
+   "picture": "shelf_pictures/pololu_micro_298.png",
+   "size_mm": [
+    12.0,
+    10.0,
+    33.9
+   ],
+   "thumb": null,
+   "triangles": 818
+  },
+  "potentiometer": {
+   "agent_notes": "Its bushing mounts through a panel hole with its nut; a knob goes on the shaft outside.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 1132148,
+   "category": "electronics",
+   "description": "Rotary potentiometer.",
+   "display_name": "Potentiometer",
+   "electrical": {
+    "interface": "analog"
+   },
+   "git_oid": "b92fca63b3616cd6d7b0577a16a887daa1b6669a",
+   "group": "controls",
+   "path": "Electronics Parts/Potentiometer/Potentiometer.step",
+   "picture": "shelf_pictures/potentiometer.png",
+   "size_mm": [
+    9.5,
+    12.7,
+    27.98
+   ],
+   "thumb": null,
+   "triangles": 4182
+  },
+  "push_button_22mm_green": {
+   "agent_notes": "It mounts through a 22 mm panel hole; its contact block needs room behind the wall.",
+   "authors": [
+    "Henrique Enzweiler"
+   ],
+   "bytes": 412869,
+   "category": "electronics",
+   "description": "Industrial panel push button for a 22 mm hole.",
+   "display_name": "Panel push button, 22 mm (green)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "c8f3c53ac1ca98b7fdff586ba2427975fd5e5979",
+   "group": "controls",
+   "path": "Electrical Parts/Push buttons/Green Push-button - 22 mm.step",
+   "picture": "shelf_pictures/push_button_22mm_green.png",
+   "size_mm": [
+    36.0,
+    69.0,
+    30.0
+   ],
+   "thumb": null,
+   "triangles": 13932
+  },
+  "push_button_22mm_red": {
+   "agent_notes": "It mounts through a 22 mm panel hole (about 22.3 mm) in a wall no thicker than its thread allows; its contact block hangs behind the wall and needs room.",
+   "authors": [
+    "Henrique Enzweiler"
+   ],
+   "bytes": 416147,
+   "category": "electronics",
+   "description": "Industrial panel push button for a 22 mm hole.",
+   "display_name": "Panel push button, 22 mm (red)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "cf35cafc2a57904f0d761bfcf1b70dc5e3fcf9fa",
+   "group": "controls",
+   "path": "Electrical Parts/Push buttons/Red Push-button - 22 mm.step",
+   "picture": "shelf_pictures/push_button_22mm_red.png",
+   "size_mm": [
+    36.0,
+    69.0,
+    30.0
+   ],
+   "thumb": null,
+   "triangles": 13932
+  },
+  "raspberry_pi_4b": {
+   "agent_notes": "Open the connector edges you need (USB/Ethernet end, USB-C and HDMI side) to the outside; it runs warm: vent the case or leave room for a heatsink or fan over the processor. Mount on M2.5 standoffs through its four holes.",
+   "authors": [
+    "integrated-circuit"
+   ],
+   "bytes": 52486193,
+   "category": "electronics",
+   "description": "Single-board computer with USB-C power, two micro-HDMI, four USB-A and Ethernet.",
+   "display_name": "Raspberry Pi 4 Model B",
+   "electrical": {
+    "connectors": "USB-C power, 2 micro-HDMI, 4 USB-A, Ethernet, 3.5 mm jack",
+    "interface": "usb",
+    "voltage_v": 5,
+    "wiring": "powered by 5 V over USB-C"
+   },
+   "git_oid": "021a3c1724524cd210b85681316b7261512efb58",
+   "group": "boards",
+   "path": "Computing/SingleBoardComputers/Raspberry/Raspberry Pi 4B/Raspberry Pi 4B.step",
+   "picture": "shelf_pictures/raspberry_pi_4b.png",
+   "size_mm": [
+    92.86,
+    19.89,
+    58.5
+   ],
+   "thumb": null,
+   "triangles": 149267
+  },
+  "raspberry_pi_pico": {
+   "agent_notes": "Leave the Micro-USB socket reachable and room for pins or wires along both long edges.",
+   "authors": [
+    "integrated-circuit"
+   ],
+   "bytes": 1721174,
+   "category": "electronics",
+   "description": "Small RP2040 microcontroller board with a Micro-USB socket.",
+   "display_name": "Raspberry Pi Pico",
+   "electrical": {
+    "connectors": "Micro-USB",
+    "interface": "usb",
+    "wiring": "RP2040; 3.3 V logic"
+   },
+   "git_oid": "f06e091c38b3d3c8facff479619624096194b2ee",
+   "group": "boards",
+   "path": "Computing/SingleBoardComputers/Raspberry/Raspberry Pi Pico/Pico-R3.step",
+   "picture": "shelf_pictures/raspberry_pi_pico.png",
+   "size_mm": [
+    21.0,
+    3.73,
+    52.3
+   ],
+   "thumb": null,
+   "triangles": 20680
+  },
+  "raspi_camera_wide": {
+   "agent_notes": "Its view is very wide: the lens opening must be wide and short (countersunk, wider outside) or the case shows in the picture. Leave a path for the flat ribbon cable.",
+   "authors": [
+    "Peter Burda",
+    "WladIMirG",
+    "hasecilu"
+   ],
+   "bytes": 1096911,
+   "category": "electronics",
+   "description": "Camera board with a 170° wide-angle lens for the Raspberry Pi.",
+   "display_name": "Raspberry Pi camera, 170° wide angle",
+   "electrical": {
+    "connectors": "CSI ribbon cable",
+    "interface": "other"
+   },
+   "git_oid": "be6f378c621b7eeb400ff0cf5584498c8cefdede",
+   "group": "sensors",
+   "path": "Sensors/Cameras/Wide-170-Angle-Raspi-Camera.step",
+   "picture": "shelf_pictures/raspi_camera_wide.png",
+   "size_mm": [
+    25.0,
+    26.99,
+    22.68
+   ],
+   "thumb": null,
+   "triangles": 22122
+  },
+  "rgb_led_5mm": {
+   "agent_notes": "Behind a diffuser the colours mix; through a hole they show apart.",
+   "authors": [
+    "berserkdesign",
+    "hasecilu"
+   ],
+   "bytes": 255947,
+   "category": "electronics",
+   "description": "Through-hole 5 mm RGB LED (four legs).",
+   "display_name": "RGB LED, 5 mm",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "e62b4ac0d0a94b1eeba5334324b0c3e04498e82a",
+   "group": "displays",
+   "path": "Electronics Parts/LEDs/RGB-LED-5mm.step",
+   "picture": "shelf_pictures/rgb_led_5mm.png",
+   "size_mm": [
+    5.8,
+    5.39,
+    38.2
+   ],
+   "thumb": null,
+   "triangles": 922
+  },
+  "rj45_jack": {
+   "agent_notes": "Its mouth at a wall with room for the plug's latch to be pressed.",
+   "authors": [
+    "MrFreez",
+    "WladIMirG"
+   ],
+   "bytes": 219201,
+   "category": "electronics",
+   "description": "Ethernet socket with status LEDs.",
+   "display_name": "RJ45 Ethernet socket with LEDs",
+   "electrical": {
+    "interface": "other"
+   },
+   "git_oid": "5186711da5d59402c5ca7b352692da2eeb1b2b12",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/Ethernet-connectors/rj45-ethernet-PCB-with-leds.step",
+   "picture": "shelf_pictures/rj45_jack.png",
+   "size_mm": [
+    21.3,
+    15.9,
+    17.28
+   ],
+   "thumb": null,
+   "triangles": 4972
+  },
+  "rocker_switch_round": {
+   "agent_notes": "It snaps into a round panel hole the size of its body; leave room behind for its two terminals.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 384871,
+   "category": "power",
+   "description": "Snap-in round on/off rocker switch.",
+   "display_name": "Round rocker switch (2 pins)",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "e7c135478d4b24929e1fbd74c148cfb753f34481",
+   "group": "controls",
+   "path": "Electronics Parts/Switch/Box/RoundRockerSwitch2Pins.step",
+   "picture": "shelf_pictures/rocker_switch_round.png",
+   "size_mm": [
+    23.0,
+    23.0,
+    28.51
+   ],
+   "thumb": null,
+   "triangles": 2252
+  },
+  "rotary_encoder": {
+   "agent_notes": "Its threaded bushing mounts through a panel hole with its nut; a knob goes on the shaft outside.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 878879,
+   "category": "electronics",
+   "description": "Rotary encoder knob shaft with a push switch.",
+   "display_name": "Rotary encoder with push switch",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "fb750ceea524dc43d22dc197ef350cbf94a87598",
+   "group": "controls",
+   "path": "Electronics Parts/Rotatory encoders/rotatory-encoder.step",
+   "picture": "shelf_pictures/rotary_encoder.png",
+   "size_mm": [
+    15.0,
+    12.2,
+    20.3
+   ],
+   "thumb": null,
+   "triangles": 3022
+  },
+  "seven_segment": {
+   "agent_notes": "A window or a tinted panel over its face.",
+   "authors": [
+    "altenife"
+   ],
+   "bytes": 451390,
+   "category": "electronics",
+   "description": "One-digit 7-segment LED display.",
+   "display_name": "7-segment LED display",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "e0023d71d3b7cfdd86c580156ed4614697724658",
+   "group": "displays",
+   "path": "Electronics Parts/Displays/Display 7 segmentos/Archivos/Display 7 segmentos.step",
+   "picture": "shelf_pictures/seven_segment.png",
+   "size_mm": [
+    12.6,
+    19.0,
+    13.1
+   ],
+   "thumb": "thumbnails/6f9591c251a2c1289a028bee08468525.png",
+   "triangles": 588
+  },
+  "sg90_servo": {
+   "agent_notes": "Hold it by its mounting ears (two screws) in a pocket the body's size; its output shaft and horn need room to swing; leave a path for the 3-wire lead.",
+   "authors": [
+    "Gafeju",
+    "WladIMirG"
+   ],
+   "bytes": 1503392,
+   "category": "motor",
+   "description": "Micro hobby servo, about 180° of travel.",
+   "display_name": "SG90 micro servo",
+   "electrical": {
+    "connectors": "3-wire lead",
+    "interface": "pwm",
+    "voltage_v": 5,
+    "wiring": "4.8-6 V; PWM signal"
+   },
+   "git_oid": "c757547152271b39fdf81b8eee87dcb330bd66f6",
+   "group": "motors",
+   "path": "Electrical Parts/Servos/SG-90/Servo-sg90.step",
+   "picture": "shelf_pictures/sg90_servo.png",
+   "size_mm": [
+    11.8,
+    32.4,
+    29.9
+   ],
+   "thumb": null,
+   "triangles": 4280
+  },
+  "sharp_gp2y0a02": {
+   "agent_notes": "The two lenses (emitter and receiver) must see out: an opening over both, or an IR-clear window.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 242205,
+   "category": "electronics",
+   "description": "Infrared distance sensor, 20 to 150 cm, analog output.",
+   "display_name": "Sharp GP2Y0A02YK0F IR distance sensor (20-150 cm)",
+   "electrical": {
+    "interface": "analog",
+    "voltage_v": 5,
+    "wiring": "analog voltage out"
+   },
+   "git_oid": "90361d2e096bc5990eb2948829e4ef8dfce44167",
+   "group": "sensors",
+   "path": "Electronics Parts/Optical/SHARP/2Y0A02/SHARP-2Y0A02.step",
+   "picture": "shelf_pictures/sharp_gp2y0a02.png",
+   "size_mm": [
+    44.28,
+    16.78,
+    21.6
+   ],
+   "thumb": null,
+   "triangles": 1288
+  },
+  "sharp_gp2y0a41": {
+   "agent_notes": "The two lenses (emitter and receiver) must see out: an opening over both, or an IR-clear window; never cover them with ordinary plastic.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 175792,
+   "category": "electronics",
+   "description": "Infrared distance sensor, 4 to 30 cm, analog output.",
+   "display_name": "Sharp GP2Y0A41SK0F IR distance sensor (4-30 cm)",
+   "electrical": {
+    "interface": "analog",
+    "voltage_v": 5,
+    "wiring": "analog voltage out"
+   },
+   "git_oid": "b51a1aaac8ba5a82b6a8559c5a98a2bb19768a6b",
+   "group": "sensors",
+   "path": "Electronics Parts/Optical/SHARP/0A41SK/SHARP-0A41SK.step",
+   "picture": "shelf_pictures/sharp_gp2y0a41.png",
+   "size_mm": [
+    44.28,
+    18.95,
+    13.6
+   ],
+   "thumb": null,
+   "triangles": 824
+  },
+  "slide_switch": {
+   "agent_notes": "Its lever needs a slot in the wall a little longer than its travel.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 277854,
+   "category": "electronics",
+   "description": "Small slide switch.",
+   "display_name": "Slide switch, SPDT (PCB)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "0d24def14e119a417f0ad3f5514a8bff52e7b18c",
+   "group": "controls",
+   "path": "Electronics Parts/Switch/THT/slide-sw-spdt.step",
+   "picture": "shelf_pictures/slide_switch.png",
+   "size_mm": [
+    10.0,
+    13.54,
+    2.5
+   ],
+   "thumb": null,
+   "triangles": 5268
+  },
+  "springrc_sm_s4303r": {
+   "agent_notes": "Hold it by its four mounting ears; it can drive a wheel directly on its horn.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 3185431,
+   "category": "motor",
+   "description": "Standard-size servo that turns continuously (a geared motor driven by a servo signal).",
+   "display_name": "SpringRC SM-S4303R continuous-rotation servo",
+   "electrical": {
+    "connectors": "3-wire lead",
+    "interface": "pwm",
+    "wiring": "PWM signal sets speed and direction"
+   },
+   "git_oid": "8c70aebe747baaf8f207593d59262c8584555e15",
+   "group": "motors",
+   "path": "Electrical Parts/Servos/SpringRC-SM-S4303R/SM-S4303R.step",
+   "picture": "shelf_pictures/springrc_sm_s4303r.png",
+   "size_mm": [
+    60.05,
+    20.8,
+    46.3
+   ],
+   "thumb": null,
+   "triangles": 23894
+  },
+  "stepper_28byj48": {
+   "agent_notes": "Mount it by its two ears; the shaft is off-centre. Leave a path for the 5-wire lead to its driver board.",
+   "authors": [
+    "nicoguaro",
+    "WladIMirG"
+   ],
+   "bytes": 252207,
+   "category": "motor",
+   "description": "Small 5 V geared stepper motor.",
+   "display_name": "28BYJ-48 geared stepper motor",
+   "electrical": {
+    "connectors": "5-wire lead",
+    "interface": "other",
+    "voltage_v": 5,
+    "wiring": "unipolar; needs a driver (ULN2003 board)"
+   },
+   "git_oid": "06cb715a505281d74a509e0345a200581e33512d",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/Stepper/28BYJ-48/28BYJ-48.step",
+   "picture": "shelf_pictures/stepper_28byj48.png",
+   "size_mm": [
+    41.98,
+    30.99,
+    29.0
+   ],
+   "thumb": null,
+   "triangles": 1496
+  },
+  "switching_psu": {
+   "agent_notes": "MAINS VOLTAGE: cover its terminal block, keep its vents open, and use a proper mains inlet with strain relief.",
+   "authors": [
+    "Henrique Enzweiler"
+   ],
+   "bytes": 2548513,
+   "category": "power",
+   "description": "Enclosed mains-to-DC power supply with screw terminals.",
+   "display_name": "Switching power supply (enclosed)",
+   "electrical": {
+    "interface": "power",
+    "wiring": "MAINS input (AC); DC output"
+   },
+   "git_oid": "8a85c9d6e4669335f1c51c87960d32f1cf43f7d2",
+   "group": "power",
+   "path": "Electrical Parts/Power Supplies/Switching power supply/Switching power supply.step",
+   "picture": "shelf_pictures/switching_psu.png",
+   "size_mm": [
+    51.12,
+    115.22,
+    215.03
+   ],
+   "thumb": null,
+   "triangles": 86392
+  },
+  "tactile_button": {
+   "agent_notes": "Bring a plunger or a flexible button in the case down onto it; leave a little travel.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 484365,
+   "category": "electronics",
+   "description": "Small through-hole tactile switch.",
+   "display_name": "Tactile push button (PCB)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "0db4f6814373164ac8f52afe267580f2ee70dbc9",
+   "group": "controls",
+   "path": "Electronics Parts/Buttons/THT/pushbutton-mini.step",
+   "picture": "shelf_pictures/tactile_button.png",
+   "size_mm": [
+    8.04,
+    6.2,
+    9.2
+   ],
+   "thumb": null,
+   "triangles": 4200
+  },
+  "tactile_button_right_angle": {
+   "agent_notes": "Its plunger faces sideways: put it at a wall with a button or opening in front.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 485103,
+   "category": "electronics",
+   "description": "Side-pressed tactile switch for a board edge.",
+   "display_name": "Tactile push button, right angle (PCB)",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "5c7b27112d2cb4883f8b801edad6089c62c81208",
+   "group": "controls",
+   "path": "Electronics Parts/Buttons/THT/pushbutton-right-angle.step",
+   "picture": "shelf_pictures/tactile_button_right_angle.png",
+   "size_mm": [
+    7.4,
+    7.9,
+    11.0
+   ],
+   "thumb": null,
+   "triangles": 5456
+  },
+  "terminal_block_2": {
+   "agent_notes": "Its screws must be reachable with a screwdriver and its wire entries face an opening or the open case.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 729460,
+   "category": "power",
+   "description": "PCB screw terminal block.",
+   "display_name": "Screw terminal block, 2 way",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "a598917521e4864482769ae06fe5dd9b8c34705b",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/power-connectors/pcb-terminal-block-female-1x2.step",
+   "picture": "shelf_pictures/terminal_block_2.png",
+   "size_mm": [
+    8.3,
+    10.6,
+    13.8
+   ],
+   "thumb": null,
+   "triangles": 1516
+  },
+  "terminal_block_4": {
+   "agent_notes": "Its screws reachable, its wire entries facing an opening.",
+   "authors": [
+    "rcccort",
+    "WladIMirG"
+   ],
+   "bytes": 1391695,
+   "category": "power",
+   "description": "PCB screw terminal block.",
+   "display_name": "Screw terminal block, 4 way",
+   "electrical": {
+    "interface": "power"
+   },
+   "git_oid": "7cb76565026aeed5e8d9c48772ca270138ed44b0",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/power-connectors/pcb-terminal-block-female-1x4.step",
+   "picture": "shelf_pictures/terminal_block_4.png",
+   "size_mm": [
+    8.3,
+    20.6,
+    13.8
+   ],
+   "thumb": null,
+   "triangles": 2448
+  },
+  "tft_2_4in": {
+   "agent_notes": "A window over the screen area only; mount the board by its holes behind the wall.",
+   "authors": [
+    "MrFreez",
+    "WladIMirG"
+   ],
+   "bytes": 1712764,
+   "category": "electronics",
+   "description": "Colour TFT display on a carrier board.",
+   "display_name": "TFT display, 2.4 in, 240 × 320 (SPI)",
+   "electrical": {
+    "interface": "spi"
+   },
+   "git_oid": "d843cb03fb683b7dba7c9872de83420d0c0439c6",
+   "group": "displays",
+   "path": "Electronics Parts/Displays/TFT/2-4_tft_spi_240x320.step",
+   "picture": "shelf_pictures/tft_2_4in.png",
+   "size_mm": [
+    77.5,
+    43.0,
+    11.9
+   ],
+   "thumb": null,
+   "triangles": 2984
+  },
+  "tft_3_5in_rpi": {
+   "agent_notes": "A window over the screen; it sits on the Pi's header, so design the two together.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 992231,
+   "category": "electronics",
+   "description": "Colour TFT display that plugs onto a Raspberry Pi's header.",
+   "display_name": "TFT display, 3.5 in, 480 × 320, for Raspberry Pi (SPI)",
+   "electrical": {
+    "interface": "spi"
+   },
+   "git_oid": "4b47f4d38ea5e89452985047faab02ad36dbdef2",
+   "group": "displays",
+   "path": "Electronics Parts/Displays/TFT/3.5_RPi_tft_display_spi_480x320.step",
+   "picture": "shelf_pictures/tft_3_5in_rpi.png",
+   "size_mm": [
+    86.21,
+    56.85,
+    20.3
+   ],
+   "thumb": null,
+   "triangles": 988
+  },
+  "toggle_switch_1p2t": {
+   "agent_notes": "Mount it through a panel hole by its threaded bushing and nut.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 411061,
+   "category": "electronics",
+   "description": "Small toggle switch.",
+   "display_name": "Mini toggle switch, 1P2T",
+   "electrical": {
+    "interface": "gpio"
+   },
+   "git_oid": "91a5dc3c4acfb9d63df61e35e9d66fa48897ffcf",
+   "group": "controls",
+   "path": "Electronics Parts/Switch/Mini toggle switch 1P2T/Interuptor conmutador 1P2T PCB.step",
+   "picture": "shelf_pictures/toggle_switch_1p2t.png",
+   "size_mm": [
+    8.6,
+    3.9,
+    10.27
+   ],
+   "thumb": null,
+   "triangles": 1148
+  },
+  "tt_gearmotor": {
+   "agent_notes": "Hold it by its two through-holes; a TT wheel fits its shaft. Leave a path for its two wires.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 483631,
+   "category": "motor",
+   "description": "The common yellow hobby gear motor, double output shaft.",
+   "display_name": "TT gear motor (yellow, straight)",
+   "electrical": {
+    "interface": "power",
+    "wiring": "about 3-6 V DC"
+   },
+   "git_oid": "8716e24a8b3ca2f5d491335355e6d9032fbce476",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/DC motor/Yellow_gearmotor/straight/Yellow_gearmotor_straight.step",
+   "picture": "shelf_pictures/tt_gearmotor.png",
+   "size_mm": [
+    37.0,
+    70.0,
+    22.5
+   ],
+   "thumb": null,
+   "triangles": 3992
+  },
+  "tt_gearmotor_l": {
+   "agent_notes": "Hold it by its through-holes; a TT wheel fits its shaft.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 341498,
+   "category": "motor",
+   "description": "The common yellow hobby gear motor, motor at right angles to the shaft.",
+   "display_name": "TT gear motor (yellow, right angle)",
+   "electrical": {
+    "interface": "power",
+    "wiring": "about 3-6 V DC"
+   },
+   "git_oid": "b247aa4a89e5ac1233c181131b03fffe8a9582f1",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/DC motor/Yellow_gearmotor/L_shape/Yellow_gearmotor_L.step",
+   "picture": "shelf_pictures/tt_gearmotor_l.png",
+   "size_mm": [
+    22.5,
+    48.0,
+    56.0
+   ],
+   "thumb": null,
+   "triangles": 4438
+  },
+  "tt_wheel_65mm": {
+   "agent_notes": "Give it clearance all round inside any wheel arch; it sits on the TT motor's shaft.",
+   "authors": [
+    "hasecilu"
+   ],
+   "bytes": 5555823,
+   "category": "wheel",
+   "description": "65 mm rubber-tyred wheel that fits the TT gear motor.",
+   "display_name": "Wheel for TT gear motor, 65 mm",
+   "git_oid": "d338f56bddfd92ae1d76b4cd6e1539ec448702d7",
+   "group": "motors",
+   "path": "Electrical Parts/Motors/DC motor/Yellow_wheel_65mm/Yellow_wheel_65mm.step",
+   "picture": "shelf_pictures/tt_wheel_65mm.png",
+   "size_mm": [
+    65.0,
+    29.12,
+    65.0
+   ],
+   "thumb": null,
+   "triangles": 25852
+  },
+  "usb_a_dual": {
+   "agent_notes": "Its mouths at a wall with an opening round both.",
+   "authors": [
+    "MrFreez",
+    "WladIMirG"
+   ],
+   "bytes": 440780,
+   "category": "electronics",
+   "description": "Two stacked USB 2.0 type-A sockets.",
+   "display_name": "USB-A socket, dual stacked (PCB)",
+   "electrical": {
+    "interface": "usb"
+   },
+   "git_oid": "ee50d7273c91e554ef0f843b32c315ef3d996604",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/USB-connectors/USB-2_0-type-A-Dual-Stacked-jack-PCB.step",
+   "picture": "shelf_pictures/usb_a_dual.png",
+   "size_mm": [
+    17.3,
+    15.25,
+    18.5
+   ],
+   "thumb": null,
+   "triangles": 4904
+  },
+  "usb_b_jack": {
+   "agent_notes": "Its mouth at a wall with an opening a little larger than the plug, and room outside for the plug.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 564988,
+   "category": "electronics",
+   "description": "USB 2.0 type-B socket.",
+   "display_name": "USB-B socket (PCB)",
+   "electrical": {
+    "interface": "usb"
+   },
+   "git_oid": "04564793db8a80e487d59aebd28dae4df28e2a41",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/USB-connectors/USB-2_0-type-B-jack-PCB.step",
+   "picture": "shelf_pictures/usb_b_jack.png",
+   "size_mm": [
+    14.87,
+    14.13,
+    16.5
+   ],
+   "thumb": null,
+   "triangles": 1296
+  },
+  "usb_micro_b": {
+   "agent_notes": "Its mouth at a wall; the opening must clear the plug's overmould, not only its metal.",
+   "authors": [
+    "obijuan",
+    "WladIMirG"
+   ],
+   "bytes": 2268197,
+   "category": "electronics",
+   "description": "USB Micro-B socket.",
+   "display_name": "Micro-USB socket",
+   "electrical": {
+    "interface": "usb"
+   },
+   "git_oid": "9cc1fa532676590ae8911aebd5ceff9786f586fd",
+   "group": "connectors",
+   "path": "Electronics Parts/Connectors/USB-connectors/smd/USB-micro-B.step",
+   "picture": "shelf_pictures/usb_micro_b.png",
+   "size_mm": [
+    5.44,
+    7.98,
+    2.94
+   ],
+   "thumb": null,
+   "triangles": 6784
+  }
+ },
+ "revision": "f5ca01cdcaa2f69b9295a6382719c2d90628780c",
+ "source": "github.com/FreeCAD/FreeCAD-library"
+}

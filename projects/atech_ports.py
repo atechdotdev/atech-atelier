@@ -3478,7 +3478,10 @@ def _user_parts_card(users):
                 bb.XMin, bb.XMax, bb.YMin, bb.YMax, bb.ZMin, bb.ZMax))
             elec = user_parts.electrical_line(sp)
             if elec:
-                row += " | wiring (user says): " + elec
+                # R780: an off-the-shelf part's wiring is the catalogue's
+                # (shelf_index.json), not something the user typed
+                row += " | wiring (%s): %s" % (
+                    "catalogue" if sp.get("shelf") else "user says", elec)
             rows.append(row)
     except Exception:                                  # noqa: BLE001
         return []

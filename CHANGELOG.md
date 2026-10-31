@@ -6,6 +6,59 @@ change behaviour.
 
 ## [Unreleased]
 
+### Sesame walker: an open-source robot refitted for Atech
+
+- New on Home: **Sesame walker**, the open-source Sesame quadruped (by
+  Dorian Todd, Apache-2.0) refitted for the Atech board. Its frame, bottom
+  cover, battery, eight servos and eight leg parts are upstream's, unchanged.
+  Only the top cover is new: a deck that screws onto the original frame with
+  the original four screws and carries the Atech board flat over the legs,
+  and a lid. The Atech screen is the face, upright behind a window at the
+  front; an IMU on the board gives the walk its heading; USB-C is at the back.
+- The deck is exactly as wide as the legs allow. Every pose in Sesame's
+  firmware was replayed on its legs to find where they reach, so a leg never
+  hits the deck while it walks, waves or dances.
+- The design's own check judges only what is new: parts listed as
+  `"imported"` in intent.json are checked for fit and overlaps, not for their
+  walls. Screws are never judged as printed walls.
+- Cables can now follow several waypoints without looping past their ends:
+  `ap.cable(..., smooth=True)`.
+
+### Simulate: watch it work, then run real physics
+
+- A Simulate button on the view bar opens the Simulation card. Play runs
+  the design in the 3D view: each motor turns what its shaft drives (a
+  wheel and its tyre, a fan, a rotor), lights glow, screens light up and
+  a distance sensor shows its beam. Only the picture moves. Every part
+  goes back when you stop, build, save or export.
+- **Run physics** opens the design in MuJoCo, a free physics simulator,
+  in its own window. The design rests on a floor with gravity, and each
+  motor drives it at the speed you set on the card, up to the torque of
+  a hobby gear motor. The toy car and the rover drive away in a straight
+  line; a fan spins on the desk. The first time, it asks before it
+  downloads MuJoCo (once, about 30 MB). Every file is checked before it
+  is installed.
+- **Export for simulators…** saves a folder you can take anywhere: a URDF
+  for Gazebo, NVIDIA Isaac Sim, PyBullet and ROS, and a MuJoCo scene
+  with a `run_sim.py` to run it. Masses come from each part's volume.
+- What it does not do yet: tracks are solid, so the RC tank's sprockets
+  turn but it stays put, and parts collide by their outer outline
+  (convex hull), so open shapes act as if filled in.
+
+### Simple starter projects
+
+- Home has a new "Start simple" row, between your projects and the
+  finished examples, with three small designs to build on:
+  - **Just the board:** the Atech board flat in a printed tray, with
+    nothing on it yet.
+  - **Board in a case:** the board in a base and a rounded cover held by
+    four screws, with a button and a light under openings in the top.
+  - **Two-wheel base:** two DC motors driving two wheels, a skid at the
+    back and a cover over the board. Press Simulate and the wheels turn.
+- Each opens as a new project of your own. It passes its own checks, and
+  its chat suggests two things to ask next. Starters stay on Home and are
+  never copied into your projects folder.
+
 ### Parts you can buy, ready to use
 
 - New on the Modules page: "Add off-the-shelf part…". Pick from about 75
@@ -40,6 +93,37 @@ change behaviour.
 - Not yet: the Micro-SD module. Its model's pins sit 0.13 mm off the
   board's socket, so it would not fit. It comes once the model is fixed.
 
+### Easier to find your way, see inside, and see it work
+
+- The logo always takes you Home to all your projects, like a website's.
+  A second click no longer drops you back into the project. Use "Back to
+  project" or Esc for that. The top bar's logo on Linux now does the same.
+- The exploded view is easier to follow. While the parts are apart, a card
+  at the top right of the 3D view lets you pick how they come apart (out
+  from the middle, or stacked in layers), how far apart they go, and step
+  through the parts one by one with ‹ › or the arrow keys. Each step
+  selects the part and says what it is. "Fit to view" and "Put back" sit on
+  the card too. Modules now slide straight out of their ports. The board,
+  its cables and the cabled modules stay where they are, so the shell comes
+  off the electronics instead of everything flying apart.
+- "Make assembly video" now has its own button on the view bar, not only a
+  menu entry.
+- New: Simulate, on the view bar and in the Atech menu. It runs the design
+  in the 3D view: each motor turns what its shaft drives (a wheel and its
+  tyre, a fan), the lights glow and a distance sensor shows its beam, at a
+  motor speed you choose. "Export for simulators…" saves a URDF package
+  (the design, a turning joint for each motor and masses from the volumes)
+  that MuJoCo, PyBullet, NVIDIA Isaac Sim, Gazebo and ROS can open. Like the
+  exploded view, it only changes the picture: every part goes back when
+  you close it, build or save.
+- Wireframe (the see-through view) keeps the Atech board, its modules and
+  their cables solid, so you can see the electronics inside the case.
+  Turning it on or off no longer marks the project as changed.
+- Edit shapes: Undo and Redo buttons, and ⌘Z / ⌘⇧Z now work while the
+  window is in front. They used to reach only the main window. A Drop
+  button (D) drops a part onto the part under it, or onto the floor. The
+  Turn buttons turn by 90°, 45°, 22.5° or 15°.
+
 ### Open source, with credit to Atech and FreeCAD
 
 - Atech's code is now licensed under the GNU LGPL v3 or later, with one
@@ -53,6 +137,44 @@ change behaviour.
 - The app is called Atech Atelier everywhere again, as its window, its icon
   and its folders always were (0.1.2 showed "Atech AI CAD" inside the app).
   Pictures and videos now go to the "Atech Atelier" folders.
+
+### Gears that really mesh
+
+- Every build now finds its gears by their teeth and checks them like a
+  workshop would. Two gears must share a module, sit at the centre
+  distance their teeth need, and turn a full tooth without binding. A gear
+  that drives a belt, track or rack needs teeth on that part at its pitch,
+  not a smooth surface. A gear needs a shaft through its bore. A problem
+  says exactly what to change, such as "turn B 15° about its axis" or
+  "move them 0.6 mm apart".
+- New helper `cad.mesh_phase` turns a gear so a tooth or a gap faces its
+  mate.
+- The RC tank starter project's sprockets now drive its tracks: the tracks
+  have teeth at the sprocket's pitch, the idlers have a groove for them,
+  and the road wheels ride beside them. Before, an 18-tooth sprocket sat
+  0.3 mm inside a smooth belt and could not move it.
+
+### Assembly videos of every design
+
+- After each build that finishes cleanly, Atech Atelier makes a ~25 second
+  video of the design in the background and puts it in **Movies / Atech
+  Atelier**: two seconds of the finished product, then it goes together from
+  nothing: the Atech board drops in, each module slides into its port the
+  way it really goes in, each cable grows along its run, then every printed
+  part flies home in its own colour, the screws spin in, a burst of
+  confetti, and it powers on (lights glow, fans and wheels spin) on a
+  turntable under its title.
+- Each product gets its own setting: a wooden desk, a starry night, a
+  sunny patio, a synthwave grid, a blueprint, a marble counter, a workshop
+  floor, a sunset or a photo studio. One short Claude reply picks it, with
+  a title, a tagline, captions for the parts and what spins and glows.
+  Without Claude, the product's name picks the setting.
+- **Settings > Video**: "Make an assembly video after each build" (on) and
+  "Let Claude style each video" (on). **Make assembly video** in the Atech
+  and right-click menus makes one now. Progress shows in the chat, and the
+  finished video comes with Play and Show in Finder.
+- The video is H.264 MP4 (made with the system's own converter on macOS,
+  or ffmpeg where installed). Nothing about it changes the design.
 
 ### Real parts from NVIDIA SimReady
 

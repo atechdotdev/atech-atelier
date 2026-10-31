@@ -392,10 +392,12 @@ class TestR303ViewBar(Case):
         self.assertEqual(self.view.cam, "Perspective")
         bar.btn_persp.click()
         self.assertEqual(self.view.cam, "Orthographic")
-        bar.btn_wire.click()
-        self.assertEqual(self.ran[-1], ("Std_DrawStyle", 2))
-        bar.btn_wire.click()
-        self.assertEqual(self.ran[-1], ("Std_DrawStyle", 0))
+        # R723: per part (Atech hardware stays solid), not Std_DrawStyle
+        wires = []
+        with mock.patch.object(self.viewport, "set_wireframe", wires.append):
+            bar.btn_wire.click()
+            bar.btn_wire.click()
+        self.assertEqual(wires, [True, False])
 
     def test_camera_state_follows_the_active_view(self):
         bar = self.bar()

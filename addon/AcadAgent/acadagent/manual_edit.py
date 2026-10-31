@@ -22,6 +22,8 @@ from . import shape_edit as se
 
 _OPEN = {}
 NUDGE_STEPS = (0.5, 1.0, 5.0, 10.0)
+#: R812: how far a Turn button turns (degrees), 90 first
+TURN_STEPS = (90.0, 45.0, 22.5, 15.0)
 
 
 def _log(msg):
@@ -56,6 +58,15 @@ def _select(obj):
         FreeCADGui.Selection.addSelection(obj)
     except Exception:                                  # noqa: BLE001
         pass
+
+
+def _key(seq):
+    """A shortcut as this platform writes it (\u2318Z on macOS)."""
+    try:
+        from PySide6 import QtGui
+        return QtGui.QKeySequence(seq).toString(QtGui.QKeySequence.NativeText) or seq
+    except Exception:                                  # noqa: BLE001
+        return seq
 
 
 def _new_doc_if_needed():
@@ -172,16 +183,29 @@ def ShapeEditor(parent=None):
     lay.addWidget(turn_title)
     trow = QtWidgets.QHBoxLayout()
     d.turn_buttons = []
-    for text, axis, deg, tip in (("↺ 90°", "z", 90, "Turn left about Z"),
-                                 ("↻ 90°", "z", -90, "Turn right about Z"),
-                                 ("Tilt X", "x", 90, "Tilt 90° about X"),
-                                 ("Tilt Y", "y", 90, "Tilt 90° about Y")):
+    # R812: by the step chosen beside them, not only 90 degrees
+    d.turn_step = QtWidgets.QComboBox(d)
+    d.turn_step.setToolTip("How far each Turn button turns")
+    d.turn_step.setAccessibleName("Turn step")
+    for g in TURN_STEPS:
+        d.turn_step.addItem("%s°" % se.fmt_mm(g), g)
+
+    def turn_by(axis, sign):
+        g = float(d.turn_step.currentData() or 90.0)
+        act(lambda o: se.turn(o, axis, sign * g))
+
+    for text, axis, sign, tip in (("↺", "z", 1, "Turn left about Z"),
+                                  ("↻", "z", -1, "Turn right about Z"),
+                                  ("Tilt X", "x", 1, "Tilt about X"),
+                                  ("Tilt Y", "y", 1, "Tilt about Y")):
         b = QtWidgets.QPushButton(text, d)
         b.setToolTip(tip)
-        b.clicked.connect(lambda _=False, a=axis, g=deg: act(lambda o: se.turn(o, a, g)))
+        b.clicked.connect(lambda _=False, a=axis, sg=sign: turn_by(a, sg))
         trow.addWidget(b)
         d.turn_buttons.append(b)
+    trow.addWidget(d.turn_step)
     lay.addLayout(trow)
+    d.turn_by = turn_by
 
     hrow = QtWidgets.QHBoxLayout()
     d.btn_solid = QtWidgets.QPushButton("Solid", d)
@@ -206,6 +230,20 @@ def ShapeEditor(parent=None):
     for b in (d.btn_combine, d.btn_ungroup, d.btn_dup, d.btn_del, d.btn_dims):
         brow.addWidget(b)
     lay.addLayout(brow)
+    # R812: Drop (TinkerCAD's D) and Undo / Redo in the window itself: it
+    # is a window of its own, so the main window's Ctrl+Z never reached it
+    urow = QtWidgets.QHBoxLayout()
+    d.btn_drop = QtWidgets.QPushButton("Drop", d)
+    d.btn_drop.setToolTip("Drop the part onto what is under it, or the floor (D)")
+    d.btn_undo = QtWidgets.QPushButton("Undo", d)
+    d.btn_undo.setToolTip("Undo the last edit (%s)" % _key("Ctrl+Z"))
+    d.btn_redo = QtWidgets.QPushButton("Redo", d)
+    d.btn_redo.setToolTip("Redo (%s)" % _key("Ctrl+Shift+Z"))
+    urow.addWidget(d.btn_drop)
+    urow.addStretch(1)
+    urow.addWidget(d.btn_undo)
+    urow.addWidget(d.btn_redo)
+    lay.addLayout(urow)
     d.status = QtWidgets.QLabel("", d)
     d.status.setObjectName("ToolMuted")
     d.status.setWordWrap(True)
@@ -368,6 +406,32 @@ def ShapeEditor(parent=None):
     d.btn_dup.clicked.connect(lambda _=False: duplicate())
     d.btn_del.clicked.connect(lambda _=False: delete())
     d.btn_dims.clicked.connect(lambda _=False: dims())
+    d.btn_drop.clicked.connect(lambda _=False: act(se.drop))
+
+    def history(redo=False):
+        doc = _doc()
+        if doc is None:
+            return
+        try:
+            import FreeCADGui
+            FreeCADGui.runCommand("Std_Redo" if redo else "Std_Undo")
+        except Exception:                              # noqa: BLE001
+            (doc.redo if redo else doc.undo)()
+            doc.recompute()
+        QtCore.QTimer.singleShot(0, load)
+    d.history = history
+    d.btn_undo.clicked.connect(lambda _=False: history(False))
+    d.btn_redo.clicked.connect(lambda _=False: history(True))
+    from PySide6 import QtGui
+    for keys, redo in (("Ctrl+Z", False), ("Ctrl+Shift+Z", True), ("Ctrl+Y", True)):
+        sc = QtGui.QShortcut(QtGui.QKeySequence(keys), d)
+        sc.setContext(QtCore.Qt.WindowShortcut)
+        sc.activated.connect(lambda r=redo: history(r))
+    drop_key = QtGui.QShortcut(QtGui.QKeySequence("D"), d)
+    drop_key.setContext(QtCore.Qt.WindowShortcut)
+    drop_key.activated.connect(lambda: None if isinstance(
+        QtWidgets.QApplication.focusWidget(), (QtWidgets.QAbstractSpinBox,
+                                               QtWidgets.QLineEdit)) else act(se.drop))
 
     def load():
         """Show the selected part (the first one) and enable what it takes."""
@@ -407,6 +471,10 @@ def ShapeEditor(parent=None):
             d.btn_ungroup.setEnabled(k == "group")
             d.btn_combine.setEnabled(len(sel) >= 2)
             d.btn_dims.setVisible(k == "agent")
+            d.btn_drop.setEnabled(movable)
+            doc = _doc()
+            d.btn_undo.setEnabled(bool(doc is not None and doc.UndoCount))
+            d.btn_redo.setEnabled(bool(doc is not None and doc.RedoCount))
             hole = o is not None and se.is_hole(o)
             d.btn_hole.setChecked(hole)
             d.btn_solid.setChecked(o is not None and not hole)

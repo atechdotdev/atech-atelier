@@ -5128,6 +5128,47 @@ class AgentPanel(QtWidgets.QWidget):
         self._busy = False
         self._set_sending(False)
         self.set_backend_state("idle")
+        due, self._video_due = getattr(self, "_video_due", None), None
+        if due is not None and not self._stopped:
+            QtCore.QTimer.singleShot(800, functools.partial(self._video_after_build, due))
+
+    # assembly video (R730) ---------------------------------------------
+    def _videos(self):
+        if getattr(self, "_video_runner", None) is None:
+            from . import promo_video
+            self._video_runner = promo_video.Runner(self, ToolCard)
+        return self._video_runner
+
+    def _video_after_build(self, state):
+        """R730: the assembly video of the build that just landed, when
+        Settings has it on (the default)."""
+        try:
+            from . import promo_video
+            if not promo_video.enabled():
+                return
+            doc = self._state_doc(state)
+            if doc is None:
+                return
+            self._videos().start(doc, ws=state.ws, request=getattr(self, "_last_text", None),
+                                 key=state.key)
+        except Exception as exc:                       # noqa: BLE001
+            _log("assembly video: %r" % (exc,))
+
+    def make_video(self, doc=None):
+        """R730: an assembly video of `doc` (default: the active one) now,
+        whatever the setting (the Atech menu's Make assembly video)."""
+        import FreeCAD
+        doc = doc or FreeCAD.ActiveDocument
+        if doc is None:
+            return None
+        state = None
+        for st in getattr(self, "_docs", {}).values():
+            if self._state_doc(st) is doc:
+                state = st
+                break
+        return self._videos().start(doc, ws=getattr(state, "ws", None),
+                                    request=getattr(self, "_last_text", None),
+                                    key=getattr(state, "key", None) or doc.Name)
 
     # ------------------------------------------------- elapsed time (R101)
     @staticmethod
@@ -5680,6 +5721,10 @@ class AgentPanel(QtWidgets.QWidget):
             self.refresh_doc_pill()
             if not preview:
                 self._autosave_after_build(state)       # R363
+        if not preview:
+            # R730: a final build that landed cleanly gets its assembly
+            # video when the turn ends (a failed one cancels it).
+            self._video_due = state if (res.ok and status[1] == "ok") else None
         if not preview:
             # R98: what the script on disk measured, for a fix turn that
             # leaves it unchanged.

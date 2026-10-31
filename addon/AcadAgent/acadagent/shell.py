@@ -639,8 +639,22 @@ EXAMPLES = (
 )
 
 
+#: R820: Home's "Start simple" row when this installation ships no
+#: starter projects (a source tree): built from agent_kit/starters/ by
+#: open_example, as EXAMPLES.
+STARTERS = (
+    ("starter_board", "Just the board", "The Atech board in a tray, ready "
+     "for your modules.", "cpu"),
+    ("starter_case", "Board in a case", "The board in a screwed case, a "
+     "button and a light.", "cube"),
+    ("starter_wheels", "Two-wheel base", "Two motor-driven wheels under "
+     "the board.", "car"),
+)
+
 #: Home's card icon per default project (R456), by example key.
-EXAMPLE_ICONS = {"toy_car": "car", "desk_robot": "bot",
+EXAMPLE_ICONS = {"starter_board": "cpu", "starter_case": "cube",
+                 "starter_wheels": "car",
+                 "toy_car": "car", "desk_robot": "bot",
                  "smart_speaker": "speaker", "bedside_lamp": "sun",
                  "handheld_console": "keyboard", "alarm_clock": "bell",
                  "desk_fan": "rotate", "weather_station": "monitor",
@@ -662,23 +676,31 @@ EXAMPLE_ICONS = {"toy_car": "car", "desk_robot": "bot",
                  "balance_bot": "bot"}
 
 
-def example_entries():
+def example_entries(kind="product"):
     """Home's "Start from an example" row as [(key, title, subtitle, icon,
     shipped)]: the default projects this installation ships (R456,
     default_projects.entries(); a card opens a fresh copy with
     open_default), else - no default projects here, e.g. a source tree -
-    EXAMPLES, built from agent_kit/examples/ by open_example."""
+    EXAMPLES, built from agent_kit/examples/ by open_example.
+    kind="starter": the "Start simple" row (R820), from the shipped
+    starters, else STARTERS."""
     try:
         from . import default_projects
-        rows = default_projects.entries()
+        rows = default_projects.entries(kind=kind)
     except Exception as exc:                           # noqa: BLE001
         _log("default projects: %r" % (exc,))
         rows = []
     if rows:
         return [(k or t, t, sub or "A ready-made Atech project.",
                  EXAMPLE_ICONS.get(k, "cube"), True) for t, k, sub in rows]
-    return [(k, t, sub, ico, False) for k, t, sub, ico in EXAMPLES
+    fallback = STARTERS if kind == "starter" else EXAMPLES
+    return [(k, t, sub, ico, False) for k, t, sub, ico in fallback
             if example_path(k) is not None]
+
+
+def starter_entries():
+    """R820: Home's "Start simple" row, as example_entries."""
+    return example_entries("starter")
 
 
 def open_default(title):
@@ -850,9 +872,14 @@ def edited_text(mtime, now=None):
 
 
 def example_path(key):
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                     "agent_kit", "examples", key + ".py")
-    return p if os.path.isfile(p) else None
+    """agent_kit/examples/<key>.py, or a starter's agent_kit/starters/<key>.py
+    (R820), or None."""
+    kit = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agent_kit")
+    for sub in ("examples", "starters"):
+        p = os.path.join(kit, sub, key + ".py")
+        if os.path.isfile(p):
+            return p
+    return None
 
 
 def droppable(paths):
@@ -1203,6 +1230,18 @@ class HomeView(QtWidgets.QWidget):
         self.note.setWordWrap(True)
         v.addWidget(self.note)
         v.addSpacing(22)
+        # R820: small, simple starting points between an empty project and
+        # the finished examples
+        self.sec_starters = QtWidgets.QLabel("START SIMPLE")
+        self.sec_starters.setObjectName("HomeSection")
+        v.addWidget(self.sec_starters)
+        v.addSpacing(10)
+        self.st_grid = QtWidgets.QGridLayout()
+        self.st_grid.setSpacing(self.GAP)
+        self.st_grid.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        v.addLayout(self.st_grid)
+        self.st_space = QtWidgets.QSpacerItem(0, 22)
+        v.addItem(self.st_space)
         self.sec_examples = QtWidgets.QLabel("START FROM AN EXAMPLE")
         self.sec_examples.setObjectName("HomeSection")
         v.addWidget(self.sec_examples)
@@ -1225,21 +1264,13 @@ class HomeView(QtWidgets.QWidget):
         self.new_card = ClickCard("file-plus", "New project",
                                   "An empty design to build into.")
         self.new_card.clicked.connect(lambda: _new_project())
-        self.example_cards = []
-        for key, title, sub, ico, shipped in example_entries():
-            card = ClickCard(ico, title, sub)
-            card.setAccessibleName("Start from the %s example" % title.lower())
-            card.example_key = key
-            card.default_title = title if shipped else None
-            if shipped:
-                card.clicked.connect(lambda _=False, t=title: open_default(t))
-            else:
-                card.clicked.connect(lambda _=False, k=key: open_example(k))
-            self.example_cards.append(card)
+        self.example_cards = self._entry_cards(example_entries(), "example")
+        self.starter_cards = self._entry_cards(starter_entries(), "starter")
         self.crane_card = ClickCard("cube", "Sample crane",
                                     "Open a measured crane assembly.")
         self.crane_card.clicked.connect(_open_reference)
-        self.cards = [self.new_card] + self.example_cards + [self.crane_card]
+        self.cards = ([self.new_card] + self.example_cards + [self.crane_card]
+                      + self.starter_cards)
         self.project_cards = []
         self.rows = []
         self.source = None
@@ -1248,6 +1279,23 @@ class HomeView(QtWidgets.QWidget):
         self._filter = ""
         self.refresh_cards()
         self.refresh()
+
+    @staticmethod
+    def _entry_cards(rows, what):
+        """A ClickCard per example_entries row: a shipped one opens a fresh
+        copy (open_default), else the example is built (open_example)."""
+        out = []
+        for key, title, sub, ico, shipped in rows:
+            card = ClickCard(ico, title, sub)
+            card.setAccessibleName("Start from the %s %s" % (title.lower(), what))
+            card.example_key = key
+            card.default_title = title if shipped else None
+            if shipped:
+                card.clicked.connect(lambda _=False, t=title: open_default(t))
+            else:
+                card.clicked.connect(lambda _=False, k=key: open_example(k))
+            out.append(card)
+        return out
 
     # -- compatibility with the start-card layout (EmptyView, R34)
     def shown_cards(self):
@@ -1284,6 +1332,7 @@ class HomeView(QtWidgets.QWidget):
         for c in self.cards + self.project_cards:
             self.grid.removeWidget(c)
             self.ex_grid.removeWidget(c)
+            self.st_grid.removeWidget(c)
         shown = [self.new_card] + [c for c in self.project_cards
                                    if self._matches(c)]
         for i, c in enumerate(shown):
@@ -1299,6 +1348,11 @@ class HomeView(QtWidgets.QWidget):
         if not self._has_crane:
             self.crane_card.setVisible(False)
         self.sec_examples.setVisible(bool(ex))
+        for i, c in enumerate(self.starter_cards):
+            self.st_grid.addWidget(c, i // cols, i % cols)
+            c.setVisible(True)
+        self.sec_starters.setVisible(bool(self.starter_cards))
+        self.st_space.changeSize(0, 22 if self.starter_cards else 0)
         for c in self.cards:
             c.set_compact(cols < 3)
         self._sync_note(len(shown) - 1)
@@ -1497,20 +1551,21 @@ class OrbitHint(QtWidgets.QFrame):
 #: R303: view-bar slots for tools other workstreams provide. Their buttons
 #: sit between the view toggles and Spin, in this order; a key not listed
 #: here goes after them. See register_view_tool().
-TOOL_ORDER = ("measure", "section", "show", "explode", "dims", "shape", "colour",
-              "export", "share")
+TOOL_ORDER = ("measure", "section", "show", "explode", "simulate", "dims", "shape",
+              "colour", "export", "share", "video")
 _TOOLS = {}
 #: R380: the slot shows two groups, inspect | output, with a thin line
 #: between them. A key in neither group joins the last one.
 #: R701: Show and hide and Exploded view are ways of looking, so they sit
 #: with Measure and Section; Dimensions edits, as Colour does.
-TOOL_GROUPS = (("measure", "section", "show", "explode"),
-               ("dims", "colour", "export", "share"))
+TOOL_GROUPS = (("measure", "section", "show", "explode", "simulate"),
+               ("dims", "colour", "export", "share", "video"))
 #: R380: the view-bar level (ViewBar.set_level) from which a tool's button
 #: leaves the bar for the "More tools" menu; a key not listed goes at 2.
 #: Measure and Section stay (they also have M and Shift+S).
 TOOL_DROP_LEVEL = {"share": 1, "dims": 1, "explode": 2, "colour": 2,
-                   "export": 2, "measure": 99, "section": 99, "show": 99}
+                   "export": 2, "measure": 99, "section": 99, "show": 99,
+                   "simulate": 2, "video": 1}
 #: Lucide "ellipsis", for the More tools button (as navbar adds "save").
 style.PATHS.setdefault("more", '<circle cx="12" cy="12" r="1"/>'
                        '<circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>')
@@ -1611,6 +1666,9 @@ BUILTIN_TOOLS = (("measure", "Measure"), ("section", "Section view"),
 #: R700/R701: Show and hide (visibility.py) and Dimensions (dimensions.py).
 EDIT_TOOLS = (("show", "Show and hide"), ("dims", "Dimensions"),
               ("shape", "Edit shapes"))
+#: R810/R811: Simulate (simulate.py) and Make assembly video (promo_video,
+#: through export_tools.video_button) on the bar, not only in a menu.
+MAKE_TOOLS = (("simulate", "Simulate"), ("video", "Make assembly video"))
 
 
 def _measure_button(bar, key):
@@ -1656,7 +1714,19 @@ def register_builtin_tools():
     for key, label in EDIT_TOOLS:
         register_view_tool(key, lambda bar, k=key: _edit_button(bar, k),
                            run=lambda k=key: _press(k), label=label)
-    return [k for k, _l in BUILTIN_TOOLS + EDIT_TOOLS]
+    for key, label in MAKE_TOOLS:
+        register_view_tool(key, lambda bar, k=key: _make_button(bar, k),
+                           run=lambda k=key: _press(k), label=label,
+                           restyle=_w4_restyle if key == "video" else None)
+    return [k for k, _l in BUILTIN_TOOLS + EDIT_TOOLS + MAKE_TOOLS]
+
+
+def _make_button(bar, key):
+    if key == "simulate":
+        from . import simulate
+        return simulate.view_bar_button(bar)
+    from . import export_tools
+    return export_tools.video_button(bar)
 
 
 def _edit_button(bar, key):
@@ -1737,7 +1807,8 @@ class ViewBar(QtWidgets.QFrame):
         self.btn_persp.setCheckable(True)
         self.btn_persp.toggled.connect(self._on_persp)
         lay.addWidget(self.btn_persp)
-        self.btn_wire = self._btn("", "wire", "Wireframe (off: shaded)", None,
+        self.btn_wire = self._btn("", "wire", "Wireframe: see inside; Atech hardware "
+                                  "stays solid (off: shaded)", None,
                                   name="Wireframe")
         self.btn_wire.setCheckable(True)
         self.btn_wire.toggled.connect(self._on_wire)
@@ -2284,7 +2355,10 @@ class Sidebar(QtWidgets.QWidget):
         self.brand.setCursor(QtCore.Qt.PointingHandCursor)
         self.brand.setToolTip("Home: all your projects (Ctrl+0)")
         self.brand.setAccessibleName("Home")
-        self._home_click = _ClickFilter(toggle_home, self.brand)
+        # R810: always Home, as a website's logo; it no longer toggles (a
+        # second click took people back into the project they had left).
+        # "Back to project" and Esc are the way back.
+        self._home_click = _ClickFilter(go_home, self.brand)
         self.brand.installEventFilter(self._home_click)
         prow = QtWidgets.QHBoxLayout()
         prow.setContentsMargins(0, 0, 0, 0)
@@ -2986,7 +3060,7 @@ def open_example(key):
     example and the agent resumes from it. Returns the PendingBuild, the
     panel's result, or None."""
     _leave_home()
-    title = next((t for k, t, _s, _i in EXAMPLES if k == key), key)
+    title = next((t for k, t, _s, _i in EXAMPLES + STARTERS if k == key), key)
     path = example_path(key)
     if path is None:
         _notify("Example not available",
@@ -3194,8 +3268,8 @@ def _open_shape_editor():
 # ------------------------------------------------------- Home mode (R801)
 #: Home (the projects page) used to show only when no document was open: to
 #: see your other projects you had to close the one you were in. Home mode
-#: shows it over the 3D view with projects still open. The sidebar's logo
-#: and Ctrl+0 toggle it; opening any project from it, or Esc, leaves it.
+#: shows it over the 3D view with projects still open. Ctrl+0 toggles it,
+#: the logo always opens it (R810); opening any project from it, or Esc, leaves it.
 _HOME = {"on": False}
 
 
@@ -3225,6 +3299,17 @@ def show_home(on=True):
 
 def toggle_home():
     return show_home(not home_open())
+
+
+def go_home():
+    """R810: what the logo does: Home (all projects), from anywhere. Leaves
+    full-screen 3D first, so the page is not drawn under a hidden sidebar."""
+    try:
+        if focus_view():
+            set_focus_view(False)
+    except Exception as exc:                           # noqa: BLE001
+        _log("leave full screen for Home: %r" % (exc,))
+    return show_home(True)
 
 
 def _leave_home():
@@ -3558,7 +3643,7 @@ EXPORT_COMMANDS = (
     ("Atech_ExportForPrint", "Export for print\u2026", "Save STL, 3MF or "
      "STEP files for a 3D printer", "export"),
     ("Atech_ExplodedView", "Exploded view (E)", "Pull the parts apart to "
-     "see how they fit, or put them back; how far: Show and hide", "explode"),
+     "see how they fit and step through them, or put them back", "explode"),
     ("Atech_BillOfMaterials", "Bill of materials\u2026", "Printed parts and "
      "Atech hardware, with a CSV export", "bom"),
     ("Atech_ShareImage", "Save a share image", "A 1920 x 1080 picture in "
@@ -3983,6 +4068,12 @@ def _build_topbar(mw):
     word.setObjectName("Wordmark")
     ll.addWidget(mark)
     ll.addWidget(word)
+    # R810: the top bar's logo goes Home too (Linux draws it here)
+    for w in (mark, word):
+        w.setCursor(QtCore.Qt.PointingHandCursor)
+        w.setToolTip("Home: all your projects (Ctrl+0)")
+        w._home_click = _ClickFilter(go_home, w)
+        w.installEventFilter(w._home_click)
     powered = FreeCadBadge(16)
     ll.addWidget(powered)
     div = QtWidgets.QFrame()

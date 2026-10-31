@@ -351,6 +351,41 @@ def nudge(obj, dx=0.0, dy=0.0, dz=0.0):
     return move_to(obj, x + dx, y + dy, z + dz)
 
 
+def drop_height(obj, others):
+    """R812: where `obj` lands when dropped, as TinkerCAD's D: the top of
+    the highest of `others` under its footprint that is not above its
+    bottom, else the floor (z = 0) when it is above the floor; its own
+    bottom when nothing is below it."""
+    bb = _world_bbox(obj)
+    land = 0.0 if bb.ZMin > 1e-6 else None
+    for o in others:
+        if o is obj:
+            continue
+        try:
+            ob = _world_bbox(o)
+        except Exception:                              # noqa: BLE001
+            continue
+        if ob.XMax <= bb.XMin or ob.XMin >= bb.XMax or \
+                ob.YMax <= bb.YMin or ob.YMin >= bb.YMax:
+            continue                                   # not under it
+        if ob.ZMax <= bb.ZMin + 1e-6 and (land is None or ob.ZMax > land):
+            land = ob.ZMax
+    return bb.ZMin if land is None else land
+
+
+def drop(obj, others=None):
+    """R812: drop the part onto what is under it, or onto the floor."""
+    if not can_move(obj):
+        raise EditRefused(why_not(obj))
+    _assemble(obj.Document)
+    if others is None:
+        others = [o for o in obj.Document.Objects
+                  if o is not obj and getattr(o, "Visibility", True)
+                  and kind(o) is not None and not is_hole(o)]
+    x, y, _z = position(obj)
+    return move_to(obj, x, y, drop_height(obj, others))
+
+
 def turn(obj, axis, degrees):
     """Turn the part about its own centre. axis: "x", "y" or "z"."""
     import FreeCAD

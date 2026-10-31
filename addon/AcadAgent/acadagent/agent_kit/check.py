@@ -55,6 +55,11 @@ holds: recorded (.intent_first.json, read-only) at the turn's first check,
 BEFORE model.py runs, frozen after (S37). A model.py that deletes or
 rewrites the record, or the turn file, fails too (they are put back - R135).
 
+intent.json "imported": ["Frame", "Leg_L1"] names parts brought in unchanged
+from another design (R830): overlaps, fastening, the desk and what they
+cover still count; walls, holes, margins and the other case checks do not
+judge them.
+
 intent.json "fitted_after": ["End_Cap_L", "End_Cap_R"] names parts fitted
 AFTER the modules (end caps, a lid): the Atech slide-path check ignores
 them, so the case can be closed; seated and interference still test them in
@@ -657,6 +662,12 @@ def _results(created):
     return out
 
 
+#: R830: intent.json "imported" - Labels of parts brought in unchanged from
+#: someone else's design (a downloaded STEP: Sesame's frame and legs). Main
+#: fills it from the workspace's intent.json.
+_IMPORTED = set()
+
+
 def _designed(o):
     """R222: one of the agent's own bodies, as the case-shaped checks see
     them (intent sizes and holes, margins, walls, containers, one-wall
@@ -666,6 +677,29 @@ def _designed(o):
     whatever they cover."""
     return not getattr(o, "AtechRole", None) and \
         not getattr(o, "AtechCableModule", None)
+
+
+def _judged(o):
+    """R830: a designed part whose printability ./check judges (walls,
+    holes through walls, containers): not one intent.json lists as
+    "imported" - it is printed as its author made it - and not a screw
+    (atech_geom.SCREW_RE: bought, never printed; a pan head's cross recess
+    is no wall). Everything else (overlaps, fastening, threads, the desk
+    and the layout) still counts them."""
+    import atech_geom
+    label = getattr(o, "Label", None) or ""
+    return _designed(o) and label not in _IMPORTED \
+        and not re.match(atech_geom.SCREW_RE, label, re.I)
+
+
+def _read_imported(ws):
+    """R830: intent.json "imported" -> _IMPORTED (a list of Labels)."""
+    import atech_geom
+    _IMPORTED.clear()
+    intent, _bad = atech_geom.read_intent(ws)
+    got = (intent or {}).get("imported") if isinstance(intent, dict) else None
+    if isinstance(got, list):
+        _IMPORTED.update(str(x) for x in got if isinstance(x, str))
 
 
 def _tight(shape):
@@ -991,6 +1025,10 @@ def main():
     ws = os.path.dirname(script)
     if ws not in sys.path:
         sys.path.insert(0, ws)
+    try:
+        _read_imported(ws)                              # R830
+    except Exception:                                   # noqa: BLE001
+        _IMPORTED.clear()
     clock = turn_clock()                                # R270: the first line
     if clock:
         for line in clock:
@@ -1230,6 +1268,7 @@ def main():
     _motion(res, ends, ws)
     _mates(res, ends, ws)
     _joints(res, ends, ws)
+    _gears(res, doc, ends)                              # R740
     _channels(res, ends, ws)
     _fasteners(res, ends, ws)                           # R270
     _retention(res, ends, items)                        # R270
@@ -1387,7 +1426,7 @@ def _wall_holes(res, ends, ws):
     intent, _bad = atech_geom.read_intent(ws) if quality else (None, [])
     rows = []
     for o in ends:
-        if not _designed(o):
+        if not _judged(o):
             continue
         try:
             found = atech_geom.wall_crossings(o.Shape, request)
@@ -1803,7 +1842,7 @@ def _containers(res, ends, items, ws):
     """R169: a part named as a container (pot, cup, planter...) must be open
     from above (atech_geom.containers)."""
     import atech_geom
-    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _judged(o)]
     if not parts:
         return
     intent, _bad = atech_geom.read_intent(ws)
@@ -1954,6 +1993,33 @@ def _joints(res, ends, ws):
     res.setdefault("notes", []).extend(notes)
 
 
+def _gears(res, doc, ends):
+    """R740: every gear, found by its teeth, must really mesh
+    (atech_gears.gear_probe): a pair at its centre distance turning clear,
+    a rack or toothed belt at its pitch, no teeth against a smooth
+    surface, nothing in an empty bore. The Atech modules (meshes: a
+    motor's shaft) count as shafts. "gear_problems" goes with the motion
+    verdict Studio's build takes."""
+    import atech_gears
+    parts = [{"label": o.Label, "shape": o.Shape, "atech": bool(getattr(o, "AtechRole", None))}
+             for o in ends]
+    parts += [{"label": o.Label, "shape": None, "mesh": o.Mesh, "atech": True}
+              for o in doc.Objects if getattr(o, "AtechRole", None) and hasattr(o, "Mesh")]
+    t = time.time()
+    try:
+        rows, bad, notes = atech_gears.gear_probe(parts)
+    except Exception as exc:                            # noqa: BLE001
+        res["warnings"].append("gear check could not run: %s" % exc)
+        return
+    if rows:
+        res["gears"] = rows
+    res["gears_seconds"] = round(time.time() - t, 3)
+    res["gear_problems"] = list(bad)
+    res.setdefault("motion_problems", []).extend(bad)
+    res.setdefault("problems", []).extend(bad)
+    res.setdefault("notes", []).extend(n for n in notes if not n.startswith("gears: "))
+
+
 def _channels(res, ends, ws):
     """S62: each round channel's wrap angle (atech_geom.channel_wraps, summed
     as the benchmark sums it). A CHANNEL line each; a WARNING for one under
@@ -1965,7 +2031,7 @@ def _channels(res, ends, ws):
     labels = [o.Label for o in ends if not getattr(o, "AtechRole", None)]
     holding = atech_geom.holds_something(request, labels)
     for o in ends:
-        if getattr(o, "AtechRole", None):
+        if getattr(o, "AtechRole", None) or o.Label in _IMPORTED:     # R830
             continue
         try:
             found = atech_geom.channel_wraps(o.Shape)
@@ -2044,7 +2110,7 @@ def _walls(res, ends, ws=None):
     intent.json "wall_mm" - a NOTE when they differ, so the reply quotes
     the measured number."""
     import atech_geom
-    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _designed(o)]
+    parts = [{"label": o.Label, "shape": o.Shape} for o in ends if _judged(o)]
     if not parts:
         return
     try:
@@ -2078,7 +2144,7 @@ def _walls(res, ends, ws=None):
         # R270: a confirmed spot under WALL_PROBLEM_MM fails
         try:
             bad, thin = atech_geom.thin_wall_problems(
-                w, {o.Label: o.Shape for o in ends if _designed(o)})
+                w, {o.Label: o.Shape for o in ends if _judged(o)})
         except Exception as exc:                        # noqa: BLE001
             res["warnings"].append("exact wall re-measure could not run: %s" % exc)
             bad, thin = [], []
@@ -2318,6 +2384,11 @@ def atech_geom_mates_text(row):
     return atech_geom.mates_text(row)
 
 
+def atech_gears_text(row):
+    import atech_gears
+    return atech_gears.probe_text(row)
+
+
 def atech_geom_wall_probe():
     import atech_geom
     return atech_geom.WALL_PROBE_MM
@@ -2411,6 +2482,8 @@ def _say_summary(res):
             _say("MOTION " + atech_geom_motion_text(m))
         elif m.get("verdict"):
             _say("MOTION %s: %s (see below)" % (m["part"], m["verdict"]))
+    for g in res.get("gears") or []:
+        _say("GEAR " + atech_gears_text(g))
     for r in res.get("mates") or []:
         if r.get("parts") and all(x.get("verdict") == "PASS" for x in r["parts"]):
             _say("MATES " + atech_geom_mates_text(r))

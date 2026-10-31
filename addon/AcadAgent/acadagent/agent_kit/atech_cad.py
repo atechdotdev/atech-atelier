@@ -1694,6 +1694,61 @@ def spur_gear(m, z, thickness, bore=None, backlash=0.0, shift=0.0,
     return gear
 
 
+def mesh_phase(gear, centre, axis, toward, tooth=False):
+    """R740: a copy of a placed gear turned about its own axis so a tooth
+    SPACE points from `centre` toward `toward` (a direction), where the
+    mating gear's tooth, a rack tooth or a toothed belt's tooth goes. With
+    tooth=True a TOOTH points there instead. ./check turns every gear pair
+    through a pitch and fails teeth that bind (atech_gears), so phase each
+    gear of a pair: the driver's tooth toward the follower, the follower's
+    space toward the driver.
+
+        a = cad.mesh_phase(a, (0, 0, 0), "+Z", (1, 0, 0), tooth=True)
+        b = cad.mesh_phase(b, (22.5, 0, 0), "+Z", (-1, 0, 0))"""
+    c, d = V(tuple(centre)), _dir(axis, "axis")
+    t = V(tuple(toward))
+    t = t - d * t.dot(d)
+    if t.Length < 1e-9:
+        raise CadError("mesh_phase: toward must not run along the axis")
+    u = t.normalize()
+    w = d.cross(u)
+    pts = []
+    for v in gear.Vertexes:
+        q = v.Point - c
+        pts.append((math.hypot(q.dot(u), q.dot(w)), math.atan2(q.dot(w), q.dot(u))))
+    tip = max(r for r, _a in pts)
+    angs = sorted(a for r, a in pts if r > tip - 0.002 * tip - 1e-3)
+    if not angs:
+        raise CadError("mesh_phase: no tooth tips found round that axis")
+    # tip vertices in runs, one run a tooth: its centre is the tooth's
+    gaps = [b - a for a, b in zip(angs, angs[1:])] + [angs[0] + 2 * math.pi - angs[-1]]
+    split = 0.5 * max(gaps)                     # across a tooth space, not a tip land
+    runs, cur = [], [angs[0]]
+    for a in angs[1:]:
+        if a - cur[-1] < split:
+            cur.append(a)
+        else:
+            runs.append(cur)
+            cur = [a]
+    runs.append(cur)
+    if len(runs) > 1 and angs[0] + 2 * math.pi - angs[-1] < split:
+        runs[0] = [a + 2 * math.pi for a in runs[-1]] + runs[0]
+        runs.pop()
+    z_guess = len(runs)
+    if z_guess < 6:
+        raise CadError("mesh_phase: found %d teeth round that axis - is it the gear's own "
+                       "axis and centre?" % z_guess)
+    pitch = 2 * math.pi / z_guess
+    centres = [sum(r) / len(r) for r in runs]
+    target = 0.0 if tooth else pitch / 2.0
+    # the turn that brings the nearest tooth (or space) onto `toward`
+    turn = min((-(a + target - 2 * math.pi * k) for a in centres for k in (-1, 0, 1, 2)),
+               key=abs)
+    out = gear.copy()
+    out.rotate(c, d, math.degrees(turn))
+    return out
+
+
 # ---------------------------------------------------------------- placing
 def place_on(shape, base, gap=0.0, direction="+Z"):
     """A copy of `shape` moved along `direction` so its lowest point (in that

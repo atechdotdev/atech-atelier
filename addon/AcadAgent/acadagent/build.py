@@ -902,7 +902,13 @@ RULES
   cad.cut(body, tools) - one boolean, and disjoint tools are fine there.
   Never fuse_one cutters; never cut once per loop step.
 - Gears: cad.spur_gear(m, z, thickness, bore=...) - real involute teeth
-  from FreeCAD's bundled fcgear generator (examples/gear.py).
+  from FreeCAD's bundled fcgear generator (examples/gear.py). ./check
+  finds every gear by its teeth and fails one that does not really mesh:
+  a pair needs one module, centre distance m*(z1 + z2)/2 (+ up to 0.15*m;
+  atech_gears.centre_distance with shift), and phase - cad.mesh_phase
+  turns a tooth (tooth=True) or a space toward the other gear; a belt,
+  track or rack a gear drives needs teeth at its pitch pi*m, never a
+  smooth surface; a bore needs a shaft through it (examples/rc_tank.py).
 {no_assert}{on_error}{no_placeholder}{rename}
 - Alternatively you may export a .step or .brep file into {ws}; it is
   imported the same way. Prefer the script: it is editable and re-runnable.
@@ -4304,6 +4310,7 @@ class _Build(object):
         # (as _child_motion drops it in the sandboxed mode)
         r.motion_problems = [p for p in motion_check(ends, self.ws, notes=r.notes)
                              if p not in r.intent_problems]
+        r.motion_problems += gear_check(doc, ends, notes=r.notes)
         r.notes.append("checks %.3fs" % (time.time() - t))
         return r
 
@@ -4910,6 +4917,31 @@ def motion_check(ends, workspace, notes=None):
     return [str(p) for p in got or []]
 
 
+def gear_check(doc, ends, notes=None):
+    """R740, in-process: the kit's gear check (atech_gears.gear_probe, the
+    one ./check runs) on this build's parts, the Atech modules' meshes as
+    shafts. Problem strings, judged with the motion verdict. Never raises."""
+    try:
+        _kit_on_path()
+        import atech_gears
+    except ImportError:
+        return []
+    try:
+        parts = [{"label": o.Label, "shape": o.Shape,
+                  "atech": bool(getattr(o, "AtechRole", None))}
+                 for o in ends if getattr(o, "Shape", None) is not None]
+        parts += [{"label": o.Label, "shape": None, "mesh": o.Mesh, "atech": True}
+                  for o in doc.Objects if getattr(o, "AtechRole", None) and hasattr(o, "Mesh")]
+        _rows, bad, kit_notes = atech_gears.gear_probe(parts)
+    except Exception as exc:                           # noqa: BLE001
+        if notes is not None:
+            notes.append("gear check could not run: %s" % exc)
+        return []
+    if notes is not None:
+        notes.extend(str(n) for n in kit_notes or [])
+    return [str(p) for p in bad or []]
+
+
 def _motion_value(data):
     """intent.json bytes -> its "motion" value as canonical JSON text (""
     when absent or unreadable) - what rejudge_motion compares."""
@@ -4934,9 +4966,11 @@ def rejudge_motion(result, ends, workspace, old, new):
         return False
     t = time.time()
     seen = set(getattr(result, "intent_problems", None) or ())
+    gears = [p for p in getattr(result, "motion_problems", None) or []
+             if str(p).startswith("gear:")]              # R740: intent.json does not move them
     result.motion_problems = [p for p in motion_check(ends, workspace,
                                                       notes=result.notes)
-                              if p not in seen]
+                              if p not in seen] + gears
     result.notes.append("intent.json motion changed after the build: swept "
                         "again (%.2fs)" % (time.time() - t))
     return True

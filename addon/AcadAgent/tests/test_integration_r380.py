@@ -91,8 +91,9 @@ class TestR380ViewBarTools(Case):
     # R700/R701 added Show and hide and Dimensions, and moved Exploded
     # view in with the ways of looking.
     # R800: Edit shapes (manual_edit.py) sits after Dimensions.
-    KEYS = ["measure", "section", "show", "explode", "dims", "shape", "colour",
-            "export", "share"]
+    # R810/R811: Simulate after Exploded view, Make assembly video last.
+    KEYS = ["measure", "section", "show", "explode", "simulate", "dims", "shape",
+            "colour", "export", "share", "video"]
 
     def test_six_tools_in_order_with_names_and_icons(self):
         bar = self.bar()
@@ -100,9 +101,10 @@ class TestR380ViewBarTools(Case):
         self.assertEqual(keys, self.KEYS)
         names = [w.accessibleName() for w in bar.tools()]
         self.assertEqual(names, ["Measure", "Section view", "Show and hide",
-                                 "Exploded view", "Dimensions", "Edit shapes",
-                                 "Colour",
-                                 "Export for print", "Save a share image"])
+                                 "Exploded view", "Simulate", "Dimensions",
+                                 "Edit shapes", "Colour",
+                                 "Export for print", "Save a share image",
+                                 "Make assembly video"])
         for w in bar.tools():
             self.assertEqual(w.objectName(), "VBtn")
             self.assertTrue(w.toolTip())
@@ -117,7 +119,7 @@ class TestR380ViewBarTools(Case):
         order = [lay.itemAt(i).widget() for i in range(lay.count())]
         i_sep = order.index(bar._group_sep)
         self.assertEqual([w.property("atechTool") for w in order[:i_sep]],
-                         ["measure", "section", "show", "explode"])
+                         ["measure", "section", "show", "explode", "simulate"])
 
     def levels(self, bar):
         out = {}
@@ -135,9 +137,9 @@ class TestR380ViewBarTools(Case):
         lv = self.levels(bar)
         widths = [lv[i][0] for i in sorted(lv)]
         return (lv[0][1] == [] and not lv[0][2]
-                and lv[1][1] == ["dims", "share"] and lv[1][2]
-                and lv[2][1] == ["explode", "dims", "shape", "colour", "export",
-                                 "share"]
+                and lv[1][1] == ["dims", "share", "video"] and lv[1][2]
+                and lv[2][1] == ["explode", "simulate", "dims", "shape", "colour",
+                                 "export", "share", "video"]
                 and all(a > b for a, b in zip(widths, widths[1:])))
 
     def test_narrow_bar_moves_tools_into_more_tools(self):
@@ -168,7 +170,7 @@ class TestR380ViewBarTools(Case):
         bar = self.bar()
         bar.set_level(1)
         self.assertEqual(bar._fill_more_tools(),
-                         ["Dimensions", "Save a share image"])
+                         ["Dimensions", "Save a share image", "Make assembly video"])
         acts = {a.text(): a for a in bar.more_menu.actions()}
         acts["Save a share image"].trigger()
         self.assertEqual(hits, [1])

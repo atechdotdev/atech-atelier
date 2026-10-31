@@ -94,8 +94,22 @@ CURATED = (
     ('motion_light', 'Motion night light'),
     ('arm_dock', 'Robot arm dock'),
     ('balance_bot', 'Balance bot'),
+    ('sesame_atech', 'Sesame walker'),
 )
-TITLES = dict(CURATED)
+#: R820: the starter projects - small, simple starting points (Home's
+#: "Start simple" row), built and checked like the products above but never
+#: copied into the user's projects folder; manifest "kind": "starter". A
+#: starter needs the tagged board but no module (the first one shows the
+#: board alone). Their scripts live in agent_kit/starters/ (beside
+#: examples/), NOT in examples/: the agent's workspace gets examples/ to
+#: fork products from, and a plain box round the board is not one.
+STARTERS = (
+    ("starter_board", "Just the board"),
+    ("starter_case", "Board in a case"),
+    ("starter_wheels", "Two-wheel base"),
+)
+TITLES = dict(CURATED + STARTERS)
+STARTER_KEYS = frozenset(k for k, _t in STARTERS)
 
 #: What each product is (one sentence) and two things to ask next.
 BLURBS = {
@@ -171,6 +185,22 @@ BLURBS = {
         ['Make the moon bigger and the pebble rounder', 'Add a speaker grille for a soft chime']),
     'arm_dock': ('A heavy desk dock for an SO-101 robot arm: a sloped control deck with a joint-angle screen, REC / PLAY keys and a jog dial, and a raised podium with a brushed bolt-on arm plate, its servo cable leaving through a rubber grommet.',
         ['Make the arm podium longer', 'Make the podium taller']),
+    'sesame_atech': ('Sesame, the open-source walking robot, refitted for Atech: its own frame, legs and eight servos unchanged, and a new deck and lid that carry the Atech board over the legs, with the screen as its face, an IMU for heading and USB-C at the back.',
+        ['Make the lid taller with a carry handle', 'Give the face a smoked visor and a bezel']),
+    "starter_board": ("The Atech board lying flat in a printed tray, nothing "
+                      "on it yet: the place to start your own design.",
+                      ["Add a button and a light", "Put it in a case with a "
+                       "lid"]),
+    "starter_case": ("The Atech board lying flat in a simple two-part "
+                   "case, a base and a rounded cover held by four screws, "
+                   "with a button and a light under openings in the top.",
+                   ["Add a speaker beside the light", "Make the case "
+                    "taller with rounder corners"]),
+    "starter_wheels": ("A simple rolling base: the Atech board flat on a "
+                       "printed deck, two DC motors driving two wheels and "
+                       "a skid at the back.",
+                       ["Add a distance sensor at the front", "Make the "
+                        "wheels bigger"]),
     'balance_bot': ('A two-wheeled self-balancing robot: a tall white body between big block-tread wheels, the orientation sensor at axle height on its centre line, a screen face with a glowing status eye, a START key, a carry handle and a parking foot so it rests upright.',
         ['Make the wheels bigger', 'Give the head a wider face window']),
 }
@@ -201,6 +231,10 @@ SUMMARIES = {
     'motion_light': 'A wall pebble night light with a frosted moon and PIR eye.',
     'arm_dock': 'A robot arm dock with a control deck and arm plate.',
     'balance_bot': 'A balance bot with a screen face on two big wheels.',
+    'sesame_atech': 'The Sesame walking robot with an Atech board and screen.',
+    "starter_board": "The Atech board in a tray, ready for your modules.",
+    "starter_case": "The board in a screwed case, a button and a light.",
+    "starter_wheels": "Two motor-driven wheels under the board.",
 }
 
 SAB = os.environ.get("ATECH_DEFAULTS_SABOTAGE", "")
@@ -234,6 +268,11 @@ def addon_of(examples_dir):
     if env:
         return os.path.abspath(env)
     return os.path.normpath(os.path.join(examples_dir, "..", "..", ".."))
+
+
+def starters_of(examples_dir):
+    """<kit>/examples -> <kit>/starters (R820)."""
+    return os.path.join(os.path.dirname(os.path.normpath(examples_dir)), "starters")
 
 
 # ------------------------------------------------------------ the parts
@@ -306,8 +345,9 @@ def chat_text(key, title, hw):
                                   % title.lower(), ["Make it bigger",
                                                     "Change the colours"]))
     mods = [h for h in hw if h["module"] != "board"]
-    lines = ["**%s** - a default project, built by the agent's own kit from "
-             "real Atech hardware." % title, "", what, "",
+    kind = "a starter project" if key in STARTER_KEYS else "a default project"
+    lines = ["**%s** - %s, built by the agent's own kit from "
+             "real Atech hardware." % (title, kind), "", what, "",
              "Atech modules on the board:"]
     for h in mods:
         lines.append("- %s on %s%s" % (h["name"], _ports(h["ports"]),
@@ -564,9 +604,11 @@ def build_one(key, title, examples_dir, out_dir, work):
     from acadagent import build, projects_store as ps
     import review                                        # noqa: F401 (kit)
     t0 = time.time()
-    src = os.path.join(examples_dir, key + ".py")
+    src = os.path.join(starters_of(examples_dir) if key in STARTER_KEYS
+                       else examples_dir, key + ".py")
     if not os.path.isfile(src):
-        raise FileNotFoundError("examples/%s.py is missing" % key)
+        raise FileNotFoundError("%s/%s.py is missing" % (
+            "starters" if key in STARTER_KEYS else "examples", key))
     for name in list(App.listDocuments()):
         App.closeDocument(name)
     doc = App.newDocument(re.sub(r"\W", "_", title) or "Project")
@@ -597,7 +639,9 @@ def build_one(key, title, examples_dir, out_dir, work):
         raise RuntimeError("its own check fails: %s" % " ".join(
             str(fails).split())[:300])
     hw = hardware_of(doc)
-    if not any(h["module"] == "board" for h in hw) or len(hw) < 2:
+    starter = key in STARTER_KEYS
+    if not any(h["module"] == "board" for h in hw) or \
+            (len(hw) < 2 and not starter):
         raise RuntimeError("no tagged Atech board + modules in the document")
     scripted = [o for o in doc.Objects if getattr(o, "AtechAgentScript", "")]
     if not scripted:
@@ -645,6 +689,7 @@ def build_one(key, title, examples_dir, out_dir, work):
     if leak:
         raise RuntimeError("the file names a path of this machine: %s" % leak)
     return {"title": title, "file": os.path.basename(path), "example": key,
+            "kind": "starter" if starter else "product",
             "summary": SUMMARIES.get(key, ""),
             "id": pid, "sha256": sha256_file(path),
             "bytes": os.path.getsize(path), "hardware": hw, "trust": trust,
@@ -670,7 +715,7 @@ def main(argv):
     os.makedirs(out_dir, exist_ok=True)
     only = [k for k in (os.environ.get("ATECH_DEFAULTS_ONLY") or "").split(",")
             if k.strip()]
-    wanted = [(k, t) for k, t in CURATED if not only or k in only]
+    wanted = [(k, t) for k, t in CURATED + STARTERS if not only or k in only]
     done, skipped = [], []
     t_all = time.time()
     try:

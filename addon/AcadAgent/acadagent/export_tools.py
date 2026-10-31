@@ -1194,6 +1194,47 @@ def open_in_slicer(files, slicer, runner=None):
 # R345 exploded view
 # ===================================================================
 _EXPLODERS = {}
+#: R810: how an exploded view moves the printed parts (key, label).
+EXPLODE_MODES = (("out", "Out from the middle"), ("layers", "In layers"))
+EXPLODE_MODE_KEYS = tuple(k for k, _l in EXPLODE_MODES)
+
+
+def stays_put(o):
+    """R810: True for what an exploded view leaves in place: the Atech
+    board, a cable and a cabled module (it hangs on its cable)."""
+    return (getattr(o, "AtechRole", None) == "board"
+            or bool(getattr(o, "AtechCableModule", ""))
+            or (getattr(o, "AtechRole", None) == "module"
+                and getattr(o, "AtechJoint", None) == "cable"))
+
+
+def part_kind(o):
+    """R810: "module" (an Atech module seated in a port) or "part"."""
+    return "module" if getattr(o, "AtechRole", None) == "module" else "part"
+
+
+def _slide_out(o):
+    """((x, y, z) unit insertion axis, travel mm) of a seated module, or
+    None when it has no slide axis."""
+    try:
+        a = o.AtechSlideAxis
+        n = math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z)
+    except Exception:                                     # noqa: BLE001
+        return None
+    if n < 1e-9:
+        return None
+    travel = float(getattr(o, "AtechSlideOut", 0.0) or 0.0)
+    return (a.x / n, a.y / n, a.z / n), max(travel, 0.0)
+
+
+def describe_part(o):
+    """R810: one line on a part for the exploded view's step-through."""
+    if getattr(o, "AtechRole", None) == "module":
+        ports = list(getattr(o, "AtechPorts", []) or [])
+        where = (" on port %s" % ", ".join(str(p) for p in ports)) if ports else ""
+        return "Atech module: %s%s, out of its port" % (
+            module_name(getattr(o, "AtechModule", "")), where)
+    return "Printed part" if _has_solid(o) else "Part"
 
 
 class Exploder(object):
@@ -1203,8 +1244,10 @@ class Exploder(object):
 
     SPREAD = 1.2                   # at 1.0 each part is this many times as far out
 
-    def __init__(self, doc, objs=None):
+    def __init__(self, doc, objs=None, mode=None):
         self.doc = doc
+        #: R810: "out" (away from the middle) or "layers" (stacked along Z)
+        self.mode = mode if mode in EXPLODE_MODE_KEYS else "out"
         # R720: one exploded view per document. A second one would take the
         # first one's pulled-apart placements as "where the parts belong"
         # (and that is what a save then wrote), so put the first one back.
@@ -1212,10 +1255,13 @@ class Exploder(object):
         if old is not None and old is not self:
             old.restore()
         if objs is None:
+            # R810: the electronics stay where they are: the board, each
+            # cable and each cabled module (pulled away, a cable pointed
+            # at nothing). The shell comes off them instead.
             objs = [o for o in doc.Objects if _visible(o) and _top_level(o)
-                    and (_has_solid(o) or _is_mesh(o))
-                    and getattr(o, "AtechRole", None) != "board"]
+                    and (_has_solid(o) or _is_mesh(o)) and not stays_put(o)]
         self.objs = list(objs)
+        self.kinds = [part_kind(o) for o in self.objs]
         #: R720: by Name - an object deleted meanwhile is skipped, never used
         self.names = [o.Name for o in self.objs]
         self.saved = {o.Name: o.Placement for o in self.objs}
@@ -1234,6 +1280,13 @@ class Exploder(object):
         else:
             self.middle, span = (0.0, 0.0, 0.0), 0.0
         self.span = max(span, 10.0)
+        # R810: "layers": each printed part a step up or down from the
+        # middle one, in the order their middles stand along Z
+        order = sorted((k for k in range(len(self.objs))
+                        if self.kinds[k] == "part" and boxes[k] is not None),
+                       key=lambda k: (boxes[k][2], k))
+        mid = (len(order) - 1) / 2.0
+        self.layer = {k: i - mid for i, k in enumerate(order)}
         _EXPLODERS[id(doc)] = self
 
     @staticmethod
@@ -1248,6 +1301,16 @@ class Exploder(object):
         c = self.centres[k]
         if c is None:
             return (0.0, 0.0, 0.0)
+        if self.kinds[k] == "module":
+            # R810: a seated module slides straight out of its port, the
+            # way it goes in (AtechSlideAxis is the insertion direction)
+            out = _slide_out(self.objs[k])
+            if out is not None:
+                axis, travel = out
+                dist = (travel + 0.25 * self.span) * factor
+                return tuple(-a * dist for a in axis)
+        if self.mode == "layers" and k in self.layer:
+            return (0.0, 0.0, self.layer[k] * 0.45 * self.span * factor)
         d = tuple(c[i] - self.middle[i] for i in range(3))
         if math.sqrt(sum(x * x for x in d)) < 1e-6:
             return (0.0, 0.0, 0.3 * self.span * factor)
@@ -1321,11 +1384,23 @@ class Exploder(object):
 
 
 def restore_exploded(doc=None):
-    """Put back every exploded view (of doc, or all). Call before saving."""
+    """Put back every exploded view (of doc, or all). Call before saving.
+    R811: a running simulation's turned parts go back too."""
+    _stop_simulation(doc)
     for key, ex in list(_EXPLODERS.items()):
         if doc is None or ex.doc is doc:
             ex.restore()
             _explode_changed(ex.doc, 0.0)
+
+
+def _stop_simulation(doc=None):
+    """R811: put back a running simulation (simulate.py) when it is loaded."""
+    sim = sys.modules.get((__package__ or "acadagent") + ".simulate")
+    if sim is not None:
+        try:
+            sim.stop_all(doc)
+        except Exception as exc:                          # noqa: BLE001
+            _log("simulation: %r" % (exc,))
 
 
 def explode_after_undo(doc):
@@ -1350,7 +1425,7 @@ def forget_exploded(doc):
 # Show and hide slider and the E key share.
 #: How far apart a one-click explode puts the parts (0..1).
 DEFAULT_EXPLODE = 0.6
-_LAST_EXPLODE = {"factor": DEFAULT_EXPLODE}
+_LAST_EXPLODE = {"factor": DEFAULT_EXPLODE, "mode": "out"}
 _EXPLODE_LISTENERS = []
 
 
@@ -1375,13 +1450,40 @@ def explode_amount(doc):
     return ex.factor if ex is not None else 0.0
 
 
-def set_explode(doc, factor):
+def explode_mode(doc=None):
+    """R810: the exploded view's mode: doc's when it is apart, else the
+    last one used."""
+    ex = _EXPLODERS.get(id(doc)) if doc is not None else None
+    return ex.mode if ex is not None else _LAST_EXPLODE["mode"]
+
+
+def explode_parts(doc):
+    """R810: the parts doc's exploded view moves, in step-through order
+    (printed parts bottom to top, then the modules); [] when assembled."""
+    ex = _EXPLODERS.get(id(doc)) if doc is not None else None
+    if ex is None:
+        return []
+    live = {name: o for _k, name, o in ex._live()}
+    keys = [k for k in range(len(ex.names)) if ex.names[k] in live]
+    keys.sort(key=lambda k: (ex.kinds[k] != "part",
+                             (ex.centres[k] or (0, 0, 0))[2], k))
+    return [live[ex.names[k]] for k in keys]
+
+
+def set_explode(doc, factor, mode=None):
     """Explode doc to `factor` (0..1); 0 puts every part back. Display
-    only, as Exploder."""
+    only, as Exploder. R810: `mode` "out" or "layers" (None: as it is)."""
     if doc is None:
         return 0.0
     factor = max(0.0, min(1.0, float(factor)))
+    if factor > 0.0:
+        _stop_simulation(doc)          # R811: apart from where parts belong
+    if mode in EXPLODE_MODE_KEYS:
+        _LAST_EXPLODE["mode"] = mode
     ex = _EXPLODERS.get(id(doc))
+    if ex is not None and mode in EXPLODE_MODE_KEYS and ex.mode != mode:
+        ex.restore()                   # a new layout from where parts belong
+        ex = None
     if factor <= 0.0:
         if ex is not None:
             ex.restore()
@@ -1392,7 +1494,7 @@ def set_explode(doc, factor):
         _explode_changed(doc, 0.0)
         return 0.0
     if ex is None:
-        ex = Exploder(doc)
+        ex = Exploder(doc, mode=_LAST_EXPLODE["mode"])
     ex.set_factor(factor)
     _LAST_EXPLODE["factor"] = factor
     _explode_changed(doc, factor)
@@ -1525,6 +1627,10 @@ ICONS = {
                 '<path d="M12 15V3"/>',
     "explode": '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/>'
                '<path d="M3 21l7-7"/>',
+    # R810: Lucide "clapperboard" (ISC), the assembly video button
+    "clapperboard": '<path d="M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 '
+                    '2.2.3 2.5 1.3Z"/><path d="m6.2 5.3 3.1 3.9"/><path d="m12.4 3.4 3.1 4"/>'
+                    '<path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>',
     "image": '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/>'
              '<path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
     "list": '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/>'
@@ -2071,15 +2177,30 @@ def view_bar_buttons(parent=None, doc_fn=_active_doc, selection_fn=_selected):
         out["colour"]._menu = m
         m.popup(out["colour"].mapToGlobal(out["colour"].rect().bottomLeft()))
 
-    # R701: Exploded view is one click: apart, and back together. How far
-    # apart is the slider in Show and hide.
+    # R701: Exploded view is one click: apart, and back together. R810: while
+    # apart its card (explode_card) floats over the 3D view: how, how far,
+    # step through the parts, fit, put back.
     xb = out["explode"]
     xb.setCheckable(True)
-    xb.setToolTip("Exploded view: pull the parts apart, click again to put "
-                  "them back (E)")
+    xb.setToolTip("Exploded view: pull the parts apart and step through "
+                  "them; click again to put them back (E)")
+    try:
+        from . import explode_card, measure
+        xb._card = explode_card.ExplodeCard(measure._host(parent), doc_fn)
+    except Exception as exc:                              # noqa: BLE001
+        _log("exploded view card: %r" % (exc,))
+        xb._card = None
 
     def explode():
-        on = toggle_explode(doc_fn()) > 0.0
+        doc = doc_fn()
+        card = getattr(xb, "_card", None)
+        if explode_amount(doc) > 0.0:
+            on = set_explode(doc, 0.0) > 0.0
+        elif card is not None and doc is not None:
+            card.open_for(doc)
+            on = explode_amount(doc) > 0.0
+        else:
+            on = toggle_explode(doc) > 0.0
         xb.blockSignals(True)
         xb.setChecked(on)
         xb.blockSignals(False)
@@ -2110,6 +2231,52 @@ def view_bar_buttons(parent=None, doc_fn=_active_doc, selection_fn=_selected):
     return out
 
 
+def video_button(parent=None, doc_fn=_active_doc, panel_fn=None):
+    """R810: the view bar's Make assembly video button (the Atech menu had
+    the only way to it): the design assembles itself in a ~25 s movie,
+    made in the background; its progress and the movie show in the chat."""
+    from PySide6 import QtCore, QtWidgets
+
+    b = QtWidgets.QPushButton("", parent)
+    b.setObjectName("VBtn")
+    b.setCursor(QtCore.Qt.PointingHandCursor)
+    b.setToolTip("Make an assembly video: the design builds itself, part by "
+                 "part, in about 25 s (saved to your Movies folder)")
+    b.setAccessibleName("Make assembly video")
+    b.setIconSize(QtCore.QSize(16, 16))
+    b.setFixedWidth(34)
+    b.setProperty("atech_icon", "clapperboard")
+
+    def say(text):
+        try:
+            QtWidgets.QToolTip.showText(b.mapToGlobal(b.rect().topLeft()), text, b)
+        except Exception:                                 # noqa: BLE001
+            pass
+        _log(text)
+
+    def make():
+        doc = doc_fn()
+        if doc is None:
+            say("Open a design first: there is nothing to make a video of.")
+            return None
+        if panel_fn is not None:
+            p = panel_fn()
+        else:
+            from . import panel
+            p = panel.get_panel()
+        if p is None:
+            say("The chat is not open, and the video's progress shows there.")
+            return None
+        job = p.make_video(doc)
+        if job is not None:
+            say("Making the assembly video of %s. Its progress is in the chat; "
+                "it takes a minute or two." % getattr(doc, "Label", "the design"))
+        return job
+    b.make = make
+    b.clicked.connect(lambda _=False: _guard(make))
+    return b
+
+
 def _guard(fn):
     try:
         return fn()
@@ -2129,7 +2296,7 @@ def restyle_buttons(buttons):
 def menu_actions(parent=None, doc_fn=_active_doc, selection_fn=_selected):
     """Factory for the Atech menu / the 3D right-click menu: [QAction]:
     Colour (a submenu), Export for print..., Exploded view (E), Bill of
-    materials..., Save share image, Save review sheet."""
+    materials..., Save share image, Save review sheet, Make assembly video."""
     from PySide6 import QtGui
 
     acts = []
@@ -2156,6 +2323,26 @@ def menu_actions(parent=None, doc_fn=_active_doc, selection_fn=_selected):
         p = capture.share_sheet(doc_fn())
         _say(None, "Review sheet saved: %s" % p)
     add("Save review sheet", sheet)
+
+    def video():
+        # R730: the assembly / promo video now, in the background; its
+        # progress and the finished movie show in the chat
+        from . import panel
+        d = doc_fn()
+        p = panel.get_panel() if d is not None else None
+        if p is None:
+            _say(None, "Open a design first: there is nothing to make a video of.")
+            return
+        p.make_video(d)
+    add("Make assembly video", video)
+
+    def simulate():
+        # R811: the view bar's Simulate button, so its card and its checked
+        # state stay one thing
+        from . import shell
+        if not shell.click_tool("simulate"):
+            _say(None, "Open a design first: there is nothing to simulate.")
+    add("Simulate", simulate)
     for a in acts:
         a.setObjectName("atech_" + re.sub(r"\W+", "_", a.text().lower()).strip("_"))
     acts[0]._keep = keep

@@ -1411,18 +1411,80 @@ def set_perspective(on):
 DRAW_AS_IS, DRAW_WIREFRAME = 0, 2
 
 
-def set_wireframe(on):
-    """Wireframe (True) or the normal shaded-with-edges look (False) on the
-    active view, through FreeCAD's own draw-style command."""
+#: (doc.Name, obj.Name) -> the display mode before wireframe (R723)
+_WIRE_SAVED = {}
+
+
+def is_atech_hardware(obj):
+    """R723: the Atech board, a module or a module's cable: what the
+    wireframe view keeps solid so the hardware inside can be seen."""
+    if getattr(obj, "AtechRole", None) in ("board", "module"):
+        return True
+    return bool(getattr(obj, "AtechModule", None)) \
+        or bool(getattr(obj, "AtechCableModule", None))
+
+
+def wireframe_plan(objs):
+    """[(obj, wire?)] for the objects that can be drawn as a wireframe:
+    every part except Atech hardware (R723)."""
+    out = []
+    for o in objs:
+        vo = getattr(o, "ViewObject", None)
+        try:
+            modes = vo.listDisplayModes() if vo is not None else []
+        except Exception:                              # noqa: BLE001
+            modes = []
+        if "Wireframe" in modes:
+            out.append((o, not is_atech_hardware(o)))
+    return out
+
+
+def set_wireframe(on, doc=None):
+    """Wireframe (True) or back to each part's own look (False) on the
+    active document. R723: Atech hardware (board, modules, cables) stays
+    solid, so in the wireframe ("skeleton") view it shows in full inside
+    the case. Display only: the document's modified flag is kept."""
     g = _gui()
-    if g is None or _view() is None:
+    if g is None:
         return False
     try:
-        g.runCommand("Std_DrawStyle", DRAW_WIREFRAME if on else DRAW_AS_IS)
-        return True
-    except Exception as exc:                           # noqa: BLE001
-        _log("draw style: %r" % (exc,))
+        import FreeCAD
+        doc = doc or FreeCAD.ActiveDocument
+        gdoc = g.getDocument(doc.Name) if doc is not None else None
+    except Exception:                                  # noqa: BLE001
+        gdoc = None
+    if gdoc is None:
         return False
+    try:
+        was = gdoc.Modified
+    except Exception:                                  # noqa: BLE001
+        was = None
+    try:
+        # a FreeCAD-wide draw style (View > Draw style) would override ours
+        g.runCommand("Std_DrawStyle", DRAW_AS_IS)
+    except Exception:                                  # noqa: BLE001
+        pass
+    for o, wire in wireframe_plan(doc.Objects):
+        key = (doc.Name, o.Name)
+        vo = o.ViewObject
+        try:
+            if on and wire:
+                if key not in _WIRE_SAVED:
+                    _WIRE_SAVED[key] = vo.DisplayMode
+                vo.DisplayMode = "Wireframe"
+            elif not on and key in _WIRE_SAVED:
+                vo.DisplayMode = _WIRE_SAVED.pop(key)
+        except Exception as exc:                       # noqa: BLE001
+            _log("wireframe %s: %r" % (o.Name, exc))
+    if not on:
+        for k in [k for k in _WIRE_SAVED if k[0] == doc.Name]:
+            _WIRE_SAVED.pop(k, None)   # parts deleted meanwhile
+    if was is not None:
+        try:
+            gdoc.Modified = was
+        except Exception:                              # noqa: BLE001
+            pass
+    return True
 
 
 def spin(enable=True):

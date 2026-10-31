@@ -1769,7 +1769,7 @@ def _socket_shape(feat, g, p, Mseat_rel):
     return housing.cut(holes), lo, hi
 
 
-def _ribbon(points, t0, t1, w0, w1, width=CABLE_W, thick=CABLE_T):
+def _ribbon(points, t0, t1, w0, w1, width=CABLE_W, thick=CABLE_T, smooth=False):
     """A flat ribbon from points[0] to points[-1] (world). The first and
     last legs are STRAIGHT and untwisted - the ribbon leaves each connector
     the way a real one does, through the opening the housing came in by
@@ -1777,14 +1777,20 @@ def _ribbon(points, t0, t1, w0, w1, width=CABLE_W, thick=CABLE_T):
     the light's case beside that opening). Between them a smooth curve
     through the inner points, leaving along t0 and arriving along t1, its
     width w0 at the start and w1 at the end: parallel transport, plus a
-    twist spread evenly over the curve for whatever turn is left."""
+    twist spread evenly over the curve for whatever turn is left.
+
+    smooth=True (R830): the end tangents are not scaled by the whole
+    chord length. Scaled, a route with waypoints overshoots near its ends
+    (MEASURED: a 60 mm ribbon with three waypoints swung 20 mm above the
+    socket it came down onto); unscaled, the curve leaves and arrives
+    along t0 / t1 and follows the waypoints."""
     import Part
     first, last = np.array(points[0], float), np.array(points[-1], float)
     points = points[1:-1]
     pts = [App.Vector(*[float(c) for c in q]) for q in points]
     bs = Part.BSplineCurve()
-    bs.interpolate(pts, InitialTangent=App.Vector(*t0.tolist()),
-                   FinalTangent=App.Vector(*t1.tolist()))
+    bs.interpolate(Points=pts, InitialTangent=App.Vector(*t0.tolist()),
+                   FinalTangent=App.Vector(*t1.tolist()), Scale=not smooth)
     edge = bs.toShape()
     n = max(4, int(math.ceil(edge.Length / CABLE_STEP)))
     # the ends by their own parameters: Length * n / n can land past the
@@ -1870,7 +1876,7 @@ def module_placement(module_name, at, face="+Z", cable=None):
 
 
 @_few_blas_threads
-def cable(doc, module_name, port_arg, placement, via=(), label=None):
+def cable(doc, module_name, port_arg, placement, via=(), label=None, smooth=False):
     """Put module_name ANYWHERE (world `placement` of the module, in its
     mesh frame - like am.load_module's) and wire it to port_arg with a flat
     6-way ribbon cable per connector. Returns (module, [cable, ...]).
@@ -1882,7 +1888,9 @@ def cable(doc, module_name, port_arg, placement, via=(), label=None):
     clear of its other parts: `via` = world points the ribbon passes
     through (a list; for a two-connector module optionally {port: list}).
     Without via it runs in one smooth curve - route it round a wall with
-    a waypoint. The module object is like seat()'s (AtechRole "module",
+    a waypoint. smooth=True follows several waypoints without the ends
+    overshooting (R830: give it whenever a route has more than one). The
+    module object is like seat()'s (AtechRole "module",
     AtechPorts) with AtechJoint "cable"; check() tests its cable ends and
     its interference, and it has no slide path.
 
@@ -1932,7 +1940,8 @@ def cable(doc, module_name, port_arg, placement, via=(), label=None):
     cables = []
     try:
         for g, p, v in zip(groups, ps_sorted, vias):
-            cables.append(_make_cable(doc, mod, feat, g, p, v, Ms, Ms_rel, Mm, b))
+            cables.append(_make_cable(doc, mod, feat, g, p, v, Ms, Ms_rel, Mm, b,
+                                      smooth=smooth))
     except Exception:
         for c in cables:
             doc.removeObject(c.Name)
@@ -1990,7 +1999,7 @@ def tag_cable(c, module_obj, port_n, length, board_obj):
     c.AtechCableModuleAt = module_obj.Placement
 
 
-def _make_cable(doc, mod, feat, g, p, v, Ms, Ms_rel, Mm, b):
+def _make_cable(doc, mod, feat, g, p, v, Ms, Ms_rel, Mm, b, smooth=False):
     """One connector group's cable: plug + ribbon + socket, one solid."""
     plug = _placed(_plug_shape(feat, g), Ms)
     sock, lo, hi = _socket_shape(feat, g, p, Ms_rel)
@@ -2018,7 +2027,7 @@ def _make_cable(doc, mod, feat, g, p, v, Ms, Ms_rel, Mm, b):
     pts = [S0, S0 + out0 * CABLE_LEAD] + [np.array(q, float) for q in v] + \
           [E0 + out1 * lead1, E0]
     rib, length, twist = _ribbon(pts, out0, -out1, Ms[:3, :3] @ r,
-                                 Mm[:3, :3] @ r)
+                                 Mm[:3, :3] @ r, smooth=smooth)
     sh = plug.fuse([rib, sock]).removeSplitter()
     if len(sh.Solids) != 1 or not sh.isValid():
         raise AtechPortError("cable to port %d is not one valid solid "

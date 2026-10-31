@@ -52,6 +52,13 @@ DEFAULTS = {
     # (sandbox.default_timeout) and the panel's fix/stall limits.
     # $ATECH_PROMPT_MODE overrides it (the eval, the tests).
     "agent_quality": "quality",
+    # R730: after each final build that lands cleanly, a ~25 s assembly /
+    # promo video of the design (promo_video.py), saved to
+    # ~/Movies/Atech Atelier/. On by default.
+    "assembly_video": True,
+    # R730: one short Claude reply styles each video (title, tagline, an
+    # environment that suits the product, captions); off = a keyword pick.
+    "assembly_video_claude": True,
 }
 
 #: R230: the agent modes (settings "agent_quality", $ATECH_PROMPT_MODE).
@@ -600,6 +607,26 @@ class SettingsDialog(QtWidgets.QDialog):
             "On a Claude subscription this is an API-equivalent figure, not "
             "what you are billed.")
         form.addRow("", self.show_cost)
+
+        # R730: the assembly video after each build
+        self.assembly_video = QtWidgets.QCheckBox(
+            "Make an assembly video after each build")
+        self.assembly_video.setChecked(bool(cfg.get("assembly_video", True)))
+        self.assembly_video.setToolTip(
+            "A short video of the finished product, then every part going "
+            "together, saved to your Movies folder. It is made in the "
+            "background while you keep working.")
+        form.addRow("Video", self.assembly_video)
+        self.assembly_video_claude = QtWidgets.QCheckBox(
+            "Let Claude style each video (one short extra reply)")
+        self.assembly_video_claude.setChecked(bool(cfg.get("assembly_video_claude", True)))
+        self.assembly_video_claude.setToolTip(
+            "Claude picks the title, tagline, a setting that suits the "
+            "product, captions and what spins or glows. Off: chosen from "
+            "the product's name, no extra reply.")
+        self.assembly_video.toggled.connect(self.assembly_video_claude.setEnabled)
+        self.assembly_video_claude.setEnabled(self.assembly_video.isChecked())
+        form.addRow("", self.assembly_video_claude)
         self._form = form
         if not self._dev:
             # R24: fields that only the dev engines use are not shown at all
@@ -812,6 +839,8 @@ class SettingsDialog(QtWidgets.QDialog):
             "engine": eid,
             "claude_path": self.claude_path.text().strip(),
             "show_cost": bool(self.show_cost.isChecked()),
+            "assembly_video": bool(self.assembly_video.isChecked()),
+            "assembly_video_claude": bool(self.assembly_video_claude.isChecked()),
             "agent_model": self._agent_model_value(),
             "agent_effort": self.agent_effort.currentData() or "",
             "agent_quality": self.agent_quality.currentData() or QUALITY,

@@ -15,7 +15,10 @@ How it is built (R413):
     (cad.profile_body, spline=False, fillet) hollowed with its own core and
     split low (lip) into the fixed Hull_Lower (a cradle holds the board)
     and the Hull_Upper; four M2 screws from below into insert bosses. Each
-    side runs a track: a belt loop round the sprocket and a front idler,
+    side runs a track: a TPU belt loop round the sprocket and a front
+    idler, its inside toothed at the sprocket's pitch so the sprocket
+    really drives it (R740: ./check fails a gear against a smooth belt;
+    the loop holds a whole number of teeth, the idler grooved for them),
     the tread pads (a rubber skin with lugs) as their own part, four road
     wheels on a bogie pinned to the hull. A turret on a pinned ring, a
     barrel with a muzzle brake.
@@ -29,7 +32,7 @@ cheeks; 5 brushed turret ring (pinned to hull and turret); 6 barrel;
 13-14 headlight lenses; 15-16 headlight guards; 17 engine-deck louvres;
 18 exhaust pipe; 19-20 tow hooks; 21 USB-C pocket in the rear plate;
 22-23 geared drive sprockets; 24-25 front idlers; 26 road wheels on
-bogies; 27 track belts; 28 tread pads with lugs (their own parts);
+bogies; 27 toothed track belts; 28 tread pads with lugs (their own parts);
 29 driver's vision block; 30 rivets along the deck edges; "ATECH" on the
 turret. Inside: 31 board cradle; 32 rib from the deck onto the spine;
 33 ribs holding the ToF and the headlights; four screws from below into
@@ -70,8 +73,10 @@ SIDE = [(-12, 4.5), (144, 4.5), (150, 16), (139, DECK), (-6, DECK), (-12, DECK -
 HALF_W = 52.7                     # hull half width (motor body + 0.3 + wall)
 SPLIT_Z = 7.0                     # lower / upper hull seam (lip top 8.2, under the slide paths)
 TRACK_X = (-23.2, -39.2)          # left track's inner, outer x (the right mirrors at x = 30)
-IDLER_Y = -140.0                  # front idler axis (y)
+IDLER_Y = -140.0                  # front idler axis (y), trimmed below to a whole number of teeth
 R_IN, BELT, SKIN, LUG = 15.3, 2.0, 1.0, 1.0   # belt inner radius, belt, tread skin, lug heights
+GEAR_M, GEAR_Z = 1.5, 18          # sprocket: module, teeth (tips at r 15.0, 0.3 under the belt)
+TEETH_W = 6.0                     # belt teeth across the track, over the 5.6 mm sprocket
 WHEELS_Y = (-32.0, -60.0, -88.0, -116.0)      # road wheels
 WHEEL_R = 7.0
 TURRET_C = (30.0, -59.0)          # turret ring centre
@@ -99,6 +104,12 @@ head_r, hr_rib = ap.cable(doc, "light", 14, ap.module_placement(
     "light", (30 + HL, -132, L + 24), face="-Y", cable="-Z"), via=[(63, -118, L + 10.14)])
 mb = ap.bbox(mot_l)
 SHAFT_Y = (mb.YMin + mb.YMax) / 2                      # rear axle, measured
+# R740: the belt's teeth go round the loop at the sprocket's pitch; the
+# loop at the pitch line (2 runs + one turn of the pitch circle) must hold
+# a whole number of them, so the idler moves to the nearest such spot
+PITCH = math.pi * GEAR_M
+R_P = GEAR_M * GEAR_Z / 2.0
+IDLER_Y = SHAFT_Y - round(2 * (SHAFT_Y - IDLER_Y) / PITCH) * PITCH / 2.0
 LZ = ap.bbox(head_l).ZMin + ap.bbox(head_l).ZLength / 2
 tick("hardware")
 
@@ -193,16 +204,20 @@ WZ = SHAFT_Z - R_IN + WHEEL_R + 0.3                  # road wheels 0.3 mm over t
 PIN_YR = tuple(y + 5.0 for y in PIN_Y)              # the right side's pins: not coaxial with the left
 upper = cad.cut(upper, [xcyl(1.65, -19.0, -25.0, y, WZ) for y in PIN_Y]
                 + [mirror_x(xcyl(1.65, -19.0, -25.0, y, WZ)) for y in PIN_YR])
-# a geared sprocket on each shaft (bore 3.3), an idler on each stub
-gear = cad.spur_gear(1.5, 18, 5.6, bore=3.3)
+# a geared sprocket on each shaft (bore 3.3), a tooth SPACE straight down
+# where the belt's first tooth sits; an idler on each stub, grooved where
+# the belt's teeth pass, its rim riding 0.3 mm under the belt
+gear = cad.spur_gear(GEAR_M, GEAR_Z, 5.6, bore=3.3)
 gear.rotate(V(0, 0, 0), V(0, 1, 0), -90)             # axis -X
 gear.translate(V(-23.2, SHAFT_Y, SHAFT_Z))           # x -23.2 .. -28.8
-idler = cad.cut(cad.fuse_one(xcyl(R_IN - 0.3, ti - 0.3, ti - 6.3, IDLER_Y, SHAFT_Z),
-                             xcyl(R_IN - 3.0, ti - 6.3, to + 1.2, IDLER_Y, SHAFT_Z)),
+gear = cad.mesh_phase(gear, (-23.2, SHAFT_Y, SHAFT_Z), "-X", (0, 0, -1))
+T_IN = R_P - GEAR_M                                  # belt tooth tips (sprocket root + 0.375)
+idler = cad.cut(cad.fuse_one(xcyl(T_IN - 0.4, ti - 0.3, ti - TEETH_W - 0.4, IDLER_Y, SHAFT_Z),
+                             xcyl(R_IN - 0.3, ti - TEETH_W - 0.4, to + 1.2, IDLER_Y, SHAFT_Z)),
                 xcyl(2.15, ti + 1, to, IDLER_Y, SHAFT_Z))
 # road wheels on a bogie beam, its two arms pinned into the hull side
 def bogie_for(pin_ys):
-    rw = [xcyl(WHEEL_R, ti - 0.6, to + 0.6, y, WZ) for y in WHEELS_Y]
+    rw = [xcyl(WHEEL_R, ti - TEETH_W - 0.6, to + 0.6, y, WZ) for y in WHEELS_Y]   # beside the teeth
     beam = box(to + 3.0, ti - 3.0, WHEELS_Y[-1], WHEELS_Y[0], WZ - 1.6, WZ + 1.6)
     arms = [box(-30.0, -22.9, y - 3, y + 3, WZ - 2.5, WZ + 2.5) for y in pin_ys]
     pins = [xcyl(1.5, -23.2, -20.6, y, WZ) for y in pin_ys]
@@ -211,9 +226,44 @@ def bogie_for(pin_ys):
 
 
 bogie = bogie_for(PIN_Y)
-# the track: a belt loop round sprocket and idler, the tread pads (a
-# rubber skin with lugs) as their own part
-belt = cad.cut(stadium(R_IN + BELT, ti, to), stadium(R_IN, ti + 1, to - 1))
+# the track: a TPU belt loop round sprocket and idler with teeth on its
+# inside that sit in the sprocket's tooth spaces (rack teeth: 20 deg
+# flanks, 0.15 mm backlash a flank), the tread pads (a rubber skin with
+# lugs) as their own part
+
+
+def belt_teeth():
+    """One tooth a pitch round the loop's pitch line, the first under the
+    sprocket: a trapezoid from inside the belt (h -2.1) to its tip (h = m)."""
+    run = SHAFT_Y - IDLER_Y
+    loop = 2 * run + 2 * math.pi * R_P
+    n = int(round(loop / PITCH))
+    tan_a, bl = math.tan(math.radians(20)), 0.15
+    teeth = []
+    for k in range(n):
+        s = k * loop / n
+        if s < run:                                  # bottom run, toward the idler
+            p, t, nn = (SHAFT_Y - s, SHAFT_Z - R_P), (-1, 0), (0, 1)
+        elif s < run + math.pi * R_P:                # round the idler
+            a = -math.pi / 2 - (s - run) / R_P
+            p, t, nn = (IDLER_Y + R_P * math.cos(a), SHAFT_Z + R_P * math.sin(a)), \
+                (math.sin(a), -math.cos(a)), (-math.cos(a), -math.sin(a))
+        elif s < 2 * run + math.pi * R_P:            # top run, back
+            p, t, nn = (IDLER_Y + s - run - math.pi * R_P, SHAFT_Z + R_P), (1, 0), (0, -1)
+        else:                                        # round the sprocket
+            a = math.pi / 2 - (s - 2 * run - math.pi * R_P) / R_P
+            p, t, nn = (SHAFT_Y + R_P * math.cos(a), SHAFT_Z + R_P * math.sin(a)), \
+                (math.sin(a), -math.cos(a)), (-math.cos(a), -math.sin(a))
+        pts = []
+        for h, sg in ((-2.1, 1), (GEAR_M, 1), (GEAR_M, -1), (-2.1, -1)):
+            hw = sg * (PITCH / 4 - h * tan_a - bl)
+            pts.append(V(ti, p[0] + t[0] * hw + nn[0] * h, p[1] + t[1] * hw + nn[1] * h))
+        f = Part.Face(Part.makePolygon(pts + [pts[0]]))
+        teeth.append(f.extrude(V(-TEETH_W, 0, 0)))
+    return teeth
+
+
+belt = cad.fuse_one(cad.cut(stadium(R_IN + BELT, ti, to), stadium(R_IN, ti + 1, to - 1)), *belt_teeth())
 r_s = R_IN + BELT
 treads = [cad.cut(stadium(r_s + SKIN, ti, to), stadium(r_s, ti + 1, to - 1))]
 n = int((SHAFT_Y - IDLER_Y) / 9.0)

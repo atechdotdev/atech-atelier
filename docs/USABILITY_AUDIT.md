@@ -26,6 +26,23 @@ blank = no change.
 - **Worse (6):** #24, 48, 58, 83, 91, 92.
 - **Still open from round 1's "Do these first":** all 10.
 
+## Fixed since round 2 (R810–R812)
+
+The table rows below are still the round-2 snapshot.
+
+- **#59 Back to Home:** the logo always opens Home (it used to toggle),
+  from the sidebar and from the Linux top bar, and it leaves full-screen 3D
+  first.
+- **Exploded view:** a card over the 3D view lets you choose the mode and
+  how far apart, step through the parts, fit the view and put the parts
+  back. Modules slide out of their ports, and the board and cables stay
+  still.
+- **Assembly video and Simulate:** both are buttons on the view bar now.
+  Simulate is new: motors turn what they drive, lights glow, the sensor
+  beam shows, and it exports URDF for simulators.
+- **Edit shapes:** Undo and Redo inside the window, Drop (D), and a choice
+  of turn step.
+
 ## Do these first (round 2)
 
 The design levels changed the priorities: items 1–4 below can waste a

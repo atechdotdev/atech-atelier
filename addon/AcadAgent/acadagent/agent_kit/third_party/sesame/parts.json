@@ -1,0 +1,307 @@
+{
+ "lift_mm": -0.5278,
+ "parts": {
+  "battery": {
+   "box": [
+    -14.2,
+    -26.39,
+    33.69,
+    14.2,
+    24.81,
+    49.99
+   ],
+   "faces": 6,
+   "label": "14500 7.4V 800mAh Li-ion Battery-PC003 v2",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 20782.2
+  },
+  "bottom_cover": {
+   "box": [
+    -27.12,
+    -39.61,
+    30.83,
+    27.12,
+    39.61,
+    38.1
+   ],
+   "faces": 70,
+   "label": "Bottom-Cover",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 16967.0
+  },
+  "femur_L1": {
+   "box": [
+    18.72,
+    -48.2,
+    40.71,
+    65.28,
+    -11.44,
+    71.75
+   ],
+   "faces": 139,
+   "label": "femur-joint-L1",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 5212.2
+  },
+  "femur_L2": {
+   "box": [
+    18.72,
+    10.85,
+    40.71,
+    65.28,
+    47.61,
+    71.75
+   ],
+   "faces": 152,
+   "label": "femur-joint-L2",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 5209.4
+  },
+  "femur_R1": {
+   "box": [
+    -65.27,
+    -48.2,
+    40.71,
+    -18.71,
+    -11.44,
+    71.75
+   ],
+   "faces": 153,
+   "label": "femur-joint-R1",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 5207.9
+  },
+  "femur_R2": {
+   "box": [
+    -65.27,
+    10.85,
+    40.71,
+    -18.71,
+    47.61,
+    71.75
+   ],
+   "faces": 166,
+   "label": "femurjoint-R2",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 5191.0
+  },
+  "foot_L3": {
+   "box": [
+    36.71,
+    -65.42,
+    -0.34,
+    55.84,
+    -46.15,
+    58.61
+   ],
+   "faces": 129,
+   "label": "foot-joint-L3",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 4694.0
+  },
+  "foot_L4": {
+   "box": [
+    36.93,
+    45.33,
+    -0.53,
+    56.32,
+    64.46,
+    58.42
+   ],
+   "faces": 120,
+   "label": "foot-joint-L4",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 4713.1
+  },
+  "foot_R3": {
+   "box": [
+    -55.71,
+    -65.4,
+    -0.34,
+    -36.58,
+    -46.27,
+    58.61
+   ],
+   "faces": 137,
+   "label": "foot-joint-R3",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 4712.9
+  },
+  "foot_R4": {
+   "box": [
+    -56.05,
+    45.33,
+    -0.53,
+    -36.92,
+    64.46,
+    58.42
+   ],
+   "faces": 128,
+   "label": "foot-joint-R4",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 4698.5
+  },
+  "frame": {
+   "box": [
+    -34.04,
+    -39.61,
+    37.96,
+    34.04,
+    39.61,
+    53.8
+   ],
+   "faces": 263,
+   "label": "Internal-Frame",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 36256.7
+  },
+  "servo_hip_FL": {
+   "box": [
+    18.8,
+    -36.43,
+    37.98,
+    37.34,
+    -3.3,
+    68.65
+   ],
+   "faces": 676,
+   "label": "SG90 - Micro Servo 9g - Tower Pro v4",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 7127.4
+  },
+  "servo_hip_FR": {
+   "box": [
+    -37.33,
+    -36.43,
+    37.98,
+    -18.79,
+    -3.3,
+    68.65
+   ],
+   "faces": 676,
+   "label": "SG90 - Micro Servo 9g - Tower Pro v001",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 7127.4
+  },
+  "servo_hip_RL": {
+   "box": [
+    18.8,
+    2.7,
+    37.98,
+    37.34,
+    35.84,
+    68.65
+   ],
+   "faces": 676,
+   "label": "SG90 - Micro Servo 9g - Tower Pro v003",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 7127.4
+  },
+  "servo_hip_RR": {
+   "box": [
+    -37.33,
+    2.7,
+    37.98,
+    -18.79,
+    35.84,
+    68.65
+   ],
+   "faces": 676,
+   "label": "SG90 - Micro Servo 9g - Tower Pro v002",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 7127.4
+  },
+  "servo_knee_FL": {
+   "box": [
+    34.22,
+    -67.77,
+    26.05,
+    62.08,
+    -39.9,
+    58.15
+   ],
+   "faces": 422,
+   "label": "SG90 - Micro Servo 9g - Tower Pro.1_Pea(Mirror) (1)013",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 6984.7
+  },
+  "servo_knee_FR": {
+   "box": [
+    -61.95,
+    -67.89,
+    26.05,
+    -34.09,
+    -40.03,
+    58.15
+   ],
+   "faces": 422,
+   "label": "SG90 - Micro Servo 9g - Tower Pro.1_Pea(Mirror) (1)027",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 6984.7
+  },
+  "servo_knee_RL": {
+   "box": [
+    34.44,
+    29.68,
+    25.86,
+    62.8,
+    66.95,
+    57.96
+   ],
+   "faces": 617,
+   "label": "SG90 - Micro Servo 9g - Tower Pro v005",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 7128.0
+  },
+  "servo_knee_RR": {
+   "box": [
+    -62.8,
+    29.68,
+    25.86,
+    -34.43,
+    66.95,
+    57.96
+   ],
+   "faces": 617,
+   "label": "SG90 - Micro Servo 9g - Tower Pro v004",
+   "solids": 1,
+   "valid": true,
+   "volume_mm3": 7128.0
+  },
+  "top_cover": {
+   "box": [
+    -18.69,
+    -39.61,
+    53.8,
+    18.7,
+    39.61,
+    91.99
+   ],
+   "faces": 327,
+   "label": "COMPOUND002",
+   "solids": 2,
+   "valid": true,
+   "volume_mm3": 15097.1
+  }
+ },
+ "source": "github.com/seunyboyxu/New_Spyder@3f76b5f3 hardware/cad/Sesame-ESP32-v122.step",
+ "step_sha256": "b6ae8936df90d85d4d6f6b24ea53bd387bd0508da2090fdbc535227d5feb9be0"
+}

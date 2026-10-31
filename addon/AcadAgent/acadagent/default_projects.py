@@ -28,6 +28,12 @@ thumbnail and a starter chat) plus manifest.json.
   R454 new_from_default()   a fresh copy (its own id, "Toy car 2" when
                             "Toy car" is taken) opened as a new project:
                             Home's "Start from an example" row.
+  R820 starters             manifest entries of "kind": "starter" (small,
+                            simple starting points: Home's "Start simple"
+                            row) are offered by entries(kind="starter") and
+                            new_from_default like the products, but never
+                            copied into the projects folder by
+                            install_defaults.
   R455 start-up             schedule_install() starts install_defaults on a
                             worker thread from a zero-length QTimer, so it
                             never slows the launch or freezes the window;
@@ -104,13 +110,22 @@ def load_manifest(folder=None):
     return {"version": version, "projects": good, "folder": folder}
 
 
-def entries(folder=None):
-    """[(title, example key, summary)] of the shipped projects, in order."""
+STARTER = "starter"
+
+
+def kind_of(p):
+    """A manifest entry's kind: "starter" (R820) or "product" (the rest)."""
+    return STARTER if p.get("kind") == STARTER else "product"
+
+
+def entries(folder=None, kind="product"):
+    """[(title, example key, summary)] of the shipped projects of `kind`
+    ("product" or "starter"), in order."""
     man = load_manifest(folder)
     if not man:
         return []
     return [(p["title"], p.get("example") or "", p.get("summary") or "")
-            for p in man["projects"]]
+            for p in man["projects"] if kind_of(p) == kind]
 
 
 def thumbnail(title, folder=None):
@@ -313,6 +328,9 @@ def install_defaults(projects_dir=None, shipped=None, now=None,
         t = time.time() if now is None else now
         for i, p in enumerate(man["projects"]):
             title = p["title"]
+            if kind_of(p) == STARTER:
+                # R820: a starter is offered on Home, never copied in
+                continue
             if title in titles:
                 out["skipped"][title] = "installed before"
                 continue

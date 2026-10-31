@@ -398,8 +398,8 @@ FreeCAD. FreeCAD is LGPL2+. The Atech board and module 3D models are
 CC BY-NC 4.0. See [Licences](#licences). The chat needs a
 Claude account that includes Claude Code.
 
-**Is this the app that was called Atech Atelier?**
-Yes. Version 0.1.2 showed the name Atech Atelier inside the app; from 0.1.3
+**Is this the app that was called Atech AI CAD?**
+Yes. Version 0.1.2 showed the name Atech AI CAD inside the app; from 0.1.3
 it is Atech Atelier everywhere again. The app, its profile folders and your
 projects never changed name, so nothing needs moving. (On first start it
 also copies an old Atech Studio profile across.)

@@ -6,6 +6,8 @@ change behaviour.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-31 (preview)
+
 ### Sesame walker: an open-source robot refitted for Atech
 
 - New on Home: **Sesame walker**, the open-source Sesame quadruped (by

@@ -79,9 +79,9 @@ one command, and nothing is installed system-wide.
 > it bundles is published on each
 > [release page](https://github.com/atechdotdev/atech-atelier/releases).
 
-**Status: a preview.** The latest release is 0.1.2, the first under
-the new name and the first with a Mac download. Expect rough edges, and
-please report them.
+**Status: a preview.** The latest release is 0.1.3: Simulate, starter
+projects, assembly videos, gears that mesh, and the Sesame walker. Expect
+rough edges, and please report them.
 
 ---
 

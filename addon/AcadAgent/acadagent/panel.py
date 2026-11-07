@@ -5100,6 +5100,7 @@ class AgentPanel(QtWidgets.QWidget):
         changed since the last build, then show the reply (R75, R93)."""
         self._after_build = None
         state = self._cur
+        self._apply_part_edits(state)                    # R885
         # R75: build FIRST, then decide how the agent's words are shown. A
         # "Built a pinion" bubble must not stand above a failed build.
         files = build.changed(self._ws, getattr(self, "_applied", self._before))
@@ -5149,6 +5150,36 @@ class AgentPanel(QtWidgets.QWidget):
             target = self._turn_card(False)
             target.set_status("unchanged: still fails", "fail")
         self._reply(final, card, fix)
+
+    def _apply_part_edits(self, state):
+        """R885: the agent's part_edits.json - edits to the parts the user
+        let it edit - is run here, in Atelier (part_ops checks every step
+        and every part's permission), then set aside so it never runs twice.
+        What happened is said in the chat."""
+        ws = getattr(state, "ws", None) or getattr(self, "_ws", None)
+        if not ws:
+            return
+        from . import part_ops
+        path = os.path.join(ws, part_ops.AGENT_FILE)
+        if not os.path.isfile(path) or os.path.islink(path):
+            return
+        try:
+            with open(path, encoding="utf-8-sig") as fh:
+                text = fh.read(256 * 1024)
+            os.replace(path, os.path.join(ws, "." + part_ops.AGENT_FILE + ".done"))
+        except (OSError, UnicodeDecodeError) as exc:
+            _log("part edits: %r" % (exc,))
+            return
+        try:
+            doc = build._target_doc(getattr(state, "prev", None))
+            done, errors = part_ops.apply_agent_edits(doc, text)
+        except Exception as exc:                       # noqa: BLE001
+            _log("part edits: %r" % (exc,))
+            done, errors = [], [str(exc)]
+        for line in done:
+            self.say("Edited %s. Undo it in Edit part (F)." % line)
+        for line in errors:
+            self.say("Could not edit %s" % line)
 
     def _reply(self, final, card, fix):
         """Show the agent's final words - demoted into the build card when

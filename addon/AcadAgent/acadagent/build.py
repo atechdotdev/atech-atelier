@@ -3267,10 +3267,14 @@ def document_brief(doc, selection=None, cache=None):
     atech = _atech_brief_lines(doc)
     if not solid_lines:
         solid_lines.append("  (no solids yet)" if not atech else "  (no solids)")
-    extras = atech + _free_part_lines(doc) + _user_state_lines(doc)
+    extras = atech + _free_part_lines(doc) + _imported_lines(doc)
+    extras += _user_state_lines(doc)
     extras += _selection_lines(doc, selection)
     body = _fit_brief(head, solid_lines, more, extras)
     out = [body, "</document_data>"]
+    rule = _editable_rule(doc)
+    if rule:
+        out.append(rule)
     flagged = _flagged(doc)
     if flagged:
         store = _load_trust()
@@ -3470,6 +3474,37 @@ def _free_part_lines(doc):
         lines.append(text)
     return _section("FREE PARTS (library or user-imported parts placed by "
                     "hand; never model these):", lines)
+
+
+def _imported_lines(doc):
+    """R880/R885: parts the user brought in from files (design_import), and
+    the ones they let the agent edit, faces and all (part_ops)."""
+    out = []
+    try:
+        from . import design_import
+        out += _section("IMPORTED by the user from files:",
+                        design_import.brief_lines(doc))
+    except Exception as exc:                           # noqa: BLE001
+        _log("brief: imported: %r" % (exc,))
+    try:
+        from . import part_ops
+        out += _section("EDITABLE PARTS (change them with %s, never in "
+                        "model.py; faces in document mm):" % part_ops.AGENT_FILE,
+                        part_ops.brief_lines(doc))
+    except Exception as exc:                           # noqa: BLE001
+        _log("brief: editable: %r" % (exc,))
+    return out
+
+
+def _editable_rule(doc):
+    """R885: how to edit the parts the user let the agent edit (outside
+    <document_data>: it is Atelier's instruction, not the document's)."""
+    try:
+        from . import part_ops
+        return part_ops.agent_rule() if part_ops.editable_parts(doc) else ""
+    except Exception as exc:                           # noqa: BLE001
+        _log("brief: editable rule: %r" % (exc,))
+        return ""
 
 
 def _user_state_lines(doc):

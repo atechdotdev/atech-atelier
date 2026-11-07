@@ -13,11 +13,15 @@ the view bar's Edit shapes button or the R key, that follows the selection:
     TURN        90 degree turns about Z, and tilts about X / Y
     SOLID/HOLE  a hole is cut out of the solids it is combined with
     Combine / Ungroup / Duplicate / Delete
+    R890: drag handles in the 3D view while the window is open (handles),
+    snapping to the Grid step; Text; Align (two or more parts, x / y / z
+    to min, centre or max) and Mirror (arrange)
 
 Parts the agent built, and Atech hardware, say why their size is not typed
 here (shape_edit.why_not) and offer Dimensions instead. All the geometry is
 shape_edit's; this module is the window.
 """
+from . import arrange
 from . import shape_edit as se
 
 _OPEN = {}
@@ -104,6 +108,10 @@ def ShapeEditor(parent=None):
         b.clicked.connect(lambda _=False, kk=k: add(kk))
         pal.addWidget(b, i // 3, i % 3)
         d.shape_buttons[k] = b
+    d.btn_text = QtWidgets.QPushButton("Text", d)
+    d.btn_text.setCursor(QtCore.Qt.PointingHandCursor)
+    d.btn_text.setToolTip("Raised letters, 10 mm high, beside the model")
+    pal.addWidget(d.btn_text, len(se.SHAPE_ORDER) // 3, 0)
     lay.addLayout(pal)
 
     # -- selected part
@@ -173,6 +181,18 @@ def ShapeEditor(parent=None):
     d.step.setCurrentIndex(1)
     step_row.addWidget(sl)
     step_row.addWidget(d.step)
+    # R890: what the 3D view's drag handles snap to
+    gl = QtWidgets.QLabel("Grid", d)
+    gl.setObjectName("ToolMuted")
+    d.grid = QtWidgets.QComboBox(d)
+    d.grid.setToolTip("Dragging a handle in the 3D view snaps to this")
+    d.grid.setAccessibleName("Grid step")
+    from . import handles as _handles
+    for g in _handles.SNAP_STEPS:
+        d.grid.addItem("%s mm" % se.fmt_mm(g), g)
+    d.grid.setCurrentIndex(list(_handles.SNAP_STEPS).index(_handles.DEFAULT_SNAP))
+    step_row.addWidget(gl)
+    step_row.addWidget(d.grid)
     step_row.addStretch(1)
     form.addLayout(step_row, row, 0, 1, 4)
     row += 1
@@ -218,6 +238,36 @@ def ShapeEditor(parent=None):
     d.btn_solid.clicked.connect(lambda _=False: act(lambda o: se.set_hole(o, False)))
     d.btn_hole.clicked.connect(lambda _=False: act(lambda o: se.set_hole(o, True)))
     lay.addLayout(hrow)
+
+    # R890: Mirror and Align
+    mrow = QtWidgets.QHBoxLayout()
+    d.btn_mirror = {}
+    for ax in ("x", "y", "z"):
+        b = QtWidgets.QPushButton("Mirror %s" % ax.upper(), d)
+        b.setToolTip("Flip the part across %s through its centre" % ax.upper())
+        b.clicked.connect(lambda _=False, a=ax: act(lambda o: arrange.mirror(o, a)))
+        mrow.addWidget(b)
+        d.btn_mirror[ax] = b
+    lay.addLayout(mrow)
+    arow = QtWidgets.QHBoxLayout()
+    al = QtWidgets.QLabel("Align", d)
+    al.setObjectName("ToolMuted")
+    arow.addWidget(al)
+    d.align_axis = QtWidgets.QComboBox(d)
+    for ax in ("x", "y", "z"):
+        d.align_axis.addItem(ax.upper(), ax)
+    d.align_axis.setAccessibleName("Align along")
+    arow.addWidget(d.align_axis)
+    d.btn_align = {}
+    for where, text, tip in (("min", "Min", "Line up their left / front / bottom"),
+                             ("centre", "Centre", "Line up their centres"),
+                             ("max", "Max", "Line up their right / back / top")):
+        b = QtWidgets.QPushButton(text, d)
+        b.setToolTip(tip + " (two or more parts)")
+        b.clicked.connect(lambda _=False, w=where: align(w))
+        arow.addWidget(b)
+        d.btn_align[where] = b
+    lay.addLayout(arow)
 
     brow = QtWidgets.QHBoxLayout()
     d.btn_combine = QtWidgets.QPushButton("Combine", d)
@@ -288,6 +338,21 @@ def ShapeEditor(parent=None):
                 viewport.fit_all()
             except Exception:                          # noqa: BLE001
                 pass
+        load()
+
+    def add_text():
+        text, ok = QtWidgets.QInputDialog.getText(d, "Add text", "Text:")
+        if not ok or not text.strip():
+            return
+        doc = _new_doc_if_needed()
+        o = run(lambda: arrange.add_text(doc, text), "add the text")
+        if o is not None:
+            _select(o)
+        load()
+
+    def align(where):
+        sel = _selection()
+        run(lambda: arrange.align(sel, d.align_axis.currentData(), where), "align")
         load()
 
     def apply_size(axis):
@@ -401,6 +466,7 @@ def ShapeEditor(parent=None):
         b.setAutoDefault(False)
         b.setDefault(False)
 
+    d.btn_text.clicked.connect(lambda _=False: add_text())
     d.btn_combine.clicked.connect(lambda _=False: combine())
     d.btn_ungroup.clicked.connect(lambda _=False: ungroup())
     d.btn_dup.clicked.connect(lambda _=False: duplicate())
@@ -470,6 +536,10 @@ def ShapeEditor(parent=None):
             d.btn_del.setEnabled(o is not None and k != "hardware")
             d.btn_ungroup.setEnabled(k == "group")
             d.btn_combine.setEnabled(len(sel) >= 2)
+            for b in d.btn_align.values():
+                b.setEnabled(len(sel) >= 2)
+            for b in d.btn_mirror.values():
+                b.setEnabled(sizable and k != "group")
             d.btn_dims.setVisible(k == "agent")
             d.btn_drop.setEnabled(movable)
             doc = _doc()
@@ -491,6 +561,11 @@ def ShapeEditor(parent=None):
             _log("load: %r" % (exc,))
         finally:
             state["loading"] = False
+        try:
+            from . import handles
+            handles.refresh()
+        except Exception as exc:                       # noqa: BLE001
+            _log("handles: %r" % (exc,))
 
     d.load = load
 
@@ -530,16 +605,29 @@ def ShapeEditor(parent=None):
     except Exception as exc:                           # noqa: BLE001
         _log("selection observer: %r" % (exc,))
 
+    # R890: drag handles on the 3D view while the window is open
+    try:
+        from . import handles
+        handles.start(lambda: float(d.grid.currentData() or 1.0),
+                      on_change=lambda: QtCore.QTimer.singleShot(0, load))
+    except Exception as exc:                           # noqa: BLE001
+        _log("handles: %r" % (exc,))
+
     def finished(_r=0):
         try:
             import FreeCADGui
             FreeCADGui.Selection.removeObserver(obs)
         except Exception:                              # noqa: BLE001
             pass
+        try:
+            from . import handles
+            handles.stop()
+        except Exception:                              # noqa: BLE001
+            pass
         _OPEN.pop("dlg", None)
     d.finished.connect(finished)
     d.destroyed.connect(lambda *_a: finished())
-    d.resize(420, 560)
+    d.resize(420, 660)
     load()
     return d
 

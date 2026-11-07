@@ -6,6 +6,56 @@ change behaviour.
 
 ## [Unreleased]
 
+### Bring in your own CAD files and edit them part by part
+
+- **Add file to design…** (right-click menu) puts a STEP, IGES, BREP, STL,
+  3MF, OBJ, PLY, OFF or AMF file into the open design, set down beside what
+  is there, in the units it was drawn in. A file dropped on an open project
+  now goes into it; dropped on Home it still becomes a new project. OBJ
+  files open from Home too.
+- Each part remembers its file, where it was found, who made it and its
+  licence (**Edit part → Edit source…**).
+- **Edit part** (view bar, F) changes a part's own faces and edges: click a
+  face to **Push / pull** it or **Drill hole** where you clicked; pick edges
+  to **Fillet** or **Chamfer**; **Hollow** it with the selected faces left
+  open; **Mirror** or **Split** it on X, Y or Z.
+- Every edit is listed: **Undo last**, **Remove** any one (the later ones
+  are made again without it) or go **Back to original**. The file you
+  brought in is never changed, and the edits survive saving.
+- STL, 3MF and OBJ files are meshes: **Convert to solid** turns one into a
+  solid with real faces (a very big mesh is simplified first). A TinkerCAD
+  shape gets **Make editable**.
+- **Let the design agent edit it**: ask in the chat ("make the tabs 2 mm
+  thicker") and the agent's changes arrive as edits to that part, each one
+  undoable. Parts without the tick are designed around, never changed.
+
+### TinkerCAD-style handles, align, mirror and text
+
+- With **Edit shapes** (R) open, the selected part has handles in the 3D
+  view: drag the white squares to size it (the far side stays put; Shift
+  keeps the proportions), the top square for its height, the black cone to
+  raise it, the curved arrows to turn it, or the part itself to slide it
+  across the floor. Sizes show while you drag; every drag is one undo step.
+- Drags snap to the **Grid** chosen in Edit shapes (1 mm by default); turns
+  snap to 15° (Shift: 45°).
+- New in Edit shapes: **Text** (raised letters), **Mirror X / Y / Z** and
+  **Align** two or more parts to their min, centre or max on X, Y or Z.
+
+### MakerWorld
+
+- **From MakerWorld…**: paste a model's link, open its page and download it
+  there, then **Use my newest download**. The model comes in with its maker,
+  link and licence. Bambu Studio 3MF files are read in full.
+- **Publish to MakerWorld…** (Export and share) checks every part you
+  brought in first: a model under MakerWorld's Standard Digital File
+  License cannot be published, a no-derivatives one cannot be published
+  edited, and share-alike or non-commercial terms carry over to your
+  design. It then saves the 3MF, STEP, a cover picture and a description
+  with "Remix of" credits, ready to upload. **Open in Bambu Studio** saves
+  the print profile MakerWorld asks for; **Open MakerWorld** is where they
+  go up. MakerWorld has no way for apps to upload or sign in, so Atelier
+  never uses your MakerWorld account.
+
 ### Codex and Cursor as the chat agent
 
 - **Agent Settings → Agent engine** now offers **Codex** (OpenAI's `codex`

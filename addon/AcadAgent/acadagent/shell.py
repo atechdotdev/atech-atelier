@@ -625,7 +625,8 @@ class EmptyView(QtWidgets.QWidget):
 HOME_RECENT_MAX = 10           # PRD Opening 3: recents, up to 10
 OPEN_EXT = (".fcstd",)
 #: Opened as a NEW project that imports the file (PRD Opening 4).
-IMPORT_EXT = (".step", ".stp", ".stl", ".3mf", ".iges", ".igs", ".brep", ".brp")
+IMPORT_EXT = (".step", ".stp", ".stl", ".3mf", ".iges", ".igs", ".brep", ".brp",
+              ".obj")
 _PEEK = {}                     # (realpath, mtime, size) -> (thumb bytes, hw)
 
 #: "Start from an example" (PRD Opening 6): agent_kit/examples/<key>.py.
@@ -1574,7 +1575,7 @@ class OrbitHint(QtWidgets.QFrame):
 #: sit between the view toggles and Spin, in this order; a key not listed
 #: here goes after them. See register_view_tool().
 TOOL_ORDER = ("measure", "section", "show", "explode", "simulate", "dims", "shape",
-              "colour", "export", "share", "video")
+              "part", "colour", "export", "share", "video")
 _TOOLS = {}
 #: R380: the slot shows two groups, inspect | output, with a thin line
 #: between them. A key in neither group joins the last one.
@@ -1587,7 +1588,7 @@ TOOL_GROUPS = (("measure", "section", "show", "explode", "simulate"),
 #: Measure and Section stay (they also have M and Shift+S).
 TOOL_DROP_LEVEL = {"share": 1, "dims": 1, "explode": 2, "colour": 2,
                    "export": 2, "measure": 99, "section": 99, "show": 99,
-                   "simulate": 2, "video": 1}
+                   "simulate": 2, "video": 1, "part": 1}
 #: Lucide "ellipsis", for the More tools button (as navbar adds "save").
 style.PATHS.setdefault("more", '<circle cx="12" cy="12" r="1"/>'
                        '<circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>')
@@ -1687,7 +1688,7 @@ BUILTIN_TOOLS = (("measure", "Measure"), ("section", "Section view"),
                  ("share", "Save a share image"))
 #: R700/R701: Show and hide (visibility.py) and Dimensions (dimensions.py).
 EDIT_TOOLS = (("show", "Show and hide"), ("dims", "Dimensions"),
-              ("shape", "Edit shapes"))
+              ("shape", "Edit shapes"), ("part", "Edit part"))
 #: R810/R811: Simulate (simulate.py) and Make assembly video (promo_video,
 #: through export_tools.video_button) on the bar, not only in a menu.
 MAKE_TOOLS = (("simulate", "Simulate"), ("video", "Make assembly video"))
@@ -1758,6 +1759,9 @@ def _edit_button(bar, key):
     if key == "shape":
         from . import manual_edit
         return manual_edit.view_bar_button(bar)
+    if key == "part":
+        from . import part_edit
+        return part_edit.view_bar_button(bar)
     from . import dimensions
     return dimensions.view_bar_button(bar)
 
@@ -3030,10 +3034,38 @@ def open_paths(paths):
     return out
 
 
+def adds_to_design():
+    """R880: True when a dropped CAD file goes into the open design: a
+    project is open and Home is not over it. Otherwise it becomes a new
+    project (R309)."""
+    if home_open():
+        return False
+    try:
+        import FreeCAD
+        return FreeCAD.ActiveDocument is not None
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
+def drop_paths(paths):
+    """Dropped files: projects open; CAD files are added to the open design
+    (R880) or become new projects."""
+    paths = droppable(paths)
+    projects = [p for p in paths if p.lower().endswith(OPEN_EXT)]
+    files = [p for p in paths if p not in projects]
+    out = []
+    if files and adds_to_design():
+        from . import design_import
+        out += [o.Name for o in design_import.add_dropped(files)]
+        files = []
+    return out + open_paths(projects + files)
+
+
 class DropFilter(QtCore.QObject):
     """Files dropped anywhere on the window that FreeCAD's own 3D view does
     not take (Home, the sidebar, the empty MDI area) open through
-    open_path(), so STEP / STL / 3MF become new projects (R309)."""
+    open_path(), so STEP / STL / 3MF become new projects (R309) - or, with
+    a project open, go into it (R880, drop_paths)."""
 
     def eventFilter(self, obj, ev):                    # noqa: N802
         t = ev.type()
@@ -3045,9 +3077,46 @@ class DropFilter(QtCore.QObject):
             paths = droppable(_event_paths(ev))
             if paths:
                 ev.acceptProposedAction()
-                QtCore.QTimer.singleShot(0, lambda p=paths: open_paths(p))
+                QtCore.QTimer.singleShot(0, lambda p=paths: drop_paths(p))
                 return True
         return False
+
+
+class ViewDropFilter(QtCore.QObject):
+    """R880: CAD files dropped on the 3D view of an open project go into
+    the design through design_import (with their source recorded), not
+    FreeCAD's own import. Installed on the application, it acts only on
+    widgets inside the view area (`area`) and leaves everything else -
+    a dropped .FCStd included - to whoever takes it now."""
+
+    def __init__(self, area, parent=None):
+        super().__init__(parent)
+        self.area = area
+
+    def _ours(self, obj, ev):
+        try:
+            if not (isinstance(obj, QtWidgets.QWidget) and self.area is not None
+                    and (obj is self.area or self.area.isAncestorOf(obj))):
+                return []
+        except RuntimeError:
+            return []
+        if not adds_to_design():
+            return []
+        from . import design_import
+        return design_import.addable(_event_paths(ev))
+
+    def eventFilter(self, obj, ev):                    # noqa: N802
+        t = ev.type()
+        if t not in (QtCore.QEvent.DragEnter, QtCore.QEvent.DragMove,
+                     QtCore.QEvent.Drop):
+            return False
+        paths = self._ours(obj, ev)
+        if not paths:
+            return False
+        ev.acceptProposedAction()
+        if t == QtCore.QEvent.Drop:
+            QtCore.QTimer.singleShot(0, lambda p=paths: drop_paths(p))
+        return True
 
 
 # --------------------------------------------------- examples (R310)
@@ -3209,6 +3278,9 @@ SHORTCUTS = (
     ("explode", "E", "Exploded view, or put the parts back", "Atech"),
     ("dims", "D", "Change the model's dimensions by hand", "Atech"),
     ("shape", "R", "Edit shapes: add shapes, type exact sizes, holes", "Atech"),
+    # R885
+    ("part", "F", "Edit part: push/pull faces, holes, fillets, hollow",
+     "Atech"),
     ("home", "Ctrl+0", "Home: all your projects (Esc goes back)", "Atech"),
     ("ask", "Ctrl+Shift+A", "Ask about this view", "Atech"),
     ("full", "Ctrl+Shift+F", "Full-screen 3D (hide the sidebar)", "Atech"),
@@ -3268,6 +3340,7 @@ def _shortcut_fn(sid):
         "explode": lambda: _visibility_key("key_explode"),
         "dims": _open_dimensions,
         "shape": _open_shape_editor,
+        "part": _open_part_editor,
         "home": toggle_home,
     }[sid]
 
@@ -3285,6 +3358,11 @@ def _open_dimensions():
 def _open_shape_editor():
     from . import manual_edit
     return manual_edit.open_editor(_mw_or_none())
+
+
+def _open_part_editor():
+    from . import part_edit
+    return part_edit.open_editor(_mw_or_none())
 
 
 # ------------------------------------------------------- Home mode (R801)
@@ -3660,6 +3738,14 @@ TOOL_COMMANDS = (
      "(Shift+S)", "section"),
     ("Atech_Dimensions", "Dimensions\u2026", "Change the model's numbers by "
      "hand and rebuild (D)", "dims"),
+    # R880 / R885
+    ("Atech_AddFile", "Add file to design\u2026", "Bring a STEP, STL, 3MF or "
+     "OBJ file into this design, with where it came from", "addfile"),
+    ("Atech_EditPart", "Edit part\u2026", "Push/pull faces, drill holes, "
+     "fillet edges, hollow or split the selected part (F)", "part"),
+    # R900
+    ("Atech_FromMakerWorld", "From MakerWorld\u2026", "Add a model downloaded "
+     "from MakerWorld, with its maker and licence", "mwimport"),
 )
 EXPORT_COMMANDS = (
     ("Atech_ExportForPrint", "Export for print\u2026", "Save STL, 3MF or "
@@ -3670,6 +3756,9 @@ EXPORT_COMMANDS = (
      "Atech hardware, with a CSV export", "bom"),
     ("Atech_GetItMade", "Get it made by Atech\u2026", "The board, the modules and "
      "the 3D prints from atech.dev, one 3D print voucher per print", "made"),
+    ("Atech_PublishMakerWorld", "Publish to MakerWorld\u2026", "Check the "
+     "licences, then make the 3MF, STEP, picture and text to upload",
+     "mwpublish"),
     ("Atech_PostToAtech", "Post to atech.dev\u2026", "Share the design on "
      "atech.dev/community, with its picture and assembly video", "post"),
     ("Atech_ShareImage", "Save a share image", "A 1920 x 1080 picture in "
@@ -3719,6 +3808,17 @@ def run_command_action(key):
         return key
     if key == "dims":
         return _open_dimensions()
+    if key == "addfile":
+        from . import design_import
+        return design_import.add_to_active(parent=parent)
+    if key == "part":
+        return _open_part_editor()
+    if key == "mwimport":
+        from . import makerworld
+        return makerworld.import_to_active(parent)
+    if key == "mwpublish":
+        from . import makerworld
+        return _keep_dialog(makerworld.PublishDialog(parent)).show()
     if key == "export":
         return _keep_dialog(export_tools.ExportDialog(parent)).show()
     if key == "explode":
@@ -4524,6 +4624,14 @@ def _install_chrome(mw, dock, body):
         w.installEventFilter(drops)
     _S["drop_accept"] = mw.acceptDrops()
     mw.setAcceptDrops(True)
+    try:                                                        # R880
+        area = mw.findChild(QtWidgets.QMdiArea)
+        if area is not None:
+            vdrops = ViewDropFilter(area, dock)
+            QtWidgets.QApplication.instance().installEventFilter(vdrops)
+            _S["view_drops"] = vdrops
+    except Exception as exc:                           # noqa: BLE001
+        _log("view drops: %r" % (exc,))
     _hook_docs()                                               # R302
     try:
         hints = QtGui.QGuiApplication.styleHints()
@@ -5198,6 +5306,12 @@ def uninstall():
                 pass
         if "drop_accept" in _S:
             mw.setAcceptDrops(_S["drop_accept"])
+    vdrops = _S.pop("view_drops", None)
+    if vdrops is not None:
+        try:
+            QtWidgets.QApplication.instance().removeEventFilter(vdrops)
+        except RuntimeError:
+            pass
     for key in ("sheet", "appearance"):
         dlg = _S.get(key)
         if dlg is not None:

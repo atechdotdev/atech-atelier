@@ -378,6 +378,9 @@ PATHS = {
     "perspective": '<path d="M3 5l18 3v8L3 19z"/><path d="M3 12h18" stroke-dasharray="2 3"/>',
     "wire": '<path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5z"/><path d="m4 7.5 8 4.5 8-4.5"/>'
             '<path d="M12 12v9"/><path d="M4 16.5 12 12" stroke-dasharray="2 2"/>',
+    # R885: Edit part (a pencil)
+    "edit": '<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>'
+            '<path d="m15 5 4 4"/>',
 }
 
 

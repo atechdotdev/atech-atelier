@@ -84,6 +84,9 @@ class AccountButton(QtWidgets.QPushButton):
             who = m.addAction(u.get("email", ""))
             who.setEnabled(False)
             m.addAction("Your account on atech.dev", lambda: self.opener(shop.SITE + "/account"))
+            m.addAction("Builds on atech.dev", lambda: self.opener(shop.SITE + "/community"))
+            m.addAction("Atech shop", lambda: self.opener(shop.SHOP))
+            m.addAction("About Atech Atelier", lambda: self.opener(shop.SITE + "/atelier"))
             m.addSeparator()
             m.addAction("Sign out", self.sign_out)
         self._menu = m

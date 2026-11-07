@@ -343,7 +343,8 @@ class TestButton(Base):
         QtCore.QCoreApplication.processEvents()
         self.assertEqual(b.text(), "David")
         texts = [a.text() for a in b.menu().actions() if a.text()]
-        self.assertEqual(texts, ["maker@example.com", "Your account on atech.dev", "Sign out"])
+        self.assertEqual(texts, ["maker@example.com", "Your account on atech.dev", "Builds on atech.dev",
+                                 "Atech shop", "About Atech Atelier", "Sign out"])
 
     def test_cancel(self):
         from PySide6 import QtCore

@@ -37,6 +37,15 @@ change behaviour.
 - If the browser cannot reach Atelier, the page shows a code to paste in
   (**Paste a code…**). Sign in waits five minutes, and can be cancelled.
 - **Get it made** fills in your account's email.
+- The account menu also opens your builds on atech.dev, the Atech shop and
+  the site's Atech Atelier page (atech.dev/atelier), which says which account
+  Atelier signs in as.
+- **Post to atech.dev…** (Export and share, the Atech menu, right-click):
+  title, category, description and "Built by" (your name), with a fresh
+  share image and the design's newest assembly video. It posts on
+  atech.dev/community as your account and opens the new post's page. A
+  post says it was made with Atech Atelier (a link, which you can untick).
+  Files up to 25 MB each.
 
 ### Get it made by Atech: the modules and the 3D prints from atech.dev
 

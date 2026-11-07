@@ -166,10 +166,18 @@ class TestDialog(unittest.TestCase):
         d.post.click()
         kw = self.published[0]
         self.assertEqual((kw["title"], kw["body"], kw["category"], kw["files"]),
-                         ("Rover", "It drives.\n\nBuilt by: David", "Gadgets", [self.pic, self.vid]))
-        self.assertEqual(self.opened, [post.COMMUNITY_URL])
+                         ("Rover", "It drives.\n\nBuilt by: David\n\nLinks:\n" + post.ATELIER_URL,
+                          "Gadgets", [self.pic, self.vid]))
+        # the new post's own page, as after the site's Post Build
+        self.assertEqual(self.opened, [shop.SITE + "/p/post-1?posted=1"])
         self.assertIn("Posted on atech.dev/community with 2 files", d.status.text())
         self.assertEqual(d.post.text(), "Posted")
+
+    def test_without_the_atelier_link(self):
+        d = self.make(FakeAccount())
+        d.made_with.setChecked(False)
+        d.post.click()
+        self.assertNotIn("Links:", self.published[0]["body"])
 
     def test_untick_and_no_title(self):
         from PySide6 import QtCore

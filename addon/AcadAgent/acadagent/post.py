@@ -13,6 +13,7 @@ Atelier design is a file on this computer, not a project on the site.
 import glob
 import os
 import threading
+import urllib.parse
 import urllib.request
 
 from . import account, export_tools, shop
@@ -26,18 +27,30 @@ MEDIA_EXT = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
              ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/quicktime",
              ".webm": "video/webm"}
 COMMUNITY_URL = shop.SITE + "/community"
+#: The site's page about Atelier (atech.dev/atelier): a post made here links it.
+ATELIER_URL = shop.SITE + "/atelier"
+
+
+def post_url(post_id):
+    """The post's own page, with the site's share row up (as after the
+    site's own Post Build)."""
+    return "%s/p/%s?posted=1" % (shop.SITE, urllib.parse.quote(str(post_id), safe=""))
 
 
 def _log(msg):
     export_tools._log("post: %s" % msg)
 
 
-def compose_body(text, by=""):
-    """The post's body as the site's form composes it: the words, then a
-    "Built by:" line."""
+def compose_body(text, by="", links=()):
+    """The post's body as the site's form composes it (lib/hub/details.ts
+    composeBody): the words, a "Built by:" line, then "Links:" and one URL
+    a line, which the post page shows as links."""
     parts = [text.strip()]
     if by.strip():
         parts.append("Built by: %s" % by.strip())
+    urls = [u.strip() for u in links if u and u.strip()]
+    if urls:
+        parts.append("Links:\n" + "\n".join(urls))
     return "\n\n".join(p for p in parts if p)
 
 
@@ -146,6 +159,10 @@ def PostDialog(parent=None, doc_fn=export_tools._active_doc, acct=None, opener=N
     form.addRow("Description", d.text)
     form.addRow("Built by", d.by)
     lay.addLayout(form)
+    d.made_with = QtWidgets.QCheckBox("Say it was made with Atech Atelier (a link on the post)", d)
+    d.made_with.setChecked(True)
+    d.made_with.setAccessibleName("Link Atech Atelier on the post")
+    lay.addWidget(d.made_with)
 
     sec = QtWidgets.QLabel("PICTURES AND VIDEO", d)
     sec.setObjectName("ToolMuted")
@@ -233,7 +250,8 @@ def PostDialog(parent=None, doc_fn=export_tools._active_doc, acct=None, opener=N
         if not title:
             d.status.setText("Give the post a title.")
             return None
-        kw = dict(title=title, body=compose_body(d.text.toPlainText(), d.by.text()),
+        links = [ATELIER_URL] if d.made_with.isChecked() else []
+        kw = dict(title=title, body=compose_body(d.text.toPlainText(), d.by.text(), links),
                   category=d.category.currentData(), files=chosen(), acct=acct)
         d.post.setEnabled(False)
         d.status.setText("Posting…" + (" (uploading %d file%s)" % (
@@ -261,7 +279,8 @@ def PostDialog(parent=None, doc_fn=export_tools._active_doc, acct=None, opener=N
         d.status.setText(msg + " It is open in your browser.")
         d.post.setEnabled(False)
         d.post.setText("Posted")
-        opener(COMMUNITY_URL)
+        d.posted_url = post_url(res["id"]) if res.get("id") else COMMUNITY_URL
+        opener(d.posted_url)
 
     def browse():
         paths, _f = QtWidgets.QFileDialog.getOpenFileNames(

@@ -235,8 +235,8 @@ class TestR381ContextMenu(Case):
             self.assertIn(c, root)
         sub = dict(wb.menus)[self.shell.EXPORT_MENU]
         self.assertEqual(sub, ["Atech_ExportForPrint", "Atech_ExplodedView",
-                               "Atech_BillOfMaterials", "Atech_ShareImage",
-                               "Atech_ReviewSheet"])
+                               "Atech_BillOfMaterials", "Atech_GetItMade", "Atech_PostToAtech",
+                               "Atech_ShareImage", "Atech_ReviewSheet"])
 
     def test_tree_menu_and_other_recipients(self):
         wb = FakeWB()
@@ -270,7 +270,7 @@ class TestR381ContextMenu(Case):
         with mock.patch.object(inspect_tools, "register_commands", lambda: None):
             wb.ContextMenu("View")
         self.assertIn("Atech_Measure", self.flat(wb))
-        self.assertEqual(len(added), 9)          # R700 added Dimensions...
+        self.assertEqual(len(added), 11)         # R700 Dimensions..., R850 Get it made..., R861 Post
         s.uninstall()
         self.assertFalse(hasattr(wb, "ContextMenu"))
 

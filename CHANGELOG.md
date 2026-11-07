@@ -6,6 +6,76 @@ change behaviour.
 
 ## [Unreleased]
 
+### Codex and Cursor as the chat agent
+
+- **Agent Settings → Agent engine** now offers **Codex** (OpenAI's `codex`
+  CLI) and the **Cursor CLI** (`cursor-agent`, preview) beside Claude Code.
+  Each uses your own sign-in; the chat, live preview, design levels, fix
+  turns, Stop, Retry and "Ask about this view" (read-only) work the same.
+- The agent runs inside Codex's or Cursor's own sandbox (it changes files
+  only in the chat's folder, with no network). Its `./check` is run by
+  Atelier in the usual design sandbox, which the agent's sandbox cannot
+  nest: the agent never gets a way out of its sandbox.
+- A path and a model per engine in Agent Settings; effort for Claude Code
+  and Codex; the budget stays Claude Code's. If an engine is missing or
+  signed out, the chat names its install and sign-in commands.
+- Each engine has its own data notice (what goes to OpenAI or Cursor, and
+  that their sandboxes do not stop the agent reading other files), asked
+  once per engine. A chat's agent session belongs to its engine: switching
+  starts a new session instead of failing to resume.
+- The assembly-video styling reply only runs with the Claude Code engine.
+
+### Sign in with your Atech account
+
+- **Sign in** on Home opens atech.dev in your browser: sign in there as
+  usual (password or Google), press **Connect**, and Atelier is signed in
+  with the same account your Atech board and projects are on. Your password
+  never reaches Atelier, and no token is ever in a link.
+- Home then shows your name, with your email, **Your account on atech.dev**
+  and **Sign out**. Atelier stays signed in between launches; the session
+  is kept in the macOS Keychain (Linux: the keyring, else a private file).
+- If the browser cannot reach Atelier, the page shows a code to paste in
+  (**Paste a code…**). Sign in waits five minutes, and can be cancelled.
+- **Get it made** fills in your account's email.
+
+### Get it made by Atech: the modules and the 3D prints from atech.dev
+
+- **Get it made by Atech** (the Modules page, the Atech menu, the right-click
+  menu's Export and share, and Export for print) lists what the design needs
+  from Atech: the board and modules by their shop names, and the printed
+  parts with their size laid flat and about how many grams they print with.
+  Library parts Atech does not sell (an SG90 servo) are named.
+- **3D print vouchers:** each voucher is one print up to 34 x 32 x 34 cm and
+  350 g (the shop's size since 6 Nov 2026). The parts are packed onto as
+  few voucher beds as they fit, turned either way, and a long part goes
+  corner to corner. A part too big for one voucher gets **Ask the agent to split it**; a last print with only a few
+  small parts gets **Ask the agent to fit it on fewer**.
+- **Add to cart on atech.dev** opens the cart with the board, the modules
+  and, ticked, the vouchers. On the site the cart says the build came from
+  Atelier, and offers a kit when it has every module for less (or for a
+  little more, with its free voucher). Opening it again adds nothing twice.
+  The window shows what it costs first, from the site in your currency
+  ("About $146 on atech.dev, before shipping"), with the kit the cart will
+  offer; offline it just leaves the line out.
+  The cart, the order page and Atelier all say the next step: once paid,
+  send the prints from Atelier with the email you paid with.
+- **Send my prints to Atech** saves one ready plate per voucher (a 3MF,
+  parts laid out on the 340 x 320 mm bed) and an order sheet in
+  Documents/Atech Prints, and sends them to Atech with your email, order
+  number and wishes. While the site cannot take them yet, an email to
+  hello@atech.dev opens instead, with the files shown in Finder to drag in.
+  Once sent, the button reads **Send again**, so a second voucher is not used
+  by accident.
+- The design agent knows the voucher's size and keeps each printed part
+  within it.
+- Click a module on the board, then **Buy on atech.dev** to see that
+  module's page in the shop.
+- Home has an **Atech shop** button, and its bottom line now links to
+  atech.dev and the shop.
+- `ATECH_SITE` points the links and the print request at another site
+  (staging).
+- The README shows the Atech logo first, then FreeCAD.
+
 ## [0.1.3] - 2026-10-31 (preview)
 
 ### Sesame walker: an open-source robot refitted for Atech

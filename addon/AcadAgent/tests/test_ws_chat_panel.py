@@ -679,22 +679,24 @@ class TestDevEngines(tcr.Base):
     def dialog(self):
         return cfgmod.SettingsDialog()
 
-    def test_r24_public_build_offers_one_engine(self):
+    def test_r24_public_build_offers_the_cli_engines(self):
+        """R870: Claude Code, Codex and Cursor; no backend or key fields."""
         os.environ.pop("ATECH_DEV_ENGINES", None)
         d = self.dialog()
         try:
-            self.assertEqual(d.engine.count(), 1)
-            self.assertEqual(d.engine.itemData(0), engine.CLAUDE)
+            self.assertEqual(d.engine.count(), 3)
+            self.assertEqual([d.engine.itemData(i) for i in range(3)],
+                             [engine.CLAUDE, engine.CODEX, engine.CURSOR])
             self.assertFalse(d._form.isRowVisible(d.backend))
             self.assertFalse(d._form.isRowVisible(d.key))
         finally:
             d.deleteLater()
 
-    def test_r24_dev_flag_offers_all_three(self):
+    def test_r24_dev_flag_offers_every_engine(self):
         os.environ["ATECH_DEV_ENGINES"] = "1"
         try:
             d = self.dialog()
-            self.assertEqual(d.engine.count(), 3)
+            self.assertEqual(d.engine.count(), len(engine.ENGINES))
             self.assertTrue(d._form.isRowVisible(d.backend))
             d.deleteLater()
         finally:

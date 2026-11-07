@@ -174,5 +174,27 @@ class TestRegistry(unittest.TestCase):
         self.assertTrue(b.isCheckable())
 
 
+@unittest.skipIf(QtWidgets is None, "PySide6 not installed")
+class TestExplodeCardHidden(unittest.TestCase):
+    """The Exploded view card is made with the view bar, before the 3D
+    view is on screen. It showed with its host - unstyled, unplaced, empty
+    over the navigation cube - until the card base hid itself."""
+
+    def test_card_stays_hidden_when_host_shows(self):
+        from acadagent import explode_card
+        host = QtWidgets.QWidget()
+        host.resize(800, 600)
+        card = explode_card.ExplodeCard(host, lambda: None,
+                                        select_fn=lambda d, o: None,
+                                        fit_fn=lambda: None)
+        host.show()
+        APP.processEvents()
+        try:
+            self.assertFalse(card.isVisible())
+            self.assertFalse(getattr(card, "is_open", False))
+        finally:
+            host.close()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -3,22 +3,21 @@
 *Atech Atelier, powered by FreeCAD.*
 
 <p align="center">
-  <sub>BASED ON</sub><br><br>
+  <a href="https://atech.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="brand/assets/atech_logo-dark.svg">
+      <img src="brand/assets/atech_logo-light.svg" alt="Atech" height="56">
+    </picture>
+  </a>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
   <a href="https://www.freecad.org">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/brand/freecad/FreeCAD-wordmark-light.svg">
       <img src="docs/brand/freecad/FreeCAD-wordmark.svg" alt="FreeCAD" height="56">
     </picture>
   </a>
-  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <a href="https://studio.atech.dev/">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="brand/assets/atech_logo-dark.svg">
-      <img src="brand/assets/atech_logo-light.svg" alt="Atech Studio" height="56">
-    </picture>
-  </a>
   <br>
-  <sub><a href="https://www.freecad.org">FreeCAD</a> &nbsp;·&nbsp; <a href="https://studio.atech.dev/">Atech Studio</a></sub>
+  <sub>Made by <a href="https://atech.dev">Atech</a> &nbsp;·&nbsp; based on <a href="https://www.freecad.org">FreeCAD</a></sub>
 </p>
 
 <p align="center">
@@ -58,6 +57,11 @@ modules that sit where they really go.
 - **Get back to your projects anytime.** Click the Atech logo or press
   **Ctrl+0** for Home.
 - **Export** as STEP or STL for printing, or keep the `.FCStd`.
+- **Get it made by Atech.** One window lists the modules your design needs
+  and how many 3D print vouchers its parts take (one print up to
+  34 x 32 x 34 cm and 350 g each). Put it all in the
+  [atech.dev](https://atech.dev) cart, then send the ready-to-print files to
+  Atech.
 
 Atech Atelier is the official FreeCAD 1.1.3 release, with FreeCAD's program
 files unmodified (no FreeCAD source patched or recompiled), plus the Atech
@@ -187,6 +191,8 @@ must have `SHA256SUMS` next to it), `--uninstall`, `--help`.
   The chat runs on it, and Atech Atelier does not include it. Claude Code
   needs a Claude account that includes it; see Anthropic's setup page
   (<https://code.claude.com/docs/en/setup>) for which plans do.
+  Or, instead, **Codex** (OpenAI) or the **Cursor CLI**: see
+  [Use Codex or Cursor instead](#use-codex-or-cursor-instead-optional).
 - Linux only: **FUSE** to run AppImages directly (most desktops have it;
   the installer tells you if not), and optionally **bubblewrap** (`bwrap`)
   for the design sandbox (see below). On Debian/Ubuntu:
@@ -285,6 +291,38 @@ Type a request in the chat and press Enter. Before your first message is
 sent, the app shows what leaves your computer (below) and asks you to
 continue.
 
+## Use Codex or Cursor instead (optional)
+
+The chat can run on **Codex** (OpenAI's `codex` CLI) or the **Cursor CLI**
+(`cursor-agent`) instead of Claude Code. Install and sign in to the one you
+want, then pick it in **Agent Settings → Agent engine**:
+
+| engine | install | sign in |
+|---|---|---|
+| Codex | `npm install -g @openai/codex` (or `brew install --cask codex`) | `codex login` |
+| Cursor CLI (preview) | `curl https://cursor.com/install -fsS \| bash` | `cursor-agent login` |
+
+Agent Settings also has a path field for each (for an install the app
+cannot find) and a model field per engine. **Effort** applies to Claude
+Code and Codex; the **budget per reply** only to Claude Code (Codex and
+Cursor have no spending limit of their own).
+
+What differs from Claude Code:
+
+- The agent runs inside **Codex's or Cursor's own sandbox**: it can change
+  files only in the chat's folder and has no network, but unlike with
+  Claude Code it **can read other files** on your computer.
+- The design check (`./check`) is run by Atech Atelier for the agent, in
+  the same design sandbox as always (the agent's sandbox cannot run it).
+- Codex runs without your own `~/.codex/config.toml`, rules, plugins and
+  connectors. The Cursor CLI also uses **your own Cursor MCP servers and
+  rules**, and turning its sandbox on may keep it on for your own Cursor CLI
+  sessions.
+- Each engine shows its own data notice before its first message, and a
+  chat started on one engine starts a new agent session if you switch.
+- **Cursor support is a preview**: it follows Cursor's documentation and has
+  not yet been tried with a signed-in Cursor CLI.
+
 ## Atech modules
 
 The **Atech modules** page and the **Atech → New Project** menu place real Atech
@@ -337,6 +375,12 @@ chat message:
 Claude Code also includes what it adds to any session, such as the chat
 folder's path and the name of your operating system. What Anthropic does with
 all of this is set by the terms of your Claude account.
+
+With **Codex** or the **Cursor CLI** as the engine, the same goes to OpenAI or
+Cursor instead, through your account there, and the agent may also read (and
+so send) files outside the chat's folder; see
+[Use Codex or Cursor instead](#use-codex-or-cursor-instead-optional). Their
+own conversation history is kept under `~/.codex/` or `~/.cursor/`.
 
 **Stored on your computer** (Linux paths; on macOS, `~/.local/share/Atech AI
 CAD/` is `~/Library/Application Support/Atech Atelier/`, `~/.config/Atech AI

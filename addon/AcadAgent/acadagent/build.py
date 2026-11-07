@@ -294,8 +294,18 @@ def prepare_workspace(workspace, reset_intent=True, doc=None, request=None):
         # fresh workspace is followed by one that protects ./check itself.
         ctx, ctx_dir = _check_context(workspace, doc)
         extra = _child_path() + ([ctx_dir] if ctx_dir else [])
+        brokered = _brokered_check()
         for _ in range(2):
             text = sandbox.wrapper_script(workspace, extra_path=extra, context=ctx)
+            if text is not None and brokered:
+                # R870: an agent in its own sandbox (Codex, Cursor) cannot
+                # run the real check (Seatbelt does not nest): Atelier runs
+                # it for the agent (check_broker); ./check only asks.
+                from . import check_broker
+                check_broker.register(workspace, text)
+                text = check_broker.client_script(
+                    workspace, check_broker.client_wait(
+                        sandbox.default_timeout()))
             if text is None or not _write_if_changed(
                     os.path.join(workspace, CHECK_CMD), text.encode("utf-8"), 0o555):
                 break
@@ -304,6 +314,16 @@ def prepare_workspace(workspace, reset_intent=True, doc=None, request=None):
     except Exception as exc:                           # noqa: BLE001
         _log("./check not written: %r" % (exc,))
     return written
+
+
+def _brokered_check():
+    """R870: True when the selected engine runs the agent inside its own
+    sandbox (Codex, Cursor), so ./check goes through check_broker."""
+    try:
+        from . import engine
+        return engine.current() in (engine.CODEX, engine.CURSOR)
+    except Exception:                                  # noqa: BLE001
+        return False
 
 
 def _copy_reference(workspace):
@@ -2523,6 +2543,15 @@ def kit_socket_opening():
     return _kit_call(lambda n: bool(SOCKET_CALL.search(n)))
 
 
+#: R850: Atech prints the design with its 3D print vouchers (shop.py
+#: VOUCHER_MM / VOUCHER_GRAMS); Get it made by Atech counts them.
+VOUCHER_RULE = """\
+PRINTING: Atech prints parts on 3D print vouchers, one print up to 340 x
+320 x 340 mm and 350 g: keep each printed part within that (split a bigger
+one, with pegs or screws). The user orders with Get it made by Atech.
+"""
+
+
 def _atech_note(levels=False, assembly=True):
     """The Atech section - only when the module library really works here
     (R37): the note says MUST use atech_ports, which fails every build when
@@ -2537,7 +2566,7 @@ def _atech_note(levels=False, assembly=True):
     if doc is not None:
         note += "(%s is background only, not needed to build.)\n" % doc
     card = _api_card().rstrip("\n")
-    return note + card + "\n"
+    return note + card + "\n" + VOUCHER_RULE
 
 
 _CARD = {}          # R230: mode ("fast" / "quality") -> the card

@@ -1905,6 +1905,24 @@ def ExportDialog(parent=None, doc_fn=_active_doc, selection_fn=_selected,
     d.slicer_row = QtWidgets.QHBoxLayout()
     lay.addLayout(d.slicer_row)
     d.result = None
+    # R850: no printer? Atech prints it with a 3D print voucher
+    atech_row = QtWidgets.QHBoxLayout()
+    lab = QtWidgets.QLabel("No printer? Atech prints it for you: one 3D print voucher per "
+                           "print, up to 34 x 32 x 34 cm.", d)
+    lab.setObjectName("ToolMuted")
+    lab.setWordWrap(True)
+    atech_row.addWidget(lab, 1)
+    d.btn_atech = QtWidgets.QPushButton("Get it made by Atech...", d)
+    d.btn_atech.setAccessibleName("Get it made by Atech")
+
+    def made():
+        from . import print_order
+        d._order = print_order.OrderDialog(d.window(), doc_fn)
+        d._order.show()
+        return d._order
+    d.btn_atech.clicked.connect(lambda _=False: _guard(made))
+    atech_row.addWidget(d.btn_atech)
+    lay.addLayout(atech_row)
 
     def options():
         return dict(fmt=_checked_key(d.fmt), scope=_checked_key(d.scope),
@@ -2296,7 +2314,9 @@ def restyle_buttons(buttons):
 def menu_actions(parent=None, doc_fn=_active_doc, selection_fn=_selected):
     """Factory for the Atech menu / the 3D right-click menu: [QAction]:
     Colour (a submenu), Export for print..., Exploded view (E), Bill of
-    materials..., Save share image, Save review sheet, Make assembly video."""
+    materials..., Get it made by Atech... (R850), Post to atech.dev...
+    (R861), Save share image, Save
+    review sheet, Make assembly video."""
     from PySide6 import QtGui
 
     acts = []
@@ -2316,6 +2336,20 @@ def menu_actions(parent=None, doc_fn=_active_doc, selection_fn=_selected):
     add("Exploded view (E)", lambda: toggle_explode(doc_fn()))
     add("Bill of materials...", lambda: keep.__setitem__(
         "bom", BomDialog(parent, doc_fn)) or keep["bom"].show())
+
+    def made():
+        # R850: the modules and the 3D prints from atech.dev
+        from . import print_order
+        keep["order"] = print_order.OrderDialog(parent, doc_fn)
+        keep["order"].show()
+    add("Get it made by Atech...", made)
+
+    def post():
+        # R861: a Showcase post on atech.dev/community, as the signed-in account
+        from . import post as post_mod
+        keep["post"] = post_mod.PostDialog(parent, doc_fn)
+        keep["post"].show()
+    add("Post to atech.dev...", post)
     add("Save share image", lambda: _say(None, share_now(parent, doc_fn)[1]))
 
     def sheet():

@@ -163,13 +163,16 @@ class TestEngineSelection(_Cfg):
         self.env.set("ATECH_DEV_ENGINES", "1")
         self.assertEqual(engine.current(), engine.OPENCODE)
 
-    def test_r24_public_build_offers_claude_code_only(self):
+    def test_r24_public_build_offers_the_cli_engines(self):
+        """R870: the public build offers the three CLI engines (Claude
+        Code, Codex, Cursor); the dev flag adds OpenCode and the API."""
         self.env.set("ATECH_DEV_ENGINES", None)
-        self.assertEqual([e[0] for e in engine.offered()], [engine.CLAUDE])
+        self.assertEqual([e[0] for e in engine.offered()],
+                         [engine.CLAUDE, engine.CODEX, engine.CURSOR])
         self.env.set("ATECH_DEV_ENGINES", "1")
         self.assertEqual([e[0] for e in engine.offered()],
                          [e[0] for e in engine.ENGINES])
-        self.assertEqual(len(engine.offered()), 3)
+        self.assertEqual(len(engine.offered()), 5)
 
     def test_select_unknown_raises_and_writes_nothing(self):
         with self.assertRaises(ValueError):

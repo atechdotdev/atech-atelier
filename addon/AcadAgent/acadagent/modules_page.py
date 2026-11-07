@@ -51,7 +51,7 @@ import time
 
 from PySide6 import QtCore, QtGui, QtWidgets
 
-from . import style
+from . import shop, style
 
 SLIDE_MS = 450
 SLIDE_STEPS = 18
@@ -1180,6 +1180,16 @@ class ModulesPage(QtWidgets.QWidget):
         # (after _load), so it starts disabled rather than Qt's enabled.
         self.btn_check.setEnabled(False)
         head.addWidget(self.btn_check)
+        # R840: the board and its modules in the atech.dev cart; R850: in
+        # the Get it made window, with the 3D print vouchers the design takes
+        self.btn_buy = QtWidgets.QPushButton("Get it made")
+        self.btn_buy.setObjectName("MGhost")
+        self.btn_buy.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_buy.setAccessibleName("Get it made: the board, these modules and the 3D prints "
+                                       "from atech.dev")
+        self.btn_buy.clicked.connect(self._buy)
+        self.btn_buy.hide()             # shown by refresh once a module is on
+        head.addWidget(self.btn_buy)
         lay.addLayout(head)
 
         # R301: the board moved (or a cabled module did) and modules no
@@ -1322,6 +1332,13 @@ class ModulesPage(QtWidgets.QWidget):
         self.btn_recable.hide()
         ol.addWidget(self.btn_recable)
         ol.addStretch(1)
+        # R840: the selected module's page in the shop
+        self.btn_shop = QtWidgets.QPushButton("Buy on atech.dev")
+        self.btn_shop.setObjectName("MLink")
+        self.btn_shop.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_shop.setAccessibleName("This module on atech.dev")
+        self.btn_shop.clicked.connect(self._shop_selected)
+        ol.addWidget(self.btn_shop)
         self.occ_row.hide()
         lay.addWidget(self.occ_row)
 
@@ -1618,6 +1635,7 @@ class ModulesPage(QtWidgets.QWidget):
         self._sync_list(occ, first)
         self._sync_free(doc)
         self._sync_stale(doc, occ)
+        self._sync_buy(occ)
         mods = {o.Name for o in occ.values()}
         self.meta.setText("%d module%s on %d port%s" % (
             len(mods), "" if len(mods) == 1 else "s",
@@ -1757,6 +1775,9 @@ class ModulesPage(QtWidgets.QWidget):
             self.btn_move.setVisible(self._moving is None)
             self.btn_recable.setVisible(cabled and o.Name in self._stale["cabled"])
             self.btn_recable.setEnabled(not busy)
+            sold = shop.slug(getattr(o, "AtechModule", ""))
+            self.btn_shop.setVisible(bool(sold))
+            self.btn_shop.setToolTip(shop.module_url(o.AtechModule) if sold else "")
             self.list_label.hide()
             self.by_cable.hide()
             for b in self._module_btns:
@@ -2535,6 +2556,48 @@ class ModulesPage(QtWidgets.QWidget):
         self.all_label.setVisible(not only)
         self._verdict_uid = _doc_uid(doc)
         self._last_check = (doc, doc.Name, only, res)
+
+    # ---------------------------------------------------------------- shop
+    @staticmethod
+    def _module_names(occ):
+        """presets.yaml names of the modules in `occ`, one per module."""
+        seen = {}
+        for o in occ.values():
+            seen.setdefault(o.Name, getattr(o, "AtechModule", "") or "")
+        return list(seen.values())
+
+    def _sync_buy(self, occ):
+        """R840: Buy these modules names what goes in the cart."""
+        names = self._module_names(occ)
+        want, unsold = shop.bill(names)
+        self.btn_buy.setVisible(bool(names))
+        lines = ["%d \u00d7 %s" % (c, s) for s, c in want.items()]
+        tip = ("The board, %s and the 3D prints from atech.dev (one 3D print "
+               "voucher per print)." % ("this module" if len(names) == 1 else "these modules"))
+        if lines:
+            tip += "\n" + "\n".join(lines)
+        if unsold:
+            tip += "\nNot sold on its own: %s" % ", ".join(
+                display_name(n, self._specs) for n in unsold if n != shop.BOARD)
+        self.btn_buy.setToolTip(tip)
+
+    def _buy(self):
+        """R850: the Get it made window (modules, prints, vouchers); the
+        cart link at once when it cannot open."""
+        try:
+            from . import print_order
+            self._order_dlg = print_order.OrderDialog(self.window())
+            self._order_dlg.show()
+            return self._order_dlg
+        except Exception as exc:                          # noqa: BLE001
+            _log("get it made: %r" % (exc,))
+            shop.open_url(shop.cart_url(self._module_names(self._occupied())))
+            return None
+
+    def _shop_selected(self):
+        o = self._occupied().get(self._selected)
+        if o is not None:
+            shop.open_url(shop.module_url(getattr(o, "AtechModule", "")))
 
     @staticmethod
     def _board_modules(doc):

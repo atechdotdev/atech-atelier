@@ -1159,6 +1159,10 @@ def _make_card_class():
             sh.setOffset(0, 4)
             sh.setColor(QtGui.QColor(0, 0, 0, 40))
             self.setGraphicsEffect(sh)
+            # Hidden until open_card(): a card made before its host is on
+            # screen (the Exploded view card is made with the view bar)
+            # would otherwise show with it - unstyled, unplaced, empty.
+            self.hide()
 
         def eventFilter(self, obj, ev):                 # noqa: N802
             if obj is self.parent() and ev.type() == QtCore.QEvent.Resize:

@@ -105,7 +105,11 @@ def director_argv(cfg=None):
     """A `claude -p` argv (prompt on stdin) for the style reply, or None:
     no tools, no MCP, none of the user's settings, one turn."""
     try:
-        from . import claude_cli
+        from . import claude_cli, engine
+        # R870: only when the chat runs on Claude Code - a Codex or Cursor
+        # user has not agreed to send the design to Anthropic.
+        if engine.current() != engine.CLAUDE:
+            return None
         exe = claude_cli.find_claude()
         if not exe:
             return None
@@ -425,6 +429,7 @@ class Runner(object):
             self.timer.stop()
 
     def _done(self, job, card, res):
+        from .panel import FileAction         # kept with the chat (R190)
         path = res.get("path")
         try:
             card.set_status("ready", "ok")
@@ -435,9 +440,9 @@ class Runner(object):
             "Assembly video ready: %s" % (res.get("title") or job.label),
             "%s s, from the finished product to every part going together. "
             "Saved in %s." % (res.get("duration"), os.path.dirname(path or "")),
-            actions=[("Play", lambda _=False, p=path: open_file(p)),
+            actions=[("Play", FileAction("open", path)),
                      ("Show in Finder" if sys.platform == "darwin" else "Show in folder",
-                      lambda _=False, p=path: reveal(p))])
+                      FileAction("reveal", path))])
 
     def _failed(self, job, card, res):
         try:

@@ -1212,7 +1212,26 @@ class HomeView(QtWidgets.QWidget):
         self.btn_open.setToolTip("Open a .FCStd project, or STEP / STL / 3MF "
                                  "as a new project. You can also drop files here.")
         self.btn_open.clicked.connect(lambda: _open_file())
+        # R840: the Atech shop, where the modules in a design are bought
+        self.btn_shop = QtWidgets.QPushButton("Atech shop")
+        self.btn_shop.setObjectName("HomeBtn")
+        self.btn_shop.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_shop.setAccessibleName("The Atech shop on atech.dev")
+        self.btn_shop.setToolTip("The Atech board, modules, kits and 3D print "
+                                 "vouchers on atech.dev. In a project, Modules "
+                                 "\u2192 Get it made puts that project's modules "
+                                 "and 3D prints in the cart.")
+        self.btn_shop.clicked.connect(lambda: _open_link(_shop().SHOP))
+        head.addWidget(self.btn_shop)
         head.addWidget(self.btn_open)
+        # R860: the atech.dev account (the one the board and projects are on)
+        try:
+            from . import account_ui
+            self.btn_account = account_ui.AccountButton(self)
+            head.addWidget(self.btn_account)
+        except Exception as exc:                          # noqa: BLE001
+            self.btn_account = None
+            _log("account button: %r" % (exc,))
         v.addLayout(head)
         v.addSpacing(22)
 
@@ -1254,7 +1273,7 @@ class HomeView(QtWidgets.QWidget):
         c = QtWidgets.QLabel()
         c.setObjectName("EmptyCredit")
         c.setOpenExternalLinks(False)
-        c.linkActivated.connect(_open_credits)
+        c.linkActivated.connect(_open_link)
         v.addWidget(c)
         self.credit = c
         v.addStretch(1)
@@ -1460,9 +1479,12 @@ class HomeView(QtWidgets.QWidget):
         self.refresh_cards()
         self.setStyleSheet(style.qss(HOME_QSS))
         t = style.tokens()
+        link = '<a href="%%s" style="color:%s; text-decoration:none;">%%s</a>' % t["accent"]
         self.credit.setText(
-            style.PRODUCT + ', powered by FreeCAD \u00b7 <a href="credits" '
-            'style="color:%s; text-decoration:none;">Credits</a>' % t["accent"])
+            style.PRODUCT + ', powered by FreeCAD \u00b7 ' + " \u00b7 ".join((
+                link % (_shop().SITE, "atech.dev"),
+                link % (_shop().SHOP, "Shop"),
+                link % ("credits", "Credits"))))
         pm = style.logo_pixmap(26)
         if pm is not None:
             self.mark.setPixmap(pm)
@@ -3646,6 +3668,10 @@ EXPORT_COMMANDS = (
      "see how they fit and step through them, or put them back", "explode"),
     ("Atech_BillOfMaterials", "Bill of materials\u2026", "Printed parts and "
      "Atech hardware, with a CSV export", "bom"),
+    ("Atech_GetItMade", "Get it made by Atech\u2026", "The board, the modules and "
+     "the 3D prints from atech.dev, one 3D print voucher per print", "made"),
+    ("Atech_PostToAtech", "Post to atech.dev\u2026", "Share the design on "
+     "atech.dev/community, with its picture and assembly video", "post"),
     ("Atech_ShareImage", "Save a share image", "A 1920 x 1080 picture in "
      "Pictures, also copied", "share"),
     ("Atech_ReviewSheet", "Save a review sheet", "Six views of the model "
@@ -3701,6 +3727,12 @@ def run_command_action(key):
         return export_tools.toggle_explode(export_tools._active_doc())
     if key == "bom":
         return _keep_dialog(export_tools.BomDialog(parent)).show()
+    if key == "made":
+        from . import print_order
+        return _keep_dialog(print_order.OrderDialog(parent)).show()
+    if key == "post":
+        from . import post
+        return _keep_dialog(post.PostDialog(parent)).show()
     if key == "share":
         path, msg = export_tools.share_now(parent)
         _say_at_cursor(msg)
@@ -4051,6 +4083,19 @@ def _activate_workbench(key):
 def _open_credits(_link=None):
     from . import credits
     credits.open_dialog()
+
+
+def _shop():
+    from . import shop
+    return shop
+
+
+def _open_link(link=None):
+    """R840: a web link opens in the browser; anything else is Credits."""
+    if str(link or "").startswith("https://"):
+        _shop().open_url(link)
+    else:
+        _open_credits(link)
 
 
 def _build_topbar(mw):

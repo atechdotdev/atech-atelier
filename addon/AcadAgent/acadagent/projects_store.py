@@ -755,9 +755,27 @@ def _plain(v):
     return str(v)
 
 
+def _file_actions(actions):
+    """A notice's file actions (panel.FileAction, or its data already) as
+    [label, {"file_action", "path"}]; other buttons are dropped."""
+    out = []
+    for a in actions or ():
+        try:
+            label, fn = a
+        except (TypeError, ValueError):
+            continue
+        d = fn.to_data() if hasattr(fn, "to_data") else fn
+        if isinstance(d, dict) and isinstance(d.get("file_action"), str) \
+                and isinstance(d.get("path"), str):
+            out.append([str(label), {"file_action": d["file_action"],
+                                     "path": d["path"]}])
+    return out
+
+
 def serialize_transcript(snap):
     """The panel's kept transcript (R190 snapshot) as plain JSON data:
-    bubbles, tool cards, notices (without their buttons) and shots."""
+    bubbles, tool cards, notices (without their buttons, except file
+    buttons - Play, Show in Finder - as data) and shots."""
     out = []
     for e in (snap or {}).get("entries") or ():
         kind = e.get("kind") if isinstance(e, dict) else None
@@ -767,6 +785,8 @@ def serialize_transcript(snap):
         for f in _ENTRY_FIELDS[kind]:
             if f in e:
                 rec[f] = _plain(e[f])
+        if kind == "notice":
+            rec["actions"] = _file_actions(e.get("actions"))
         out.append(rec)
     return {"entries": out,
             "last_text": str((snap or {}).get("last_text") or "")}

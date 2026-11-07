@@ -572,12 +572,22 @@ BUDGET = "budget"
 _AUTH_MARKS = ("not logged in", "/login", "invalid api key",
                "authentication_error", "authentication failed",
                "oauth token", "token has expired", "unauthorized",
-               "please log in")
+               "please log in",
+               # R870: Codex (MEASURED 0.162.1, signed out: "unexpected
+               # status 401 Unauthorized: Missing bearer ...", matched by
+               # "unauthorized" above) and the Cursor CLI.
+               "not authenticated", "authentication required",
+               "codex login", "agent login")
 _OFFLINE_MARKS = ("could not reach the claude api", "network_error",
                   "enotfound", "econnrefused", "econnreset", "etimedout",
                   "eai_again", "getaddrinfo", "fetch failed",
                   "connection error", "unable to connect",
-                  "network is unreachable", "no internet")
+                  "network is unreachable", "no internet",
+                  # R870: the wording codex_cli / cursor_cli fail with, and
+                  # reqwest's (Codex) for a request that never got out.
+                  "could not reach openai", "could not reach cursor",
+                  "error sending request", "failed to lookup address",
+                  "dns error")
 _BUDGET_MARKS = ("maximum budget", "error_max_budget", "max_budget_usd",
                  "budget exceeded", "exceeded the budget")
 
@@ -649,6 +659,12 @@ class ClaudeRun(QtCore.QThread):
     #: R215: tie the CLI's life to Studio's (PR_SET_PDEATHSIG). A class
     #: switch so a test can take the fix out.
     TIE_TO_PARENT = True
+
+    #: The product name in run messages (codex_cli / cursor_cli override).
+    PRODUCT = "Claude Code"
+    #: Flags whose absence means the agent is not isolated from the user's
+    #: own setup (R78); the panel warns on the turn when one was dropped.
+    ISOLATION_FLAGS = ("--strict-mcp-config", "--setting-sources")
 
     #: R184: minimum seconds between two identical activity signals (a
     #: streamed reply is hundreds of events a minute).
@@ -818,12 +834,13 @@ class ClaudeRun(QtCore.QThread):
         try:
             outcome = self._run()
         except Exception as exc:                       # noqa: BLE001
-            outcome = ("failed", "the Claude Code run broke: %s: %s"
-                       % (type(exc).__name__, exc))
+            outcome = ("failed", "the %s run broke: %s: %s"
+                       % (self.PRODUCT, type(exc).__name__, exc))
         finally:
             self._reap()
         if outcome is None:
-            outcome = ("failed", "the Claude Code run ended without a result")
+            outcome = ("failed", "the %s run ended without a result"
+                       % self.PRODUCT)
         self._emit(outcome)
 
     def _emit(self, outcome):
@@ -986,42 +1003,11 @@ class ClaudeRun(QtCore.QThread):
         if self._cancelled:
             return ("failed", "cancelled")
 
-        # stderr goes to a file, not a pipe: nothing drains a pipe while
-        # stdout is being read, so >64 KB of stderr (MCP/server logs) would
-        # block the child and hang the turn.
-        import tempfile
         import time
-        self._errf = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
         t0 = time.monotonic()
-        try:
-            # Own process group, so Stop reaches whatever the CLI spawned
-            # (tool shells, MCP servers) and not only the CLI itself.
-            # R215: and dies with Studio (PR_SET_PDEATHSIG), because that
-            # own session also keeps Studio's death from reaching it.
-            self._proc = subprocess.Popen(
-                argv, cwd=self._cwd, env=turn_env(),      # R270: turn clock
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=self._errf,
-                text=True, bufsize=1, start_new_session=True,
-                preexec_fn=_pdeathsig_fn() if self.TIE_TO_PARENT else None,
-            )
-        except Exception as exc:                       # noqa: BLE001
-            return ("failed", "could not start claude: %s" % exc)
-        if self.TIE_TO_PARENT:
-            self._guard = _orphan_guard(self._proc.pid)     # macOS only
-        if self._cancelled:             # Stop landed between check and spawn
-            self.cancel()
-        # The prompt on stdin, then EOF (R35). The CLI reads all of stdin
-        # before it starts, so this cannot deadlock against stdout.
-        try:
-            self._proc.stdin.write(self._compose_prompt())
-        except (BrokenPipeError, OSError):
-            pass                        # it died at once; stderr says why
-        finally:
-            try:
-                self._proc.stdin.close()
-            except (BrokenPipeError, OSError):
-                pass
+        failed = self._spawn(argv, self._compose_prompt())
+        if failed is not None:
+            return failed
 
         record, saw_result = {}, False
         retries, retry_err = 0, ""
@@ -1123,6 +1109,51 @@ class ClaudeRun(QtCore.QThread):
         if self._cancelled:
             return ("failed", "cancelled")
         return self._judge(record, saw_result, retries, retry_err, code, err)
+
+    #: The program name in a "could not start" message.
+    EXE_NAME = "claude"
+
+    def _spawn(self, argv, stdin_text, env=None):
+        """Start the CLI; None when it started, else a ("failed", why)
+        outcome. `stdin_text` is written to its stdin, then EOF (R35); an
+        empty text only closes stdin. `env`: default turn_env() (R270)."""
+        # stderr goes to a file, not a pipe: nothing drains a pipe while
+        # stdout is being read, so >64 KB of stderr (MCP/server logs) would
+        # block the child and hang the turn.
+        import tempfile
+        self._errf = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+        try:
+            # Own process group, so Stop reaches whatever the CLI spawned
+            # (tool shells, MCP servers) and not only the CLI itself.
+            # R215: and dies with Studio (PR_SET_PDEATHSIG), because that
+            # own session also keeps Studio's death from reaching it.
+            self._proc = subprocess.Popen(
+                argv, cwd=self._cwd,
+                env=turn_env() if env is None else env,  # R270: turn clock
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=self._errf,
+                text=True, bufsize=1, start_new_session=True,
+                preexec_fn=_pdeathsig_fn() if self.TIE_TO_PARENT else None,
+            )
+        except Exception as exc:                       # noqa: BLE001
+            return ("failed", "could not start %s: %s" % (self.EXE_NAME, exc))
+        if self.TIE_TO_PARENT:
+            self._guard = _orphan_guard(self._proc.pid)     # macOS only
+        if self._cancelled:             # Stop landed between check and spawn
+            self.cancel()
+        # The prompt on stdin, then EOF (R35). The CLI reads all of stdin
+        # before it starts, so this cannot deadlock against stdout.
+        try:
+            if stdin_text:
+                self._proc.stdin.write(stdin_text)
+        except (BrokenPipeError, OSError):
+            pass                        # it died at once; stderr says why
+        finally:
+            try:
+                self._proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+        return None
 
     def _arm_exit_watchdog(self):
         if self._killer is None and self._proc is not None:
@@ -1341,3 +1372,49 @@ def _summarise(obj, limit=90):
     if len(s) <= limit:
         return s
     return s[: limit - 1] + "…"
+
+
+# ------------------------------------------- the CLI-engine surface (R870)
+# engine.py and the panel drive every CLI engine (claude_cli, codex_cli,
+# cursor_cli) through these names, so the chat path never branches on
+# which one it is.
+PRODUCT = ClaudeRun.PRODUCT
+#: Who the messages go to (the data notice, the offline notice).
+VENDOR = "Anthropic"
+#: The settings key of the explicit program path (Agent Settings).
+PATH_KEY = "claude_path"
+#: The settings key of the model (Agent Settings).
+MODEL_KEY = "agent_model"
+#: What --effort / a budget means for this CLI: the dialog greys the rest.
+HAS_EFFORT = True
+HAS_BUDGET = True
+#: Arguments after the program that start its interactive sign-in in a
+#: terminal (`claude` signs in from its own first screen).
+LOGIN_ARGS = ()
+
+
+def __getattr__(name):
+    """`Run` is ClaudeRun as the module holds it NOW (a test may replace
+    ClaudeRun; a plain alias would keep the original)."""
+    if name == "Run":
+        return ClaudeRun
+    raise AttributeError("module %r has no attribute %r" % (__name__, name))
+
+
+def find(explicit=None):
+    """find_claude, looked up at call time (a test may replace it)."""
+    return find_claude(explicit)
+
+
+def agent_kwargs(ws, view=False, cfg=None):
+    """The `agent` argument of a chat turn (view=False) or a read-only view
+    question (view=True) for this CLI."""
+    if view:
+        from . import vision
+        return vision.view_agent(ws, cfg)
+    return dict(agent_settings(cfg), ws=ws, allowed=CHECK_ALLOW)
+
+
+def warm(exe):
+    """Off the GUI thread at mount: cache what the first turn asks."""
+    supported_flags(exe)

@@ -88,6 +88,13 @@ def _keep_alive(thread):
     return thread
 
 
+def _sid_engine(rec):
+    """R870: the engine a stored session id belongs to. Records written
+    before R870 carry none: those sessions are Claude Code's."""
+    name = rec.get("sid_engine") if isinstance(rec, dict) else None
+    return name if name in engine.CLI_ENGINES else engine.CLAUDE
+
+
 def _error_summary(err):
     """One line for the build card: the exception line of a traceback.
 
@@ -633,6 +640,55 @@ class ToolCard(QtWidgets.QFrame):
                                    "fail": "StatusFail",
                                    "idle": "StatusIdle"}[kind])
         _repolish(self.status)
+
+
+class FileAction(object):
+    """A notice action on a file: open it ("open", e.g. Play a video) or
+    show it in Finder ("reveal"). Unlike a lambda it is plain data, so a
+    chat saved to disk draws the button again (an assembly video's notice
+    came back from past chats with no way to play the video)."""
+
+    KINDS = ("open", "reveal")
+    #: A chat kept in a .FCStd may come from another computer: from data,
+    #: "open" is only ever a video or a picture, never a .app or a script.
+    OPEN_EXTS = (".mp4", ".mov", ".m4v", ".png", ".jpg", ".jpeg", ".gif")
+
+    def __init__(self, kind, path):
+        self.kind = kind if kind in self.KINDS else "open"
+        self.path = path
+
+    def __call__(self, *_):
+        from . import promo_video
+        (promo_video.reveal if self.kind == "reveal" else promo_video.open_file)(self.path)
+
+    def to_data(self):
+        return {"file_action": self.kind, "path": self.path}
+
+    @classmethod
+    def from_data(cls, d):
+        if not (isinstance(d, dict) and d.get("file_action") in cls.KINDS
+                and isinstance(d.get("path"), str) and os.path.isabs(d["path"])):
+            return None
+        if d["file_action"] == "open" and \
+                not d["path"].lower().endswith(cls.OPEN_EXTS):
+            return None
+        return cls(d["file_action"], d["path"])
+
+
+def _live_actions(actions):
+    """Notice actions as kept: (label, callable) pairs from memory, or
+    [label, FileAction data] from a chat saved to disk."""
+    out = []
+    for a in actions or ():
+        try:
+            label, fn = a
+        except (TypeError, ValueError):
+            continue
+        if not callable(fn):
+            fn = FileAction.from_data(fn)
+        if fn is not None:
+            out.append((label, fn))
+    return out
 
 
 class Notice(QtWidgets.QFrame):
@@ -1254,28 +1310,33 @@ class HealthWorker(QtCore.QThread):
 
 
 class ClaudeProbe(QtCore.QThread):
-    """Mount-time check that Claude Code can actually answer (R21, R22):
-    find the binary (including the login-shell probe a desktop launch
-    needs), then ask `claude auth status`. Off the GUI thread: both start
-    processes. done(ok, kind, why): kind in {"", "missing", "auth"}."""
+    """Mount-time check that the CLI engine can actually answer (R21, R22;
+    R870: Claude Code, Codex or Cursor): find the binary (including the
+    login-shell probe a desktop launch needs), then ask its sign-in
+    status. Off the GUI thread: both start processes.
+    done(ok, kind, why): kind in {"", "missing", "auth"}."""
 
     done = QtCore.Signal(bool, str, str)
 
+    def __init__(self, name=None):
+        super().__init__()
+        self._engine = name or engine.CLAUDE
+
     def run(self):
         try:
-            from . import claude_cli
-            exe = claude_cli.locate()
+            cli = engine.cli(self._engine)
+            exe = cli.locate()
             if exe is None:
-                _ok, why = engine.available(engine.CLAUDE)
+                _ok, why = engine.available(self._engine)
                 self.done.emit(False, "missing", why)
                 return
-            logged_in, detail = claude_cli.auth_status()
+            logged_in, detail = cli.auth_status()
             if logged_in is False:
                 self.done.emit(False, "auth", detail)
                 return
             # Warm the --help flag cache here, off the GUI thread, so the
             # first turn does not pay for it (S16).
-            claude_cli.supported_flags(exe)
+            cli.warm(exe)
             # None = could not tell. Not a failure we can name; the first
             # turn will say what is wrong, classified.
             self.done.emit(True, "", "")
@@ -1295,7 +1356,10 @@ class ChatState(object):
         self.doc_name = doc_name    # FreeCAD document Name at send time
         self.ws = ws
         self.prev = prev            # build.Result.record() of the last good build
-        self.sid = None             # Claude Code session id
+        self.sid = None             # the agent CLI's session id
+        # R870: the engine that session belongs to - a Claude session id
+        # cannot be resumed by Codex or Cursor, nor the other way round.
+        self.sid_engine = engine.CLAUDE
         self.framed = False
         # R94/D50: the camera has turned to the Atech module face once.
         self.faced = False
@@ -1613,12 +1677,15 @@ def save_past_chats(data, path=None):
 
 def _plain_transcript(snap):
     """A transcript snapshot as JSON data: notice actions (callables) are
-    dropped, everything else is kept."""
+    dropped, except file actions (Play, Show in Finder), kept as data;
+    everything else is kept."""
     out = {"entries": [], "last_text": (snap or {}).get("last_text") or ""}
     for e in (snap or {}).get("entries") or []:
         e = dict(e)
         if e.get("kind") == "notice":
-            e["actions"] = []
+            e["actions"] = [[label, fn.to_data()]
+                            for label, fn in _live_actions(e.get("actions"))
+                            if isinstance(fn, FileAction)]
             e["enabled"] = []
             e["tag"] = None
         out["entries"].append(e)
@@ -1685,7 +1752,10 @@ def save_session(key, state, path=None, file=None):
             return True
     else:
         old = data.get(key) if isinstance(data.get(key), dict) else {}
-        data[key] = {"ws": state.ws, "sid": state.sid, "prev": state.prev,
+        data[key] = {"ws": state.ws, "sid": state.sid,
+                     "sid_engine": getattr(state, "sid_engine",
+                                           engine.CLAUDE),
+                     "prev": state.prev,
                      "doc": state.doc_name, "saved": int(time.time()),
                      "v": 2,
                      "path": os.path.realpath(file) if file
@@ -2124,11 +2194,12 @@ class AgentPanel(QtWidgets.QWidget):
     def _probe_backend(self):
         """Ask the backend whether it is there, before the user invests a
         typed question in finding out. Off the GUI thread."""
-        if engine.current() == engine.CLAUDE:
+        if engine.is_cli():
             # Finding the binary may need the login shell, and "is it signed
-            # in" needs `claude auth status`: both start processes (R21/R22).
+            # in" needs `claude auth status` (or Codex's / Cursor's own):
+            # both start processes (R21/R22).
             self.set_backend_state("checking")
-            probe = _keep_alive(ClaudeProbe())
+            probe = _keep_alive(ClaudeProbe(engine.current()))
             probe.done.connect(self._on_claude_probe)
             self._health = probe
             probe.start()
@@ -2459,22 +2530,22 @@ class AgentPanel(QtWidgets.QWidget):
         return w
 
     def _offline_notice(self):
-        if engine.current() == engine.CLAUDE:
+        if engine.is_cli():
             if self._unavailable_kind == "auth":
                 return self._add(self._auth_notice(
                     self._probe_backend_again))
-            from . import claude_cli
+            cli = engine.cli()
             return self._add(Notice(
-                "Claude Code not found",
-                "The chat runs on Claude Code, installed on this computer. "
+                "%s not found" % cli.PRODUCT,
+                "The chat runs on %s, installed on this computer. "
                 "Install it by running this in a terminal:\n\n"
                 "    %s\n\n"
                 "then sign in by running `%s`, and press Retry. "
                 "Instructions: %s\n"
                 "Already installed somewhere else? Set its path in "
-                "Settings." % (claude_cli.INSTALL_COMMAND,
-                               claude_cli.LOGIN_COMMAND,
-                               claude_cli.INSTALL_URL),
+                "Settings. Or pick another agent engine there."
+                % (cli.PRODUCT, cli.INSTALL_COMMAND, cli.LOGIN_COMMAND,
+                   cli.INSTALL_URL),
                 actions=[("Retry", self._probe_backend_again),
                          ("Settings…", self._on_settings)],
                 detail=self._unavailable_why or None))
@@ -2488,14 +2559,15 @@ class AgentPanel(QtWidgets.QWidget):
                      ("Change address…", self._on_settings)]))
 
     def _auth_notice(self, retry):
-        from . import claude_cli
+        cli = engine.cli() if engine.is_cli() else engine.cli(engine.CLAUDE)
+        older = (" (Older Claude Code: run `claude` and type /login.)"
+                 if cli.PRODUCT == "Claude Code" else "")
         return Notice(
-            "Sign in to Claude Code",
-            "Claude Code is not signed in. In a terminal, run\n"
+            "Sign in to %s" % cli.PRODUCT,
+            "%s is not signed in. In a terminal, run\n"
             "    %s\n"
-            "follow its steps, then press Retry. (Older Claude Code: run "
-            "`claude` and type /login.)"
-            % claude_cli.LOGIN_COMMAND,
+            "follow its steps, then press Retry.%s"
+            % (cli.PRODUCT, cli.LOGIN_COMMAND, older),
             actions=[("Open terminal", self._open_claude_terminal),
                      ("Retry", retry)])
 
@@ -2527,10 +2599,11 @@ class AgentPanel(QtWidgets.QWidget):
     # Kept for callers outside this file (backend.py).
     _on_retry = _probe_backend_again
 
-    def _open_macos_terminal(self, exe):
-        """macOS: run `exe` in Terminal.app through a .command file. `open`
-        needs no Automation permission (an AppleScript `do script` would ask
-        the user to let Atech control Terminal). True when it was opened."""
+    def _open_macos_terminal(self, exe, args=()):
+        """macOS: run `exe` (with `args`) in Terminal.app through a .command
+        file. `open` needs no Automation permission (an AppleScript `do
+        script` would ask the user to let Atech control Terminal). True
+        when it was opened."""
         import shlex
         import tempfile
         try:
@@ -2538,7 +2611,9 @@ class AgentPanel(QtWidgets.QWidget):
                                         suffix=".command")
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write("#!/bin/sh\nrm -f %s\nexec %s\n"
-                         % (shlex.quote(path), shlex.quote(exe)))
+                         % (shlex.quote(path),
+                            " ".join(shlex.quote(a)
+                                     for a in [exe] + list(args))))
             os.chmod(path, 0o700)
         except OSError as exc:
             _log("terminal .command: %r" % (exc,))
@@ -2551,24 +2626,29 @@ class AgentPanel(QtWidgets.QWidget):
         return bool(ok)
 
     def _open_claude_terminal(self):
-        """Run `claude` in a terminal so the user can sign in (R21).
+        """Run the engine's sign-in in a terminal (R21; R870: `claude`,
+        `codex login` or `cursor-agent login`).
 
-        A desktop terminal first (Claude Code's sign-in is a full-screen
-        terminal app); the in-app terminal dock if none can be started."""
+        A desktop terminal first (the sign-in is a full-screen terminal
+        app); the in-app terminal dock if none can be started."""
         from . import claude_cli
-        exe = claude_cli.find_claude() or "claude"
+        cli = engine.cli() if engine.is_cli() else claude_cli
+        exe = cli.find() or {"Codex": "codex", "Cursor": "cursor-agent"}.get(
+            cli.PRODUCT, "claude")
+        login = list(getattr(cli, "LOGIN_ARGS", ()))
+        cmd = [exe] + login
         env = QtCore.QProcessEnvironment()
         for k, v in claude_cli._child_env().items():
             env.insert(k, v)
-        if sys.platform == "darwin" and self._open_macos_terminal(exe):
+        if sys.platform == "darwin" and self._open_macos_terminal(exe, login):
             return
-        for term, args in (("x-terminal-emulator", ["-e", exe]),
-                           ("gnome-terminal", ["--", exe]),
-                           ("konsole", ["-e", exe]),
-                           ("xfce4-terminal", ["-x", exe]),
-                           ("kitty", [exe]),
-                           ("alacritty", ["-e", exe]),
-                           ("xterm", ["-e", exe])):
+        for term, args in (("x-terminal-emulator", ["-e"] + cmd),
+                           ("gnome-terminal", ["--"] + cmd),
+                           ("konsole", ["-e"] + cmd),
+                           ("xfce4-terminal", ["-x", " ".join(cmd)]),
+                           ("kitty", cmd),
+                           ("alacritty", ["-e"] + cmd),
+                           ("xterm", ["-e"] + cmd)):
             path = shutil.which(term)
             if not path:
                 continue
@@ -2581,18 +2661,20 @@ class AgentPanel(QtWidgets.QWidget):
             if isinstance(ok, tuple):
                 ok = ok[0]
             if ok:
-                _log("opened %s running %s" % (term, exe))
+                _log("opened %s running %s" % (term, " ".join(cmd)))
                 return
+        import shlex
+        line = " ".join(shlex.quote(a) for a in cmd)
         try:
             from . import terminal_dock
             dock = terminal_dock.ensure_terminal()
             term = getattr(dock.widget(), "term", None) if dock else None
-            if term is not None and term.write("%s\n" % exe):
+            if term is not None and term.write("%s\n" % line):
                 return
         except Exception as exc:                       # noqa: BLE001
             _log("terminal dock: %r" % (exc,))
         self._flash_hint("Could not open a terminal. Open one yourself and "
-                         "run: claude")
+                         "run: %s" % cli.LOGIN_COMMAND)
 
     def _active_document(self):
         try:
@@ -2851,7 +2933,7 @@ class AgentPanel(QtWidgets.QWidget):
                 "Still working on the previous message. Press stop to interrupt.")
             return
 
-        if engine.current() == engine.CLAUDE:
+        if engine.is_cli():
             if not self._privacy_gate():
                 return              # the notice is up; the text stays put
             self._follow_active_doc()       # R138
@@ -3175,6 +3257,7 @@ class AgentPanel(QtWidgets.QWidget):
                           else None)
         sid = rec.get("sid")
         state.sid = sid if isinstance(sid, str) and sid else None
+        state.sid_engine = _sid_engine(rec)
         if state.prev is not None:
             # The record names the document as it was; follow a rename.
             state.prev = dict(state.prev, doc=doc.Name)
@@ -3709,6 +3792,8 @@ class AgentPanel(QtWidgets.QWidget):
         else:
             sp += self.KIT_TRACEBACK_NOTE % getattr(build, "KIT_DIR",
                                                     "agent_kit")
+        if engine.is_cli() and engine.current() != engine.CLAUDE:
+            return sp, engine.cli().agent_kwargs(ws)        # R870
         agent = dict(claude_cli.agent_settings(), ws=ws,
                      allowed=claude_cli.CHECK_ALLOW)
         return sp, agent
@@ -3762,8 +3847,12 @@ class AgentPanel(QtWidgets.QWidget):
         when the turn ends Studio builds it (see build.py).
 
         Returns True when the turn started. On any setup failure the user
-        gets a notice (never a silent loss) and False (R19, R67)."""
-        from . import claude_cli
+        gets a notice (never a silent loss) and False (R19, R67).
+
+        R870: the turn runs on the CLI engine chosen in Agent Settings -
+        Claude Code, Codex or Cursor (engine.cli(): the same signals)."""
+        eng = engine.current() if engine.is_cli() else engine.CLAUDE
+        cli = engine.cli(eng)
         view = self._take_view_question(state, fix)        # R500
         try:
             doc = self._active_document() if state is None else None
@@ -3815,7 +3904,9 @@ class AgentPanel(QtWidgets.QWidget):
                 from . import vision
                 prompt = vision.view_prompt(text, images,
                                             self._brief(brief_doc))
-                sp, agent, mode = None, vision.view_agent(state.ws), "plan"
+                agent = vision.view_agent(state.ws) if eng == engine.CLAUDE \
+                    else cli.agent_kwargs(state.ws, view=True)      # R870
+                sp, mode = None, "plan"
             else:
                 self._keep_base(state)                      # R500
                 self._watch_workspace()
@@ -3823,10 +3914,14 @@ class AgentPanel(QtWidgets.QWidget):
                 sp, agent = self._turn_args(state.ws, text=text,
                                             doc=brief_doc)
                 mode = "acceptEdits"
-            run = claude_cli.ClaudeRun(
-                prompt, cwd=state.ws, session_id=state.sid, images=images,
+            # R870: a session belongs to the engine that made it.
+            sid = state.sid if getattr(state, "sid_engine",
+                                       engine.CLAUDE) == eng else None
+            run = cli.Run(
+                prompt, cwd=state.ws, session_id=sid, images=images,
                 permission_mode=mode, system_prompt=sp,
                 agent=agent, parent=None)
+            self._chat_engine = eng
         except Exception as exc:                       # noqa: BLE001
             _log("could not start the turn: %s" % traceback.format_exc())
             self._busy = False
@@ -3853,7 +3948,7 @@ class AgentPanel(QtWidgets.QWidget):
         self._turn_title = title or ("Looking at the view" if view
                                      else "Designing")
         self._view_turn = bool(view)
-        self._card = ToolCard(self._turn_title, "Claude Code", mono=False)
+        self._card = ToolCard(self._turn_title, cli.PRODUCT, mono=False)
         self._add(self._card)
         self._build_card = None         # R76: one build card per turn
         self._build_sig = None
@@ -4309,6 +4404,7 @@ class AgentPanel(QtWidgets.QWidget):
             return False
         now = time.time()
         rec = {"ws": state.ws, "sid": state.sid,
+               "sid_engine": getattr(state, "sid_engine", engine.CLAUDE),
                "prev": state.prev if isinstance(state.prev, dict) else None,
                "saved": int(now), "title": chat_title(snap, now),
                "transcript": _plain_transcript(snap)}
@@ -4352,6 +4448,7 @@ class AgentPanel(QtWidgets.QWidget):
                           rec.get("prev") if isinstance(rec.get("prev"), dict)
                           else None)
         state.sid = rec.get("sid") or None
+        state.sid_engine = _sid_engine(rec)
         state.framed = state.faced = True
         if isinstance(state.prev, dict) and doc is not None:
             state.prev = dict(state.prev, doc=doc.Name)
@@ -4718,10 +4815,14 @@ class AgentPanel(QtWidgets.QWidget):
                 self._add(c)
             elif kind == "notice":
                 n = self._add(Notice(e["title"], e["body"],
-                                     actions=e["actions"],
-                                     detail=e["detail"]))
+                                     actions=_live_actions(e.get("actions")),
+                                     detail=e.get("detail")))
                 for b, on in zip(n.buttons, e.get("enabled") or ()):
                     b.setEnabled(on)
+                for b, (_l, fn) in zip(n.buttons, n.spec[2]):
+                    if isinstance(fn, FileAction) and not os.path.exists(fn.path):
+                        b.setEnabled(False)         # moved or deleted since
+                        b.setToolTip("%s is no longer there" % fn.path)
                 tag = e.get("tag")
                 if tag and tag[0] == "review":
                     st = self._docs.get(tag[1])
@@ -4761,7 +4862,7 @@ class AgentPanel(QtWidgets.QWidget):
             self._flash_hint(
                 "Still working on the previous message. Press stop to interrupt.")
             return
-        if engine.current() != engine.CLAUDE:
+        if not engine.is_cli():
             self.input.setPlainText(text)
             self._on_send()
             return
@@ -4880,26 +4981,32 @@ class AgentPanel(QtWidgets.QWidget):
     def _on_claude_session(self, sid):
         if self._cur is not None:
             self._cur.sid = sid
+            self._cur.sid_engine = getattr(self, "_chat_engine",
+                                           engine.CLAUDE)       # R870
             self._remember(self._cur)
         try:
             flags = self._chat.flags() if self._chat is not None else None
+            product = getattr(self._chat, "PRODUCT", "Claude Code")
             if flags:
-                _log("claude argv: %s" % " ".join(flags))
+                _log("%s argv: %s" % (product, " ".join(flags)))
             dropped = getattr(self._chat, "dropped", None)
             if dropped:
-                _log("flags this claude does not support (not passed): %s"
-                     % ", ".join(dropped))
+                _log("flags this %s does not support (not passed): %s"
+                     % (product, ", ".join(dropped)))
                 # R78 is a privacy promise: when the installed CLI cannot
                 # keep the agent out of the user's own MCP servers and
                 # settings, say so on the turn instead of only in the log.
-                lost = [f for f in ("--strict-mcp-config", "--setting-sources")
+                lost = [f for f in getattr(
+                    self._chat, "ISOLATION_FLAGS",
+                    ("--strict-mcp-config", "--setting-sources"))
                         if f in dropped]
                 if lost and self._card:
                     self._card.append(
-                        "⚠ this Claude Code cannot isolate the agent (%s "
-                        "unsupported): it may use your own Claude settings "
-                        "and connectors. Update Claude Code."
-                        % ", ".join(lost))
+                        "⚠ this %s cannot isolate the agent (%s "
+                        "unsupported): it may use your own %s settings "
+                        "and connectors. Update %s."
+                        % (product, ", ".join(lost), product.split()[0],
+                           product))
         except Exception:                              # noqa: BLE001
             pass
 
@@ -6176,9 +6283,10 @@ class AgentPanel(QtWidgets.QWidget):
         if budget:
             self._on_budget_stop(msg)
             return
+        eng = getattr(self, "_chat_engine", engine.CLAUDE)      # R870
         if kind not in (claude_cli.CANCELLED, claude_cli.AUTH,
                         claude_cli.OFFLINE) and \
-                engine.available(engine.CLAUDE)[0] and \
+                engine.available(eng)[0] and \
                 self._level_rollback("the agent stopped before finishing"):
             # R452: a design level whose CLI died goes back to the last
             # passing level and the ladder goes on (Stop, sign-in and
@@ -6189,7 +6297,7 @@ class AgentPanel(QtWidgets.QWidget):
         if kind == claude_cli.CANCELLED:
             self.set_backend_state("idle")
             return
-        ok, _why = engine.available(engine.CLAUDE)
+        ok, _why = engine.available(eng)
         if kind == claude_cli.AUTH:
             self._unavailable_kind = "auth"
             self.set_backend_state("offline")
@@ -6207,10 +6315,12 @@ class AgentPanel(QtWidgets.QWidget):
             return
         self.set_backend_state("idle")
         if kind == claude_cli.OFFLINE:
+            cli = engine.cli(eng)
             self.show_notice(
                 "No internet connection",
-                "Claude Code could not reach Anthropic. Check the connection, "
-                "then press Retry. Your message is back in the box below.",
+                "%s could not reach %s. Check the connection, "
+                "then press Retry. Your message is back in the box below."
+                % (cli.PRODUCT, cli.VENDOR),
                 actions=[("Retry", self._retry_last)],
                 detail=msg if len(msg) < 2000 else msg[-2000:])
             return

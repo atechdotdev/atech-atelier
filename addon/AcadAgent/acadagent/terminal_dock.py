@@ -34,10 +34,12 @@ class _StatusProbe(QtCore.QThread):
             line = engine.status_line()
         except Exception:                              # noqa: BLE001
             try:
-                v = claude_cli.version()
-                line = ("claude %s" % v.split()[0]) if v else "claude not found"
+                cli = engine.cli() if engine.is_cli() else claude_cli
+                v = cli.version()
+                line = ("%s %s" % (cli.PRODUCT, v.split()[-1])) if v \
+                    else "%s not found" % cli.PRODUCT
             except Exception:                          # noqa: BLE001
-                line = "Claude status unknown"
+                line = "Agent status unknown"
         self.done.emit(line)
 
 

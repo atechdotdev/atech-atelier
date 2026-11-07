@@ -25,6 +25,13 @@ DEFAULTS = {
     # Explicit path to the `claude` binary. Empty = look in the usual places
     # (claude_cli.find_claude). For installs a desktop launch cannot see.
     "claude_path": "",
+    # R870: the same for `codex` and `cursor-agent` (codex_cli, cursor_cli).
+    "codex_path": "",
+    "cursor_path": "",
+    # R870: the model of the Codex / Cursor engine ("" = the CLI's own
+    # default). A Claude alias in "agent_model" would fail either CLI.
+    "codex_model": "",
+    "cursor_model": "",
     # Per-turn cost is shown only on request: on a Claude subscription the
     # CLI still reports an API-equivalent dollar figure nobody is billed.
     "show_cost": False,
@@ -59,6 +66,12 @@ DEFAULTS = {
     # R730: one short Claude reply styles each video (title, tagline, an
     # environment that suits the product, captions); off = a keyword pick.
     "assembly_video_claude": True,
+    # R850: the address Get it made by Atech sends the 3D prints from (and
+    # Atech replies to); typed once in that window.
+    "shop_email": "",
+    # R860 the signed-in Atech account: {"id", "email", "name"}; the
+    # session itself is in the Keychain (account.py), never here
+    "account_user": None,
 }
 
 #: R230: the agent modes (settings "agent_quality", $ATECH_PROMPT_MODE).
@@ -248,21 +261,88 @@ PRIVACY_NOTICE_BODY = (
 )
 
 
+#: R870: the notice for the Codex and Cursor engines. The messages go to
+#: another company, so each engine is acknowledged on its own
+#: (privacy_ack_<engine>); Claude Code keeps "privacy_ack". Read off
+#: codex_cli / cursor_cli: their sandboxes confine the agent's WRITES to the
+#: chat folder, not its reads (measured for Codex: `cat ~/.zshrc` worked).
+_OTHER_NOTICE_BODY = (
+    "The chat runs %(product)s on this computer, signed in to your own "
+    "%(account)s. Each message you send goes to %(vendor)s through that "
+    "account, together with:\n"
+    "  - a summary of the open document: its name, each solid's name, "
+    "volume and size, the Atech board and modules on it, and what you have "
+    "selected in the 3D view;\n"
+    "  - any picture of the 3D view you attach with \"Add view\" or "
+    "\"Ask about this view\";\n"
+    "  - the files the agent reads while it works: its design script, the "
+    "pictures it renders of its own build to check it, the Atech reference "
+    "files copied there, and what its build check (./check) prints. "
+    "%(product)s's sandbox keeps the agent's changes inside the chat's "
+    "folder, but it does not stop the agent reading other files on this "
+    "computer, and what it reads goes too.\n"
+    "%(product)s also adds what it includes in any session, such as the "
+    "chat folder's path and the name of your operating system.%(extra)s "
+    "What %(vendor)s does with all of this is set by the terms of your "
+    "%(account)s.\n"
+    "Kept on this computer:\n"
+    "  - one folder per chat, with the design script and pictures, in %%s "
+    "(Agent Settings can delete old ones);\n"
+    "  - the design script inside every document the agent builds into, so "
+    "it is saved with your .FCStd file;\n"
+    "  - %(product)s's own conversation history, under %(history)s;\n"
+    "  - these settings, in %%s."
+)
+_NOTICE_FACTS = {
+    "codex": {"product": "Codex", "vendor": "OpenAI",
+              "account": "OpenAI account (ChatGPT or an API key)",
+              "history": "~/.codex", "extra": ""},
+    "cursor": {"product": "Cursor", "vendor": "Cursor",
+               "account": "Cursor account",
+               "history": "~/.cursor",
+               "extra": " It also uses your own Cursor MCP servers and "
+                        "rules, which may send data elsewhere."},
+}
+
+
+def _notice_engine(cfg=None):
+    """The engine the data notice is about: the selected one (an engine
+    without its own notice reads as Claude Code's)."""
+    if cfg is None:
+        try:
+            from . import engine as _engine
+            name = _engine.current()
+        except Exception:                              # noqa: BLE001
+            name = "claude"
+    else:
+        name = cfg.get("engine")
+    return name if name in _NOTICE_FACTS else "claude"
+
+
+def _ack_key(name):
+    return "privacy_ack" if name == "claude" else "privacy_ack_%s" % name
+
+
 def privacy_acknowledged(cfg=None):
+    name = _notice_engine(cfg)
     cfg = cfg if cfg is not None else load()
     try:
-        return int(cfg.get("privacy_ack") or 0) >= PRIVACY_NOTICE_VERSION
+        return int(cfg.get(_ack_key(name)) or 0) >= PRIVACY_NOTICE_VERSION
     except (TypeError, ValueError):
         return False
 
 
 def acknowledge_privacy():
-    """Persist the acknowledgement. False when it could not be written."""
-    return update(privacy_ack=PRIVACY_NOTICE_VERSION)
+    """Persist the acknowledgement (of the selected engine's notice).
+    False when it could not be written."""
+    return update(**{_ack_key(_notice_engine()): PRIVACY_NOTICE_VERSION})
 
 
 def privacy_notice_body():
-    return PRIVACY_NOTICE_BODY % (chat_workspace_root(), CONFIG_PATH)
+    name = _notice_engine()
+    body = PRIVACY_NOTICE_BODY if name == "claude" else \
+        _OTHER_NOTICE_BODY % _NOTICE_FACTS[name]
+    return body % (chat_workspace_root(), CONFIG_PATH)
 
 
 # ------------------------------------------------------ chat workspaces
@@ -491,18 +571,38 @@ class SettingsDialog(QtWidgets.QDialog):
         self._claude_row.setLayout(prow)
         prow.setContentsMargins(0, 0, 0, 0)
         form.addRow("Claude Code", self._claude_row)
+        # R870: the same for Codex and Cursor; only the selected engine's
+        # row is shown (_on_engine_changed).
+        self._paths = {"claude": self.claude_path}
+        self._path_rows = {"claude": self._claude_row}
+        for eid, label in (("codex", "Codex"), ("cursor", "Cursor CLI")):
+            mod = _engine.cli(eid)
+            row = QtWidgets.QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            field = QtWidgets.QLineEdit(cfg.get(mod.PATH_KEY) or "")
+            field.setPlaceholderText("found automatically")
+            field.editingFinished.connect(self._on_engine_changed)
+            btn = QtWidgets.QPushButton("Browse…")
+            btn.clicked.connect(
+                lambda _=False, e=eid: self._on_browse(e))
+            row.addWidget(field, 1)
+            row.addWidget(btn)
+            w = QtWidgets.QWidget()
+            w.setLayout(row)
+            form.addRow(label, w)
+            self._paths[eid] = field
+            self._path_rows[eid] = w
 
         # The chat agent's model, effort and per-turn budget (S16/S26).
+        # R870: one model field per CLI engine; this box shows the selected
+        # engine's and keeps the others' (self._models) until Save.
         self.agent_model = QtWidgets.QComboBox()
         self.agent_model.setEditable(True)
-        for mid, label in AGENT_MODELS:
-            self.agent_model.addItem(label, mid)
-        cur = (cfg.get("agent_model") or "").strip()
-        midx = self.agent_model.findData(cur)
-        if midx >= 0:
-            self.agent_model.setCurrentIndex(midx)
-        else:
-            self.agent_model.setEditText(cur)
+        self._models = {}
+        for eid in _engine.CLI_ENGINES:
+            val = cfg.get(_engine.cli(eid).MODEL_KEY)
+            self._models[eid] = val.strip() if isinstance(val, str) else ""
+        self._model_eid = None
         form.addRow("Claude model", self.agent_model)
         # R230: the agent mode (quality by default; $ATECH_PROMPT_MODE wins).
         self.agent_quality = QtWidgets.QComboBox()
@@ -542,7 +642,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self._budget_shown = round(float(self.agent_budget.value()), 2)
         self.agent_budget.setToolTip(
             "Claude Code stops a reply that would cost more than this "
-            "(API-equivalent figure).")
+            "(API-equivalent figure). Codex and Cursor have no such limit.")
         # R500: "Use mode default" forgets the user's own budget, so the
         # mode's default applies again (and follows a mode change).
         self._budget_user = bool(cfg.get("agent_budget_user")) and \
@@ -623,7 +723,8 @@ class SettingsDialog(QtWidgets.QDialog):
         self.assembly_video_claude.setToolTip(
             "Claude picks the title, tagline, a setting that suits the "
             "product, captions and what spins or glows. Off: chosen from "
-            "the product's name, no extra reply.")
+            "the product's name, no extra reply. Used only when the agent "
+            "engine is Claude Code.")
         self.assembly_video.toggled.connect(self.assembly_video_claude.setEnabled)
         self.assembly_video_claude.setEnabled(self.assembly_video.isChecked())
         form.addRow("", self.assembly_video_claude)
@@ -727,28 +828,63 @@ class SettingsDialog(QtWidgets.QDialog):
         self.key.setPlaceholderText(
             KEY_PLACEHOLDERS.get(self.provider.currentData(), "API key"))
 
-    def _on_browse(self):
+    def _on_browse(self, eid="claude"):
+        names = {"claude": "claude", "codex": "codex",
+                 "cursor": "cursor-agent"}
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Find the claude program", os.path.expanduser("~"))
+            self, "Find the %s program" % names.get(eid, eid),
+            os.path.expanduser("~"))
         if path:
-            self.claude_path.setText(path)
+            self._paths[eid].setText(path)
             self._on_engine_changed()
 
-    def _claude_ready(self):
-        """(ok, text) for the path in the field, without saving it."""
-        from . import claude_cli
-        typed = self.claude_path.text().strip()
-        exe = claude_cli.find_claude(explicit=typed)
+    def _claude_ready(self, eid="claude"):
+        """(ok, text) for the path in the engine's field, without saving
+        it (R870: any CLI engine)."""
+        if eid == "claude":
+            from . import claude_cli as mod
+            finder = mod.find_claude
+        else:
+            mod = self._engine_mod.cli(eid)
+            finder = mod.find
+        typed = self._paths[eid].text().strip()
+        exe = finder(explicit=typed)
         if typed and exe is None:
             return False, ("There is no program at that path. Leave it "
                            "empty to search the usual places.")
         if exe:
-            return True, "Claude Code: %s" % exe
-        return False, ("Claude Code was not found. Install it by running "
+            return True, "%s: %s" % (mod.PRODUCT, exe)
+        return False, ("%s was not found. Install it by running "
                        "this in a terminal:\n    %s\nthen run `%s`. "
                        "Instructions: %s. Or set its path above."
-                       % (claude_cli.INSTALL_COMMAND, claude_cli.LOGIN_COMMAND,
-                          claude_cli.INSTALL_URL))
+                       % (mod.PRODUCT, mod.INSTALL_COMMAND,
+                          mod.LOGIN_COMMAND, mod.INSTALL_URL))
+
+    def _sync_model_box(self, eid):
+        """R870: show engine `eid`'s model choices and value; keep what the
+        box held for the engine it showed before."""
+        if self._model_eid in self._models:
+            self._models[self._model_eid] = self._agent_model_value()
+        if eid not in self._models or eid == self._model_eid:
+            return
+        self._model_eid = eid
+        mod = self._engine_mod.cli(eid)
+        choices = AGENT_MODELS if eid == "claude" else \
+            [("", "%s default" % mod.PRODUCT)]
+        self.agent_model.blockSignals(True)
+        self.agent_model.clear()
+        for mid, label in choices:
+            self.agent_model.addItem(label, mid)
+        cur = self._models[eid]
+        midx = self.agent_model.findData(cur)
+        if midx >= 0:
+            self.agent_model.setCurrentIndex(midx)
+        else:
+            self.agent_model.setEditText(cur)
+        self.agent_model.blockSignals(False)
+        lbl = self._form.labelForField(self.agent_model)
+        if lbl is not None:
+            lbl.setText("%s model" % mod.PRODUCT.split()[0])
 
     def _on_engine_changed(self, *_):
         """Only show credential fields for engines that actually use them.
@@ -763,13 +899,24 @@ class SettingsDialog(QtWidgets.QDialog):
         self.backend.setEnabled(eid == self._engine_mod.OPENCODE)
         self.test_btn.setEnabled(eid == self._engine_mod.OPENCODE)
         self.test_btn.setVisible(self._dev)
-        self._claude_row.setEnabled(eid == self._engine_mod.CLAUDE)
-        for w in (self.agent_model, self.agent_effort, self.agent_budget,
-                  self.agent_quality):
-            w.setEnabled(eid == self._engine_mod.CLAUDE)
+        is_cli = eid in self._engine_mod.CLI_ENGINES
+        for key, row in self._path_rows.items():
+            row.setEnabled(key == eid)
+            try:
+                self._form.setRowVisible(row, key == eid or (
+                    not is_cli and key == "claude"))
+            except AttributeError:          # Qt < 6.4
+                pass
+        mod = self._engine_mod.cli(eid) if is_cli else None
+        self._sync_model_box(eid)
+        self.agent_model.setEnabled(is_cli)
+        self.agent_quality.setEnabled(is_cli)
+        self.agent_effort.setEnabled(bool(mod and mod.HAS_EFFORT))
+        self.agent_budget.setEnabled(bool(mod and mod.HAS_BUDGET))
+        self.budget_default.setEnabled(bool(mod and mod.HAS_BUDGET))
         desc = next((d for i, t, d in self._engine_mod.ENGINES if i == eid), "")
-        if eid == self._engine_mod.CLAUDE:
-            ok, text = self._claude_ready()
+        if is_cli:
+            ok, text = self._claude_ready(eid)
             self.engine_note.setText(desc)
             self._set_status(text, ok)
             return
@@ -832,16 +979,22 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _on_save(self):
         eid = self.engine.currentData()
+        if self._model_eid in self._models:
+            self._models[self._model_eid] = self._agent_model_value()
         changes = {
             "backend_url": self.backend.text().strip(),
             "provider": self.provider.currentData(),
             "model": self.model.text().strip(),
             "engine": eid,
             "claude_path": self.claude_path.text().strip(),
+            "codex_path": self._paths["codex"].text().strip(),
+            "cursor_path": self._paths["cursor"].text().strip(),
             "show_cost": bool(self.show_cost.isChecked()),
             "assembly_video": bool(self.assembly_video.isChecked()),
             "assembly_video_claude": bool(self.assembly_video_claude.isChecked()),
-            "agent_model": self._agent_model_value(),
+            "agent_model": self._models.get("claude", ""),
+            "codex_model": self._models.get("codex", ""),
+            "cursor_model": self._models.get("cursor", ""),
             "agent_effort": self.agent_effort.currentData() or "",
             "agent_quality": self.agent_quality.currentData() or QUALITY,
         }
@@ -862,8 +1015,9 @@ class SettingsDialog(QtWidgets.QDialog):
         # A key is only sent to a backend that will store it. Claude Code has
         # its own auth and no endpoint to PUT a key to.
         if key and not self._engine_mod.uses_provider(eid):
-            self._set_status("Claude Code uses its own sign-in; the API key "
-                             "was not used.", None)
+            self._set_status("%s uses its own sign-in; the API key "
+                             "was not used." % self._engine_mod.label(eid),
+                             None)
             key = ""
         if key:
             ok, msg = set_api_key(self.backend.text().strip(),

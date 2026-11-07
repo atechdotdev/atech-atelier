@@ -7,14 +7,20 @@ TWO AXES, DELIBERATELY SEPARATE
     a settings dialog ends up offering "Anthropic" and "Claude Code" as if they
     were alternatives at the same level.
 
-    ENGINE   how the agent runs        transport
-    ------   --------------------      ---------------------------------
-    claude   the local `claude` CLI    subprocess, NDJSON on stdout
-    opencode a running opencode serve  HTTP on 127.0.0.1:4096
-    api      a provider API directly   HTTPS with a token from settings
+    ENGINE   how the agent runs              transport
+    ------   --------------------            ---------------------------
+    claude   the local `claude` CLI          subprocess, NDJSON on stdout
+    codex    the local `codex` CLI (R870)    subprocess, JSONL on stdout
+    cursor   the local `cursor-agent` CLI    subprocess, NDJSON on stdout
+    opencode a running opencode serve        HTTP on 127.0.0.1:4096
+    api      a provider API directly         HTTPS with a token
+
+    claude, codex and cursor are the CLI engines: each carries its own
+    sign-in, and the panel drives all three the same way (cli(name) is the
+    module: claude_cli, codex_cli, cursor_cli).
 
     PROVIDER (anthropic/openai/...) only applies to `opencode` and `api`.
-    `claude` carries its own auth and ignores it — that is the point of it.
+    The CLI engines carry their own auth and ignore it.
 
 WHY THIS EXISTS
     The opencode path needs a separate server process to be running, adopted
@@ -35,13 +41,29 @@ from . import settings
 
 
 CLAUDE = "claude"
+CODEX = "codex"
+CURSOR = "cursor"
 OPENCODE = "opencode"
 API = "api"
+
+#: The engines that run a local agent CLI (R870), in the order offered.
+CLI_ENGINES = (CLAUDE, CODEX, CURSOR)
 
 ENGINES = (
     (CLAUDE, "Claude Code",
      "Runs the local `claude` CLI. No server, no port, no API key — it uses "
      "your existing Claude Code login."),
+    (CODEX, "Codex (OpenAI)",
+     "Runs the local `codex` CLI with your existing Codex login (ChatGPT "
+     "or an OpenAI API key). The agent works inside Codex's own sandbox: "
+     "it writes only in the chat folder and has no network, but it can "
+     "read files elsewhere on this computer."),
+    (CURSOR, "Cursor CLI (preview)",
+     "Runs the local `cursor-agent` CLI with your existing Cursor login, "
+     "inside Cursor's sandbox. Preview: built from Cursor's documentation "
+     "and not yet tested against a signed-in CLI. Cursor also loads your "
+     "own Cursor MCP servers and rules, and may keep its sandbox switched "
+     "on for your own Cursor CLI sessions."),
     (OPENCODE, "OpenCode (local server)",
      "Talks to `opencode serve` over HTTP on 127.0.0.1:4096. Needs that "
      "process running, and an API key for the chosen provider."),
@@ -68,11 +90,32 @@ def dev_engines():
 
 
 def offered():
-    """The engines this build offers: all three with ATECH_DEV_ENGINES=1,
-    else Claude Code only. Same (id, title, description) rows as ENGINES."""
+    """The engines this build offers: every engine with
+    ATECH_DEV_ENGINES=1, else the CLI engines (Claude Code, Codex,
+    Cursor). Same (id, title, description) rows as ENGINES."""
     if dev_engines():
         return ENGINES
-    return tuple(e for e in ENGINES if e[0] == CLAUDE)
+    return tuple(e for e in ENGINES if e[0] in CLI_ENGINES)
+
+
+def is_cli(name=None):
+    """True for an engine that runs a local agent CLI (R870)."""
+    return (name or current()) in CLI_ENGINES
+
+
+def cli(name=None):
+    """The module that drives CLI engine `name` (default: the current
+    one): claude_cli, codex_cli or cursor_cli. ValueError otherwise."""
+    name = name or current()
+    if name == CLAUDE:
+        from . import claude_cli as mod
+    elif name == CODEX:
+        from . import codex_cli as mod
+    elif name == CURSOR:
+        from . import cursor_cli as mod
+    else:
+        raise ValueError("%r is not a CLI engine" % (name,))
+    return mod
 
 
 def current():
@@ -130,22 +173,22 @@ def _port_open(host, port, timeout=0.4):
 def available(name=None):
     """(ok, reason). reason is empty when ok, else actionable text."""
     name = name or current()
-    if name == CLAUDE:
-        from . import claude_cli
-        exe = claude_cli.find_claude()
+    if name in CLI_ENGINES:
+        mod = cli(name)
+        exe = mod.find()
         if exe:
             return True, ""
-        if claude_cli.configured_path():
-            return False, ("there is no program at the Claude Code path set "
+        if mod.configured_path():
+            return False, ("there is no program at the %s path set "
                            "in Agent Settings (%s)."
-                           % claude_cli.configured_path())
-        return False, ("Claude Code is not installed, or not where Atech "
+                           % (mod.PRODUCT, mod.configured_path()))
+        return False, ("%s is not installed, or not where Atech "
                        "Atelier looks. Install it with\n    %s\nthen run "
                        "`%s` in a terminal to sign in. Instructions: "
                        "%s. If it is installed somewhere else, set its path "
                        "in Agent Settings."
-                       % (claude_cli.INSTALL_COMMAND, claude_cli.LOGIN_COMMAND,
-                          claude_cli.INSTALL_URL))
+                       % (mod.PRODUCT, mod.INSTALL_COMMAND,
+                          mod.LOGIN_COMMAND, mod.INSTALL_URL))
     if name == OPENCODE:
         cfg = settings.load()
         url = cfg.get("backend_url") or "http://127.0.0.1:4096"
@@ -183,10 +226,9 @@ def status_line():
     ok, why = available(name)
     if ok:
         extra = ""
-        if name == CLAUDE:
-            from . import claude_cli
-            v = claude_cli.version()
+        if name in CLI_ENGINES:
+            v = cli(name).version()
             if v:
-                extra = " %s" % v.split()[0]
+                extra = " %s" % v.split()[-1 if name == CODEX else 0]
         return "%s%s — ready" % (label(name), extra)
     return "%s — unavailable: %s" % (label(name), why)

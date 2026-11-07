@@ -169,8 +169,11 @@ def ask_about_view(question, views=None, cwd=None, session_id=None,
     `cwd` says; `cwd` is only the fallback. The launch is the same isolated
     one as the chat's (claude_cli.agent_argv, R78) with no Bash allowlist.
     """
-    if not claude_cli.available():
-        raise RuntimeError("the `claude` CLI was not found on this system")
+    from . import engine
+    eng = engine.current() if engine.is_cli() else engine.CLAUDE
+    cli = engine.cli(eng)                                 # R870
+    if not cli.available():
+        raise RuntimeError("%s was not found on this system" % cli.PRODUCT)
 
     ws = chat_workspace()
     if views is None:
@@ -183,10 +186,11 @@ def ask_about_view(question, views=None, cwd=None, session_id=None,
 
     cwd = ws or cwd or os.path.dirname(paths[0])
     prompt = _compose(question, paths, failures)
-    agent = view_agent(cwd)                               # R250, R500
-    run = claude_cli.ClaudeRun(prompt, cwd=cwd, session_id=session_id,
-                               images=paths, permission_mode=permission_mode,
-                               parent=parent, agent=agent)
+    agent = view_agent(cwd) if eng == engine.CLAUDE else \
+        cli.agent_kwargs(cwd, view=True)                  # R250, R500
+    run = cli.Run(prompt, cwd=cwd, session_id=session_id,
+                  images=paths, permission_mode=permission_mode,
+                  parent=parent, agent=agent)
     return run
 
 

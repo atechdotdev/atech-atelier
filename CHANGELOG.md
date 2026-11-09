@@ -6,6 +6,16 @@ change behaviour.
 
 ## [Unreleased]
 
+### Licence: now the GNU GPL v3 or later
+
+- Atech's code is now licensed under the GNU GPL v3 or later (it was the
+  GNU LGPL v3 or later). The GPL is copyleft: anyone who distributes a
+  version of Atech Atelier, or a program based on Atech's code, must release
+  it under the GPL too, with its complete source code. The credit term
+  (`LICENSE-ATTRIBUTION.md`) is unchanged. The root `LICENSE` is now the
+  GPL v3 text and `LICENSE.GPL-3.0` is gone. The module models stay
+  CC BY-NC 4.0. Release 0.1.3 and earlier keep the licence they shipped with.
+
 ## [0.1.3] - 2026-10-31 (preview)
 
 ### Sesame walker: an open-source robot refitted for Atech

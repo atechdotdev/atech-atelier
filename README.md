@@ -392,9 +392,10 @@ macOS (Apple silicon and Intel, macOS 11 or later) and Linux x86_64. The
 same one-line installer works on both, and nothing is installed system-wide.
 
 **Is it free and open source?**
-Yes. Atech's code is open source under the LGPL v3 (or later): anyone may use,
+Yes. Atech's code is open source under the GPL v3 (or later): anyone may use,
 change and share it, also commercially, as long as they credit Atech and
-FreeCAD. FreeCAD is LGPL2+. The Atech board and module 3D models are
+FreeCAD, and anything they build on it and share is released as open source
+under the GPL too. FreeCAD is LGPL2+. The Atech board and module 3D models are
 CC BY-NC 4.0. See [Licences](#licences). The chat needs a
 Claude account that includes Claude Code.
 
@@ -459,19 +460,22 @@ its own files.
 
 | what | licence | text |
 |---|---|---|
-| Atech's code: the Atech workbench (`addon/AcadAgent`), the branding and build scripts | **LGPL-3.0-or-later**, with one added term: anyone who shares or sells it, or a product built on it, must credit Atech and FreeCAD | [`LICENSE`](LICENSE), [`LICENSE-ATTRIBUTION.md`](LICENSE-ATTRIBUTION.md) |
+| Atech's code: the Atech workbench (`addon/AcadAgent`), the branding and build scripts | **GPL-3.0-or-later** (copyleft: anything built on it and shared must also be GPL, with its source), with one added term: anyone who shares or sells it, or a product built on it, must credit Atech and FreeCAD | [`LICENSE`](LICENSE), [`LICENSE-ATTRIBUTION.md`](LICENSE-ATTRIBUTION.md) |
 | Atech board and module 3D models, and `presets.yaml` | **CC BY-NC 4.0**: share and adapt for non-commercial purposes, crediting Atech, keeping the notices, linking the licence and saying if you changed them | [`LICENSE-models.md`](LICENSE-models.md) |
 | FreeCAD and the libraries it bundles | their own licences (FreeCAD: "LGPL2+", the GNU LGPL version 2 or any later version, per its `LICENSE.html`; its source files mostly carry LGPL-2.1-or-later) | FreeCAD's list: `share/doc/FreeCAD/ThirdPartyLibraries.html`; every package: `packages.txt` (Linux: at the image root; macOS: `Contents/packages.txt`); texts: `share/doc/<package>/`, `share/licenses/`, `site-packages/*.dist-info/` in the app |
 | third-party components Atech added (FreeCADMCP, Lucide, Feather, the AppImage type-2 runtime and the libraries it statically links), theme files derived from FreeCAD's own, and licence texts Atech adds for bundled libraries that lacked them | their own licences | `share/doc/atech-atelier/third_party/` in the app |
 
-**Building on Atech Atelier?** You are welcome to, commercially too. Keep this
-line in your app's About or Credits screen and in your documentation
+**Building on Atech Atelier?** You are welcome to, commercially too, as long
+as you release your work as open source under the GPL v3 (or later), with its
+complete source code, just as Atech's code is. Keep this line in your app's
+About or Credits screen and in your documentation
 ([`LICENSE-ATTRIBUTION.md`](LICENSE-ATTRIBUTION.md) has the exact terms):
 
 > Based on Atech Atelier by Atech (https://studio.atech.dev),
 > built on FreeCAD (https://www.freecad.org).
 
-Releases up to 0.1.2 were LGPL-2.1-or-later without this term.
+Releases up to 0.1.2 were LGPL-2.1-or-later without this term; 0.1.3 was
+LGPL-3.0-or-later with it.
 
 Inside the app, `share/doc/atech-atelier/` also holds `CREDITS.md`,
 `SOURCE_OFFER.txt` (where to get the source) and `ATECH_CHANGES.txt` (every

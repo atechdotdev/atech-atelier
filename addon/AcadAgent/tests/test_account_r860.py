@@ -282,6 +282,26 @@ class TestSession(Base):
 
 
 class TestVault(unittest.TestCase):
+    def test_one_token_per_site(self):
+        self.assertEqual(account.site_account("https://atech.dev"), account.ACCOUNT)
+        self.assertEqual(account.site_account("https://staging.atech.dev"),
+                         account.ACCOUNT + "@staging.atech.dev")
+        with mock.patch.object(account.shop, "SITE", "https://staging.atech.dev"):
+            v = account.Vault()
+        self.assertEqual(v.account, account.ACCOUNT + "@staging.atech.dev")
+        self.assertTrue(v.path.endswith("account-staging.atech.dev.secret"))
+        with mock.patch.object(account.shop, "SITE", "http://localhost:3000"):
+            self.assertTrue(account.Vault().path.endswith("account-localhost_3000.secret"))
+        with mock.patch.object(account.shop, "SITE", "https://atech.dev"):
+            v = account.Vault()
+        self.assertEqual(v.account, account.ACCOUNT)    # unchanged for atech.dev
+        self.assertTrue(v.path.endswith(os.sep + "account.secret"))
+        self.assertEqual(account._user_key(), "account_user")
+        self.assertEqual(account.other_site(), "")
+        with mock.patch.object(account.shop, "SITE", "https://staging.atech.dev"):
+            self.assertEqual(account._user_key(), "account_user@staging.atech.dev")
+            self.assertEqual(account.other_site(), "staging.atech.dev")
+
     def test_file_fallback_is_private(self):
         d = tempfile.mkdtemp(prefix="r860vault_")
         v = account.Vault(path=os.path.join(d, "account.secret"))
@@ -341,7 +361,12 @@ class TestButton(Base):
         self.stored["user"]["name"] = "David"
         b.flow._finish({"ok": True, "message": "", "cancelled": False})
         QtCore.QCoreApplication.processEvents()
-        self.assertEqual(b.text(), "David")
+        # the fake site is not atech.dev, so the button says which site
+        self.assertEqual(b.text(), "David · %s" % account.other_site())
+        self.assertIn(account.other_site(), b.toolTip())
+        with mock.patch.object(account.shop, "SITE", "https://atech.dev"):
+            b.sync()
+            self.assertEqual(b.text(), "David")
         texts = [a.text() for a in b.menu().actions() if a.text()]
         self.assertEqual(texts, ["maker@example.com", "Your account on atech.dev", "Builds on atech.dev",
                                  "Atech shop", "About Atech Atelier", "Sign out"])
@@ -359,7 +384,7 @@ class TestButton(Base):
         from PySide6 import QtCore
         self.acct._take(self.site.session())
         b = self.make()
-        self.assertEqual(b.text(), "David")                        # name fetched on start
+        self.assertEqual(b.text().split(" · ")[0], "David")       # name fetched on start
         b.sign_out()
         QtCore.QCoreApplication.processEvents()
         self.assertEqual(b.text(), "Sign in")

@@ -271,10 +271,12 @@ def _copy_view(src, dst):
             pass
 
 
-def resize(obj, w, d, h):
+def resize(obj, w, d, h, at=None):
     """Set the part's width, depth and height (mm). Returns the object that
     now has that size (a new one when a primitive had to become a plain
-    solid; see the module docstring). Raises EditRefused."""
+    solid; see the module docstring). `at`: where its footprint centre and
+    bottom go (default: where they were), in the same undo step. Raises
+    EditRefused."""
     msg = why_not(obj)
     if msg:
         raise EditRefused(msg)
@@ -315,7 +317,8 @@ def resize(obj, w, d, h):
         doc.recompute()
         # Keep its footprint centre and bottom where they were (a box grows
         # from its corner, a sphere from its centre).
-        _shift_to(out, base_before)
+        _shift_to(out, base_before if at is None else
+                  tuple(float(c) for c in at))
     except Exception:
         _abort(doc)
         raise

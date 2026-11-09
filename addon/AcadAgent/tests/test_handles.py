@@ -1,7 +1,10 @@
 """R890 handles in the 3D view, Align, Mirror and Text.
 
   TestGeometry   fc_arrange.py under freecadcmd (align, mirror, text, the
-                 pivy overlay); skips without ATECH_FREECADCMD
+                 pivy overlay) and fc_handles.py (real Coin mouse events on
+                 a stand-in view, orthographic and perspective: every
+                 handle dragged, one undo step each); skips without
+                 ATECH_FREECADCMD
   TestMath       the drag math, no FreeCAD: snapping, handle places, a
                  resize keeps the opposite side, proportions, moves, turns,
                  ray / plane, picking the nearest handle
@@ -15,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ADDON = os.path.dirname(HERE)
@@ -56,6 +60,19 @@ class TestGeometry(unittest.TestCase):
         failed = [k for k, v in r["checks"].items() if not v]
         self.assertTrue(r["ok"], (failed, r["errors"]))
         self.assertGreaterEqual(len(r["checks"]), 18)
+
+    def test_fc_handles(self):
+        home = tempfile.mkdtemp(prefix="atech-hd-")
+        env = {"HOME": home, "FREECAD_USER_HOME": home, "PATH": "/usr/bin:/bin"}
+        p = subprocess.run([FC, os.path.join(HERE, "fc_handles.py")], env=env,
+                           cwd=home, capture_output=True, text=True, timeout=300)
+        line = [ln for ln in (p.stdout + p.stderr).splitlines()
+                if ln.startswith("HANDLES_RESULT=")]
+        self.assertTrue(line, (p.stdout + p.stderr)[-2000:])
+        r = json.loads(line[-1].split("=", 1)[1])
+        failed = [k for k, v in r["checks"].items() if not v]
+        self.assertTrue(r["ok"], (failed, r["errors"]))
+        self.assertGreaterEqual(len(r["checks"]), 60)
 
 
 class TestMath(unittest.TestCase):
@@ -123,6 +140,15 @@ class TestMath(unittest.TestCase):
         self.assertEqual(h.nearest(pts, (106, 101)), "z+")
         self.assertIsNone(h.nearest(pts, (200, 200)))
 
+    def test_arc_points(self):
+        pts = h.arc_points("rot_z", 5.0)
+        self.assertEqual(len(pts), 19)
+        for p in pts:
+            self.assertAlmostEqual(p[0] ** 2 + p[1] ** 2, 25.0)
+            self.assertEqual(p[2], 0.0)
+        self.assertEqual(h.arc_points("rot_x", 1.0)[0], (0.0, 1.0, 0.0))
+        self.assertGreaterEqual(h.handle_size((0, 0, 0, 1, 1, 1)), 1.2)
+
     def test_labels(self):
         self.assertEqual(h.label_for("x+", (40, 20, 10), (0, 0, 0)), "40 mm")
         self.assertEqual(h.label_for("x+y-", (40, 20.5, 10), (0, 0, 0)), "40 x 20.5 mm")
@@ -133,6 +159,57 @@ class TestMath(unittest.TestCase):
         self.assertEqual(arrange.align_targets(boxes, "x", "min"), [0, -20, -5])
         self.assertEqual(arrange.align_targets(boxes, "x", "max"), [30, 0, 34])
         self.assertEqual(arrange.align_targets(boxes, "x", "centre"), [15, -10, 14.5])
+
+
+class TestFollowsView(unittest.TestCase):
+    """start() waits for a 3D view and refresh() moves to the active one."""
+
+    def setUp(self):
+        self.views = []
+        self.addCleanup(h.stop)
+
+    def _gui(self, view, sel=()):
+        gui = mock.Mock()
+        gui.ActiveDocument = mock.Mock(ActiveView=view) if view else None
+        gui.Selection.getSelection.return_value = list(sel)
+        pivy = mock.Mock()
+        return mock.patch.dict(sys.modules, {"FreeCADGui": gui, "pivy": pivy,
+                                             "pivy.coin": pivy.coin})
+
+    def _view(self):
+        v = mock.Mock()
+        v.graphicsView.return_value = object()
+        self.views.append(v)
+        return v
+
+    def test_no_view_then_a_view(self):
+        with self._gui(None):
+            self.assertIsNone(h.start())
+            self.assertIsNone(h.active())
+        v = self._view()
+        with self._gui(v), mock.patch.object(h.Handles, "show"):
+            h.refresh()
+            self.assertIs(h.active().view, v)
+            self.assertTrue(v.addEventCallbackPivy.called)
+
+    def test_switches_view_and_keeps_same(self):
+        a, b = self._view(), self._view()
+        with self._gui(a), mock.patch.object(h.Handles, "show"):
+            first = h.start()
+            h.refresh()
+            self.assertIs(h.active(), first)      # same view: not rebuilt
+        same = mock.Mock(graphicsView=mock.Mock(return_value=a.graphicsView()))
+        with self._gui(same), mock.patch.object(h.Handles, "show"):
+            h.refresh()
+            self.assertIs(h.active(), first)      # a new wrapper, same view
+        with self._gui(b), mock.patch.object(h.Handles, "show"):
+            h.refresh()
+            self.assertIs(h.active().view, b)
+            self.assertTrue(a.removeEventCallbackPivy.called)
+        h.stop()
+        with self._gui(b):
+            h.refresh()                           # stopped: stays off
+            self.assertIsNone(h.active())
 
 
 @unittest.skipIf(QtWidgets is None, "PySide6 not installed")

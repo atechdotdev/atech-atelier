@@ -56,9 +56,10 @@ class AccountButton(QtWidgets.QPushButton):
                             "Click for more.")
         elif self.acct.signed_in():
             u = self.acct.user
-            self.setText(self.acct.label())
+            other = account.other_site()        # $ATECH_SITE, e.g. staging
+            self.setText(self.acct.label() + (" · %s" % other if other else ""))
             self.setAccessibleName("Signed in as %s" % u.get("email", ""))
-            self.setToolTip("Signed in to Atech as %s" % u.get("email", ""))
+            self.setToolTip("Signed in to %s as %s" % (other or "Atech", u.get("email", "")))
         else:
             self.setText("Sign in")
             self.setAccessibleName("Sign in with your Atech account")

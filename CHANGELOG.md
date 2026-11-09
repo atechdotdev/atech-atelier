@@ -37,7 +37,8 @@ change behaviour.
   raise it, the curved arrows to turn it, or the part itself to slide it
   across the floor. Sizes show while you drag; every drag is one undo step.
 - Drags snap to the **Grid** chosen in Edit shapes (1 mm by default); turns
-  snap to 15° (Shift: 45°).
+  snap to 15° (Shift: 45°). A curved arrow is grabbed anywhere along it, and
+  the handles follow you to another open project.
 - New in Edit shapes: **Text** (raised letters), **Mirror X / Y / Z** and
   **Align** two or more parts to their min, centre or max on X, Y or Z.
 
@@ -87,6 +88,9 @@ change behaviour.
 - If the browser cannot reach Atelier, the page shows a code to paste in
   (**Paste a code…**). Sign in waits five minutes, and can be cancelled.
 - **Get it made** fills in your account's email.
+- A test build pointed at another site (such as staging) keeps its own
+  sign-in, and the button shows that site's name beside yours, so a staging
+  session is never mistaken for, or sent to, atech.dev.
 - The account menu also opens your builds on atech.dev, the Atech shop and
   the site's Atech Atelier page (atech.dev/atelier), which says which account
   Atelier signs in as.

@@ -56,15 +56,26 @@ def _log(msg):
 # ===================================================================
 # where the refresh token lives
 # ===================================================================
+def site_account(site=None):
+    """The Keychain account for a site's refresh token: ACCOUNT for
+    atech.dev, ACCOUNT@<host> for any other ($ATECH_SITE, e.g. staging), so
+    a token from a staging sign-in is never sent to atech.dev (nor the
+    other way round), and switching sites does not sign the other out."""
+    host = urllib.parse.urlsplit(site or shop.SITE).netloc.lower()
+    return ACCOUNT if host in ("", "atech.dev") else "%s@%s" % (ACCOUNT, host)
+
+
 class Vault:
     """The one secret: the refresh token. macOS Keychain, else secret-tool,
     else a 0600 file. The secret goes on stdin, never on a command line
-    (another user's `ps` would see it)."""
+    (another user's `ps` would see it). One per site (site_account)."""
 
-    def __init__(self, service=SERVICE, account=ACCOUNT, path=None):
-        self.service, self.account = service, account
+    def __init__(self, service=SERVICE, account=None, path=None):
+        self.service, self.account = service, account or site_account()
+        name = "account.secret" if self.account == ACCOUNT else \
+            "account-%s.secret" % self.account.split("@", 1)[1].replace(":", "_")
         self.path = path or os.path.join(os.path.expanduser("~"), ".config", "acadagent",
-                                         "account.secret")
+                                         name)
 
     def _kind(self):
         if platform.system() == "Darwin" and shutil.which("security"):
@@ -306,10 +317,22 @@ def get():
     return _ACCOUNT
 
 
+def other_site():
+    """The site's host when it is not atech.dev ($ATECH_SITE), else ""."""
+    a = site_account()
+    return "" if a == ACCOUNT else a.split("@", 1)[1]
+
+
+def _user_key():
+    """Who is signed in is kept per site, like the token (site_account)."""
+    host = other_site()
+    return "account_user@%s" % host if host else "account_user"
+
+
 def _stored_user():
     try:
         from . import settings
-        return settings.load().get("account_user")
+        return settings.load().get(_user_key())
     except Exception:                                     # noqa: BLE001
         return None
 
@@ -317,7 +340,7 @@ def _stored_user():
 def _store_user(user):
     try:
         from . import settings
-        settings.update(account_user=user)
+        settings.update(**{_user_key(): user})
     except Exception as exc:                              # noqa: BLE001
         _log("store user: %s" % type(exc).__name__)
 

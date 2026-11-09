@@ -83,6 +83,23 @@ def handle_points(box):
     return pts
 
 
+def handle_size(box):
+    """Edge of a square handle (mm); the cone and arrows scale from it."""
+    return max(1.2, offset(box) * 0.35)
+
+
+def arc_points(which, r, n=18):
+    """Offsets of a turn arrow's arc (three quarters of a circle of radius
+    r about its axis) from the arrow's handle point."""
+    pts = []
+    for i in range(n + 1):
+        a = 1.5 * math.pi * i / n
+        u, v = r * math.cos(a), r * math.sin(a)
+        pts.append({"rot_z": (u, v, 0.0), "rot_x": (0.0, u, v),
+                    "rot_y": (u, 0.0, v)}[which])
+    return pts
+
+
 def resize_from_drag(size, pos, handle, delta, step=DEFAULT_SNAP,
                      keep=False):
     """((w, d, h), (x, y, z)) after dragging a size handle by `delta` (a
@@ -288,8 +305,7 @@ class Handles(object):
         depth.function = coin.SoDepthBuffer.ALWAYS
         root.addChild(depth)
         xmin, ymin, zmin, xmax, ymax, zmax = box
-        off = offset(box)
-        sz = max(1.2, off * 0.35)
+        sz = handle_size(box)
         line = coin.SoSeparator()
         st = coin.SoDrawStyle()
         st.lineWidth = 1.5
@@ -377,13 +393,7 @@ class Handles(object):
         st = coin.SoDrawStyle()
         st.lineWidth = 3
         sep.addChild(st)
-        n = 18
-        pts = []
-        for i in range(n + 1):
-            a = 1.5 * math.pi * i / n
-            u, v = r * math.cos(a), r * math.sin(a)
-            pts.append({"rot_z": [u, v, 0], "rot_x": [0, u, v],
-                        "rot_y": [u, 0, v]}[which])
+        pts = [list(p) for p in arc_points(which, r)]
         co = coin.SoCoordinate3()
         co.point.setValues(0, len(pts), pts)
         sep.addChild(co)
@@ -405,20 +415,46 @@ class Handles(object):
         return self._screen((p.x, p.y, p.z))
 
     def _ray(self, pos):
+        """(point under the cursor, direction into the scene). A perspective
+        camera's rays fan out from the eye, so the view direction alone would
+        drag a part away from the cursor towards the edges of the view."""
         p = self.view.getPoint(pos)
         d = self.view.getViewDirection()
-        return (p.x, p.y, p.z), (d.x, d.y, d.z)
+        p, d = (p.x, p.y, p.z), (d.x, d.y, d.z)
+        try:
+            from pivy import coin
+            cam = self.view.getCameraNode()
+            if cam.isOfType(coin.SoPerspectiveCamera.getClassTypeId()):
+                e = tuple(cam.position.getValue().getValue())
+                v = _sub(p, e)
+                n = math.sqrt(_dot(v, v))
+                if n > 1e-9:
+                    d = (v[0] / n, v[1] / n, v[2] / n)
+        except Exception:                              # noqa: BLE001
+            pass
+        return p, d
 
     def hit(self, pos):
         """The handle under the cursor, BODY when it is on the part, or None."""
         if self.obj is None:
             return None
         which = allowed(self.obj)
-        pts = handle_points(_box(self.obj))
+        box = _box(self.obj)
+        pts = handle_points(box)
+        cur = self._cursor(pos)
         scr = {k: self._screen(pts[k]) for k in which if k != BODY}
-        k = nearest(scr, self._cursor(pos))
+        k = nearest(scr, cur)
         if k:
             return k
+        # a turn arrow is grabbed anywhere on its arc, not at its centre
+        r = handle_size(box) * 2.2
+        for k in which:
+            if k in TURNS:
+                c = pts[k]
+                arc = {i: self._screen((c[0] + u, c[1] + v, c[2] + w))
+                       for i, (u, v, w) in enumerate(arc_points(k, r))}
+                if nearest(arc, cur) is not None:
+                    return k
         if BODY in which:
             try:
                 info = self.view.getObjectInfo(tuple(pos))
@@ -454,14 +490,16 @@ class Handles(object):
             info = self.view.getObjectInfo(pos) or {}
             grab = (info.get("x", origin[0]), info.get("y", origin[1]),
                     info.get("z", origin[2]))
+        # a turn is dragged in the plane its arrow is drawn in (through the
+        # arrow, across the axis) and measured about the part's centre
         pt, n = drag_plane(handle, grab, d)
-        if handle in TURNS:
-            pt = ((box[0] + box[3]) / 2.0, (box[1] + box[4]) / 2.0,
+        centre = ((box[0] + box[3]) / 2.0, (box[1] + box[4]) / 2.0,
                   (box[2] + box[5]) / 2.0)
         start = ray_plane(origin, d, pt, n) or grab
         doc = o.Document
         se._open(doc, "Drag %s" % o.Label)
         self.drag = {"handle": handle, "plane": (pt, n), "start": start,
+                     "centre": centre,
                      "size": se.size(o), "pos": se.position(o),
                      "placement": o.Placement.copy(), "doc": doc,
                      "result": None}
@@ -493,7 +531,7 @@ class Handles(object):
                 self.show(o, label_for(k, dr["size"], newpos))
             elif k in TURNS:
                 axis = k[-1]
-                ang = angle_from_drag(dr["plane"][0], axis, dr["start"], p,
+                ang = angle_from_drag(dr["centre"], axis, dr["start"], p,
                                       TURN_SNAP_SHIFT if ev.wasShiftDown()
                                       else TURN_SNAP)
                 dr["result"] = ("turn", axis, ang)
@@ -540,8 +578,7 @@ class Handles(object):
             elif res[0] == "resize":
                 se._abort(doc)                  # resize opens its own step
                 o.Placement = dr["placement"]
-                se.resize(o, *res[1])
-                se.move_to(o, *res[2])
+                se.resize(o, *res[1], at=res[2])     # one undo step
             elif res[0] == "turn":
                 o.Placement = dr["placement"]
                 se._abort(doc)
@@ -569,15 +606,39 @@ class Handles(object):
 _ACTIVE = {}
 
 
-def start(snap_step=lambda: DEFAULT_SNAP, on_change=None):
-    """Handles on the active 3D view, following the selection. Returns the
-    Handles (stop() takes them off)."""
-    stop()
+def _active_view():
     try:
         import FreeCADGui
-        view = FreeCADGui.ActiveDocument.ActiveView
+        return FreeCADGui.ActiveDocument.ActiveView
     except Exception:                                  # noqa: BLE001
         return None
+
+
+def _same_view(a, b):
+    """FreeCAD may wrap one view in a new Python object per call; its Qt
+    widget (shiboken keeps one wrapper per QObject) tells them apart."""
+    if a is b:
+        return True
+    try:
+        return a.graphicsView() is b.graphicsView()
+    except Exception:                                  # noqa: BLE001
+        return False
+
+
+def start(snap_step=lambda: DEFAULT_SNAP, on_change=None):
+    """Handles on the active 3D view, following the selection (and the
+    active view: refresh() moves them to another project's view). Returns
+    the Handles, or None while no 3D view is open (stop() takes them off)."""
+    stop()
+    _ACTIVE["args"] = (snap_step, on_change)
+    return _attach()
+
+
+def _attach():
+    view = _active_view()
+    if view is None or not hasattr(view, "addEventCallbackPivy"):
+        return None
+    snap_step, on_change = _ACTIVE["args"]
     try:
         h = Handles(view, snap_step, on_change).attach()
     except Exception as exc:                           # noqa: BLE001
@@ -589,9 +650,19 @@ def start(snap_step=lambda: DEFAULT_SNAP, on_change=None):
 
 
 def refresh():
-    h = _ACTIVE.get("h")
-    if h is None or h.drag is not None:
+    if "args" not in _ACTIVE:
         return
+    h = _ACTIVE.get("h")
+    if h is not None and h.drag is not None:
+        return
+    view = _active_view()
+    if h is None or view is None or not _same_view(h.view, view):
+        if h is not None:
+            _ACTIVE.pop("h", None)
+            h.detach()
+        if view is None or _attach() is None:
+            return
+        return                                         # _attach refreshed
     try:
         import FreeCADGui
         sel = FreeCADGui.Selection.getSelection()
@@ -601,6 +672,7 @@ def refresh():
 
 
 def stop():
+    _ACTIVE.pop("args", None)
     h = _ACTIVE.pop("h", None)
     if h is not None:
         h.detach()
